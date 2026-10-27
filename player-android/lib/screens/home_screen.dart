@@ -226,6 +226,7 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
                   AppRoutes.musicArtists
                 ),
                 (Icons.podcasts, 'Podcasts', AppRoutes.podcasts),
+                (Icons.radio, 'Web radio', AppRoutes.radio),
                 (Icons.share_outlined, 'My Shares', AppRoutes.shares),
                 (
                   Icons.settings_outlined,

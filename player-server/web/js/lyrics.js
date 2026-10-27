@@ -4,11 +4,17 @@ import { offlineMusicMode } from './offline-context.js';
 // Derive access from the explicit playback URL, including detached/share URLs.
 // Unknown or cross-origin streams never trigger a library request by media ID.
 export function lyricsUrl(streamUrl, base = location.href) {
+  return mediaResourceUrl(streamUrl, 'lyrics', base);
+}
+
+// mediaResourceUrl maps a stream or compat URL to a sibling endpoint
+// (lyrics, format) under the same media or share path.
+export function mediaResourceUrl(streamUrl, resource, base = location.href) {
   try {
     const url = new URL(streamUrl, base);
     if (url.origin !== new URL(base).origin ||
         !/^\/(?:api\/(?:v1\/)?media\/\d+|s\/[^/]+)\/(?:stream|compat)$/.test(url.pathname)) return null;
-    url.pathname = url.pathname.replace(/\/(?:stream|compat)$/, '/lyrics');
+    url.pathname = url.pathname.replace(/\/(?:stream|compat)$/, `/${resource}`);
     const view = url.searchParams.get('view');
     url.search = '';
     if (view) url.searchParams.set('view', view);

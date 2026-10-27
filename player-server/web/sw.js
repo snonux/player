@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v86';
+const CACHE = 'kiss-v87';
 const ASSETS = [
   '/',
   '/index.html',
@@ -12,6 +12,7 @@ const ASSETS = [
   '/css/radio.css',
   '/css/toast.css',
   '/css/player.css',
+  '/css/radio.css',
   '/css/login.css',
   '/js/app.js',
   '/js/i18n.js',
@@ -57,6 +58,7 @@ const ASSETS = [
   '/js/replay-gain.js',
   '/js/lyrics.js',
   '/js/saved-lyrics.js',
+  '/js/audioFormat.js',
   '/js/seekPreview.js',
   '/js/playback-personal.js',
   '/js/bookmarks.js',
@@ -107,6 +109,8 @@ const ASSETS = [
   '/js/podcast-views.js',
   '/js/podcast-episode-state.js',
   '/js/podcast-subscriptions.js',
+  '/js/radio.js',
+  '/js/radio-core.js',
   '/js/pwa.js',
   '/js/views/admin-status.js',
   '/js/views/help.js',

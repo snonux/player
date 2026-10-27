@@ -87,6 +87,8 @@ func newE2EWith(t *testing.T, runner transcode.Runner, configure func(cfg *inter
 		ShareDefaultExpiryDays: 7,
 		TranscodeCacheDir:      filepath.Join(dir, "transcode-cache"),
 		TranscodeCacheMaxMB:    1,
+		// The tests serve feeds and episodes from httptest on loopback.
+		PodcastAllowPrivateNetworks: true,
 	}
 	if configure != nil {
 		configure(cfg)

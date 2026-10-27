@@ -47,6 +47,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/app_routes.dart';
+import 'package:player_android/models/audio_format.dart';
 import 'package:player_android/models/lyrics.dart';
 import 'package:player_android/models/media.dart';
 import 'package:player_android/models/media_set.dart';
@@ -191,6 +192,22 @@ class _FakeApiClient extends PlayerApiClient {
   Future<Lyrics> getSharedLyrics(String token, {String? view}) {
     shareLyricsRequests.add((token, view));
     return lyricsResult?.call() ?? Future.value(const Lyrics());
+  }
+
+  final formatIds = <int>[];
+  final shareFormatRequests = <(String, String?)>[];
+  AudioFormat formatResult = const AudioFormat();
+
+  @override
+  Future<AudioFormat> getMediaAudioFormat(int mediaId) async {
+    formatIds.add(mediaId);
+    return formatResult;
+  }
+
+  @override
+  Future<AudioFormat> getSharedAudioFormat(String token, {String? view}) async {
+    shareFormatRequests.add((token, view));
+    return formatResult;
   }
 
   /// Answers for [probePlayback], consumed in order; the last one repeats.
@@ -916,6 +933,31 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('shows the server audio format under the seek bar',
+      (tester) async {
+    final (player, handler) = _usePlayableHandler();
+    final client = _FakeApiClient()
+      ..formatResult = AudioFormat.fromJson({
+        'codec_label': 'FLAC',
+        'bit_depth': 24,
+        'sample_rate': 96000,
+        'bitrate': 2304000,
+        'channels': 2,
+        'lossless': true,
+      });
+    await _pumpScreen(tester, client,
+        handlerOverride: handler,
+        mediaUrl: 'http://localhost:8080/api/v1/media/42/stream');
+    await tester.pump();
+    await tester.pump();
+    expect(client.formatIds, [42]);
+    expect(find.text('FLAC · 24-bit · 96 kHz · 2304 kbps · Stereo'),
+        findsOneWidget);
+    expect(player.isPlaying, isTrue);
+    await tester.runAsync(handler.stop);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
       'public lyrics use the public client and original viewing credential',
       (tester) async {
@@ -942,6 +984,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(client.shareLyricsRequests, [('abc', 'original')]);
+    expect(client.shareFormatRequests, [('abc', 'original')]);
     expect(find.text('No lyrics available.'), findsOneWidget);
     expect(player.isPlaying, isTrue);
     await tester.runAsync(handler.stop);

@@ -1,497 +1,843 @@
 import 'dart:async';
-import 'dart:typed_data';
-import 'package:audio_service/audio_service.dart';
-import 'package:dio/dio.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:just_audio/just_audio.dart';
-import '../services/external_metadata_links.dart';
-import '../api/dio_client.dart';
-import '../api/radio_api.dart';
-import '../providers/api_client_provider.dart';
-import '../providers/audio_handler_provider.dart';
-import '../providers/auth_state_provider.dart';
-import '../providers/playback_session_provider.dart';
-import '../providers/server_endpoint_provider.dart';
-import '../services/playback_request.dart';
-import '../services/playback_session_coordinator.dart';
 
-/// Shared station browsing and live controls, with no finite-song timeline.
-class RadioScreen extends ConsumerStatefulWidget {
+import '../models/radio_station.dart';
+import '../providers/api_client_provider.dart';
+import '../providers/radio_provider.dart';
+import '../services/radio_controller.dart';
+import '../utils/error_mappers.dart';
+import '../widgets/authenticated_network_image.dart';
+
+/// Stations requested per explorer page.
+const radioPageSize = 50;
+
+/// Web radio: an explorer of the station directory (search, genre, country
+/// and order), auto explore, and the user's bookmarked stations.
+///
+/// Playback is owned by [radioControllerProvider], not by this screen, so a
+/// station keeps playing in the background after the screen is closed.
+class RadioScreen extends ConsumerWidget {
   const RadioScreen({super.key});
+
   @override
-  ConsumerState<RadioScreen> createState() => _RadioScreenState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Web radio'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(
+                  key: Key('radio_tab_explore'),
+                  icon: Icon(Icons.travel_explore),
+                  text: 'Explore'),
+              Tab(
+                  key: Key('radio_tab_bookmarks'),
+                  icon: Icon(Icons.bookmarks_outlined),
+                  text: 'Bookmarks'),
+            ],
+          ),
+        ),
+        body: const TabBarView(
+          children: [RadioExploreTab(), RadioBookmarksTab()],
+        ),
+        bottomNavigationBar: const RadioNowPlayingBar(),
+      ),
+    );
+  }
 }
 
-class _RadioScreenState extends ConsumerState<RadioScreen> {
-  List<Map<String, dynamic>>? _stations;
-  String _query = '';
-  String? _error, _playError;
+// -----------------------------------------------------------------------------
+// Explore
+// -----------------------------------------------------------------------------
+
+class RadioExploreTab extends ConsumerStatefulWidget {
+  const RadioExploreTab({super.key});
+
+  @override
+  ConsumerState<RadioExploreTab> createState() => _RadioExploreTabState();
+}
+
+class _RadioExploreTabState extends ConsumerState<RadioExploreTab>
+    with AutomaticKeepAliveClientMixin {
+  final _search = TextEditingController();
+  RadioQuery _query = const RadioQuery();
+  String? _countryName;
+  final List<RadioStation> _stations = [];
   bool _loading = false;
-  int _attempt = 0, _loadGeneration = 0;
-  RadioApi? _stationsApi, _loadingApi;
-  int? _opening;
-  PlaybackSessionLease? _pendingLease;
-  final _art = <int, Future<Uint8List>>{};
+  bool _hasMore = false;
+  String? _error;
+  int _generation = 0;
+
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   void initState() {
     super.initState();
-    Future.microtask(_load);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   @override
   void dispose() {
-    _attempt++;
-    if (_opening != null) unawaited(_pendingLease?.stop());
+    _search.dispose();
     super.dispose();
   }
 
-  RadioApi _captureApi() {
-    final client = ref.read(apiClientProvider);
-    final mutations = ref.read(credentialMutationQueueProvider);
-    final epoch = mutations.generation;
-    final base = ref.read(playerBaseUrlProvider);
-    final user = ref.read(authStateProvider).valueOrNull?.user?.id;
-    return RadioApi(client.rawDio,
-        credentialEpoch: epoch,
-        isCurrent: () =>
-            mounted &&
-            mutations.generation == epoch &&
-            identical(ref.read(apiClientProvider), client) &&
-            ref.read(playerBaseUrlProvider) == base &&
-            ref.read(authStateProvider).valueOrNull?.user?.id == user);
+  Future<void> _load({bool more = false}) async {
+    if (!mounted) return;
+    final generation = ++_generation;
+    setState(() {
+      _loading = true;
+      _error = null;
+      if (!more) {
+        _stations.clear();
+        _hasMore = false;
+      }
+    });
+    try {
+      final page = await ref.read(apiClientProvider).searchRadioStations(
+            search: _query.search,
+            tag: _query.tag,
+            country: _query.country,
+            order: _query.order,
+            limit: radioPageSize,
+            offset: more ? _stations.length : 0,
+          );
+      if (!mounted || generation != _generation) return;
+      ref.read(radioControllerProvider).rememberBookmarks(page);
+      setState(() {
+        _stations.addAll(page);
+        _hasMore = page.length >= radioPageSize;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _error = radioErrorMessage(error);
+        _loading = false;
+      });
+    }
+  }
+
+  void _apply(RadioQuery query, {String? countryName}) {
+    setState(() {
+      _query = query;
+      if (query.country == null) {
+        _countryName = null;
+      } else if (countryName != null) {
+        _countryName = countryName;
+      }
+    });
+    unawaited(_load());
+  }
+
+  Future<void> _pickTag() async {
+    final picked = await showModalBottomSheet<_Pick>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _PickerSheet(
+        title: 'Genre',
+        searchHint: 'Filter genres',
+        load: () async => (await ref.read(apiClientProvider).listRadioTags())
+            .map((t) => _Option(t.name, t.name, t.stationCount))
+            .toList(),
+      ),
+    );
+    if (picked == null) return;
+    _apply(_query.copyWith(tag: () => picked.value));
+  }
+
+  Future<void> _pickCountry() async {
+    final picked = await showModalBottomSheet<_Pick>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _PickerSheet(
+        title: 'Country',
+        searchHint: 'Filter countries',
+        load: () async =>
+            (await ref.read(apiClientProvider).listRadioCountries())
+                .map((c) => _Option(c.code, c.name, c.stationCount))
+                .toList(),
+      ),
+    );
+    if (picked == null) return;
+    _apply(_query.copyWith(country: () => picked.value),
+        countryName: picked.label);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final radio = ref.watch(radioControllerProvider);
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        key: const Key('radio_explore_list'),
+        padding: const EdgeInsets.only(bottom: 16),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: TextField(
+              key: const Key('radio_search_field'),
+              controller: _search,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                labelText: 'Search stations',
+                prefixIcon: const Icon(Icons.search),
+                border: const OutlineInputBorder(),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _search.clear();
+                          _apply(_query.copyWith(search: ''));
+                        },
+                      ),
+              ),
+              onChanged: (_) => setState(() {}),
+              onSubmitted: (text) => _apply(_query.copyWith(search: text)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _FilterChip(
+                  key: const Key('radio_filter_genre'),
+                  icon: Icons.label_outline,
+                  label: _query.tag == null ? 'Genre' : 'Genre: ${_query.tag}',
+                  active: _query.tag != null,
+                  onPressed: _pickTag,
+                  onClear: () => _apply(_query.copyWith(tag: () => null)),
+                ),
+                _FilterChip(
+                  key: const Key('radio_filter_country'),
+                  icon: Icons.public,
+                  label: _query.country == null
+                      ? 'Country'
+                      : 'Country: ${_countryName ?? _query.country}',
+                  active: _query.country != null,
+                  onPressed: _pickCountry,
+                  onClear: () => _apply(_query.copyWith(country: () => null)),
+                ),
+                PopupMenuButton<RadioOrder>(
+                  key: const Key('radio_order_menu'),
+                  tooltip: 'Sort order',
+                  initialValue: _query.order,
+                  onSelected: (order) => _apply(_query.copyWith(order: order)),
+                  itemBuilder: (_) => [
+                    for (final order in RadioOrder.values)
+                      PopupMenuItem(
+                        key: Key('radio_order_${order.apiValue}'),
+                        value: order,
+                        child: Text(order.label),
+                      ),
+                  ],
+                  child: Chip(
+                    avatar: const Icon(Icons.sort, size: 18),
+                    label: Text('Sort: ${_query.order.label}'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: FilledButton.tonalIcon(
+              key: const Key('radio_auto_explore_button'),
+              style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48)),
+              icon: const Icon(Icons.shuffle),
+              label: Text(radio.exploring
+                  ? 'Restart auto explore with these filters'
+                  : 'Auto explore'),
+              onPressed: () => radio.startExplore(_query),
+            ),
+          ),
+          if (_error != null)
+            _Message(
+              key: const Key('radio_explore_error'),
+              icon: Icons.cloud_off,
+              text: _error!,
+              actionLabel: 'Retry',
+              onAction: _load,
+            )
+          else if (!_loading && _stations.isEmpty)
+            const _Message(
+              key: Key('radio_explore_empty'),
+              icon: Icons.radio,
+              text: 'No stations match these filters.',
+            ),
+          for (final station in _stations) StationTile(station: station),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_hasMore && _error == null)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: OutlinedButton(
+                key: const Key('radio_load_more'),
+                onPressed: () => _load(more: true),
+                child: const Text('Load more stations'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.onPressed,
+    required this.onClear,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool active;
+  final VoidCallback onPressed;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!active) {
+      return ActionChip(
+        avatar: Icon(icon, size: 18),
+        label: Text(label),
+        onPressed: onPressed,
+      );
+    }
+    return InputChip(
+      avatar: Icon(icon, size: 18),
+      label: Text(label),
+      selected: true,
+      onPressed: onPressed,
+      onDeleted: onClear,
+      deleteButtonTooltipMessage: 'Clear filter',
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Bookmarks
+// -----------------------------------------------------------------------------
+
+class RadioBookmarksTab extends ConsumerStatefulWidget {
+  const RadioBookmarksTab({super.key});
+
+  @override
+  ConsumerState<RadioBookmarksTab> createState() => _RadioBookmarksTabState();
+}
+
+class _RadioBookmarksTabState extends ConsumerState<RadioBookmarksTab>
+    with AutomaticKeepAliveClientMixin {
+  List<RadioStation>? _stations;
+  String? _error;
+  int _generation = 0;
+  int? _loadedRevision;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   Future<void> _load() async {
-    final api = _captureApi(), generation = ++_loadGeneration;
-    bool current() =>
-        mounted && generation == _loadGeneration && api.isCurrent();
-    setState(() {
-      _loading = true;
-      _loadingApi = api;
-      _error = null;
-    });
+    if (!mounted) return;
+    final generation = ++_generation;
+    final radio = ref.read(radioControllerProvider);
+    _loadedRevision = radio.bookmarkRevision;
+    setState(() => _error = null);
     try {
-      final rows = await api.list();
-      if (current()) {
-        setState(() {
-          _stations = rows;
-          _stationsApi = api;
-          _art.clear();
-        });
-      }
-    } catch (_) {
-      if (current()) {
-        setState(() => _error =
-            'Could not load stations. Check your connection, then retry.');
-      }
-    } finally {
-      if (current()) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _play(Map<String, dynamic> station) async {
-    final scope = _stationsApi;
-    if (scope == null || !scope.isCurrent()) {
-      await _load();
-      return;
-    }
-    final attempt = ++_attempt;
-    final handler = ref.read(audioHandlerProvider);
-    final coordinator = ref.read(playbackSessionCoordinatorProvider);
-    final base = ref.read(playerBaseUrlProvider);
-    final user = ref.read(authStateProvider).valueOrNull?.user;
-    if (user == null) return;
-    final mutations = ref.read(credentialMutationQueueProvider);
-    final accountGeneration = mutations.generation;
-    final api = ref.read(apiClientProvider);
-    final uri =
-        Uri.parse('${api.baseUrl}/api/v1/radio/${station['id']}/stream');
-    setState(() {
-      _opening = station['id'] as int;
-      _playError = null;
-    });
-    PlaybackSessionLease? lease;
-    bool current() =>
-        mounted &&
-        attempt == _attempt &&
-        lease?.isCurrent == true &&
-        mutations.generation == accountGeneration &&
-        scope.isCurrent();
-    try {
-      lease = await coordinator.claim(
-          kind: PlaybackSourceKind.server,
-          identity: 'radio:${base.origin}:${user.id}:${station['id']}',
-          stop: handler.stop,
-          sourceUri: uri.toString());
-      _pendingLease = lease;
-      if (!current()) {
-        await lease?.stop();
-        return;
-      }
-      final generation = handler.beginSourceSession(
-          ownsSource: () => lease?.isCurrent == true);
-      final transport = handler.transportRevision;
-      final request = LiveRadioPlaybackRequest(
-          stationId: station['id'] as int,
-          serverOrigin: base.origin,
-          userId: user.id,
-          sourceUri: uri,
-          title: station['name'] as String,
-          artworkUri: (station['artwork_url'] as String).isEmpty
-              ? null
-              : Uri.parse(
-                  '${api.baseUrl}/api/v1/radio/${station['id']}/artwork'));
-      handler.setMediaRequest(request);
-      final headers = await accountRequestHeaders(
-          uri: uri,
-          baseUrl: base,
-          storage: ref.read(tokenStorageProvider),
-          cookieJar: ref.read(cookieJarProvider),
-          mutations: mutations);
-      final routed = await ref.read(serverEndpointRouterProvider).resolve(uri);
-      if (!current()) return;
-      if (headers.isEmpty) throw StateError('Sign in to play stations.');
-      await handler.loadLiveSourceForSession(
-          AudioSource.uri(routed, headers: headers), generation, transport);
-      if (!current()) return;
-    } catch (_) {
-      if (current()) {
-        await handler.player.stop();
-        if (mounted) {
-          setState(() => _playError =
-              'Station unavailable or offline. Retry to reconnect.');
-        }
-      }
-    } finally {
-      if (mounted && attempt == _attempt) setState(() => _opening = null);
-    }
-  }
-
-  Future<Uint8List> _artwork(int id) =>
-      _art.putIfAbsent(id, () => _stationsApi!.artwork(id));
-  Widget _cover(Map<String, dynamic> station) => SizedBox(
-      width: 56,
-      height: 56,
-      child: (station['artwork_url'] as String).isEmpty
-          ? const Icon(Icons.radio)
-          : FutureBuilder<Uint8List>(
-              future: _artwork(station['id'] as int),
-              builder: (_, snapshot) => snapshot.hasData
-                  ? Image.memory(snapshot.data!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Icon(Icons.radio))
-                  : const Icon(Icons.radio)));
-  Future<void> _edit([Map<String, dynamic>? station]) async {
-    final api = station == null ? _captureApi() : _stationsApi;
-    if (api == null || !api.isCurrent()) {
-      await _load();
-      return;
-    }
-    final saved = await showDialog<bool>(
-        context: context,
-        builder: (_) => RadioStationEditor(station: station, api: api));
-    if (saved == true && mounted && api.isCurrent()) await _load();
-  }
-
-  Future<void> _delete(Map<String, dynamic> station) async {
-    final api = _stationsApi;
-    if (api == null || !api.isCurrent()) {
-      await _load();
-      return;
-    }
-    final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-                title: const Text('Remove station?'),
-                content: Text('Remove ${station['name']} for everyone?'),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancel')),
-                  FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Remove'))
-                ]));
-    if (confirmed != true || !mounted || !api.isCurrent()) return;
-    try {
-      await api.remove(station['id'] as int);
-      if (!mounted || !api.isCurrent()) return;
-      final handler = ref.read(audioHandlerProvider);
-      if (handler.currentMetadataRequest case LiveRadioPlaybackRequest request
-          when request.stationId == station['id']) {
-        await ref.read(playbackSessionCoordinatorProvider).stopCurrent();
-      }
-      if (mounted) await _load();
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Could not remove station. Retry when connected.')));
-      }
-    }
-  }
-
-  Future<void> _website(String address) async {
-    try {
-      await openMetadataLink(address);
-      return;
-    } catch (_) {
-      /* Show the same actionable message for unavailable handlers. */
-    }
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open station website.')));
+      final stations = await ref.read(apiClientProvider).listRadioBookmarks();
+      if (!mounted || generation != _generation) return;
+      radio.rememberBookmarks(stations, complete: true);
+      setState(() => _stations = stations);
+    } catch (error) {
+      if (!mounted || generation != _generation) return;
+      setState(() => _error = radioErrorMessage(error));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final admin =
-        ref.watch(authStateProvider).valueOrNull?.user?.isAdmin == true;
-    final handler = ref.watch(audioHandlerProvider);
-    ref.watch(apiClientProvider);
-    final currentStations = _stationsApi?.isCurrent() == true;
-    final stations = (currentStations
-            ? (_stations ?? [])
-            : <Map<String, dynamic>>[])
-        .where((s) =>
-            (s['name'] as String).toLowerCase().contains(_query.toLowerCase()))
-        .toList();
-    return Scaffold(
-        appBar: AppBar(title: const Text('Internet radio'), actions: [
-          IconButton(
-              tooltip: 'Refresh stations',
-              onPressed: _loading ? null : _load,
-              icon: const Icon(Icons.refresh)),
-          if (admin)
-            IconButton(
-                tooltip: 'Add station',
-                onPressed: () => _edit(),
-                icon: const Icon(Icons.add))
-        ]),
-        body: Column(children: [
-          Padding(
-              padding: const EdgeInsets.all(16),
+    super.build(context);
+    final radio = ref.watch(radioControllerProvider);
+    if (_loadedRevision != null && radio.bookmarkRevision != _loadedRevision) {
+      // A station was bookmarked or removed elsewhere: show the new list.
+      _loadedRevision = radio.bookmarkRevision;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    }
+    final stations = _stations;
+    final Widget content;
+    if (_error != null && stations == null) {
+      content = _Message(
+        key: const Key('radio_bookmarks_error'),
+        icon: Icons.cloud_off,
+        text: _error!,
+        actionLabel: 'Retry',
+        onAction: _load,
+      );
+    } else if (stations == null) {
+      content = const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    } else if (stations.isEmpty) {
+      content = const _Message(
+        key: Key('radio_bookmarks_empty'),
+        icon: Icons.bookmark_border,
+        text: 'No bookmarked stations yet. Tap the bookmark button of a '
+            'station to keep it here.',
+      );
+    } else {
+      content = Column(
+        children: [for (final s in stations) StationTile(station: s)],
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        key: const Key('radio_bookmarks_list'),
+        children: [content],
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Station tile and now-playing bar
+// -----------------------------------------------------------------------------
+
+/// One station: tap plays it, the trailing button toggles its bookmark.
+class StationTile extends ConsumerWidget {
+  const StationTile({super.key, required this.station});
+
+  final RadioStation station;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final radio = ref.watch(radioControllerProvider);
+    final onAir = radio.station?.uuid == station.uuid;
+    return ListTile(
+      key: Key('radio_station_${station.uuid}'),
+      minVerticalPadding: 10,
+      selected: onAir,
+      leading: StationIcon(station: station),
+      title: Text(station.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: station.summary.isEmpty
+          ? null
+          : Text(station.summary, maxLines: 2, overflow: TextOverflow.ellipsis),
+      trailing: BookmarkStationButton(station: station),
+      onTap: () => radio.play(station),
+    );
+  }
+}
+
+/// Toggles the bookmark of [station]; shows a snack bar when that fails.
+class BookmarkStationButton extends ConsumerWidget {
+  const BookmarkStationButton({super.key, required this.station});
+
+  final RadioStation station;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final radio = ref.watch(radioControllerProvider);
+    final bookmarked = radio.isBookmarked(station);
+    return IconButton(
+      key: Key('radio_bookmark_${station.uuid}'),
+      tooltip: bookmarked ? 'Remove bookmark' : 'Bookmark station',
+      isSelected: bookmarked,
+      icon: const Icon(Icons.bookmark_border),
+      selectedIcon: const Icon(Icons.bookmark),
+      onPressed: radio.isBookmarkPending(station)
+          ? null
+          : () async {
+              final messenger = ScaffoldMessenger.maybeOf(context);
+              try {
+                await radio.toggleBookmark(station);
+              } catch (error) {
+                messenger?.showSnackBar(
+                    SnackBar(content: Text(radioErrorMessage(error))));
+              }
+            },
+    );
+  }
+}
+
+/// The station's favicon (relayed by the server), or a radio icon.
+class StationIcon extends ConsumerWidget {
+  const StationIcon({super.key, required this.station, this.size = 44});
+
+  final RadioStation station;
+  final double size;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fallback = SizedBox(
+      width: size,
+      height: size,
+      child: Icon(Icons.radio, size: size * 0.6),
+    );
+    if (station.faviconUrl.isEmpty) return fallback;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: AuthenticatedNetworkImage(
+        imageUrl: ref.read(apiClientProvider).radioUrl(station.faviconUrl),
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => fallback,
+        errorWidget: (_, __, ___) => fallback,
+      ),
+    );
+  }
+}
+
+/// The station on air with its controls, and the auto-explore controls
+/// while exploring. Hidden when nothing plays.
+class RadioNowPlayingBar extends ConsumerWidget {
+  const RadioNowPlayingBar({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final radio = ref.watch(radioControllerProvider);
+    final station = radio.station;
+    final theme = Theme.of(context);
+    if (station == null) {
+      final message = radio.exploreMessage;
+      if (message == null) return const SizedBox.shrink();
+      return Material(
+        elevation: 8,
+        child: SafeArea(
+          top: false,
+          child: ListTile(
+            key: const Key('radio_explore_message'),
+            leading: const Icon(Icons.info_outline),
+            title: Text(message),
+          ),
+        ),
+      );
+    }
+    final statusText = switch (radio.status) {
+      RadioStatus.loading => 'Connecting…',
+      RadioStatus.playing => 'Live',
+      RadioStatus.paused => 'Paused',
+      RadioStatus.error => radio.error ?? 'Cannot play this station.',
+      RadioStatus.idle => '',
+    };
+    return Material(
+      key: const Key('radio_now_playing'),
+      elevation: 8,
+      color: theme.colorScheme.surfaceContainer,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  StationIcon(station: station, size: 40),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(station.name,
+                            key: const Key('radio_now_playing_name'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium),
+                        Text(statusText,
+                            key: const Key('radio_now_playing_status'),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                                color: radio.status == RadioStatus.error
+                                    ? theme.colorScheme.error
+                                    : null)),
+                      ],
+                    ),
+                  ),
+                  if (radio.status == RadioStatus.loading)
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  else
+                    IconButton(
+                      key: const Key('radio_play_pause'),
+                      iconSize: 32,
+                      tooltip: switch (radio.status) {
+                        RadioStatus.playing => 'Pause',
+                        RadioStatus.error => 'Retry',
+                        _ => 'Play',
+                      },
+                      icon: Icon(switch (radio.status) {
+                        RadioStatus.playing => Icons.pause_circle_filled,
+                        RadioStatus.error => Icons.refresh,
+                        _ => Icons.play_circle_filled,
+                      }),
+                      onPressed: radio.togglePause,
+                    ),
+                  BookmarkStationButton(station: station),
+                  IconButton(
+                    key: const Key('radio_stop'),
+                    tooltip: 'Stop radio',
+                    icon: const Icon(Icons.stop),
+                    onPressed: radio.stop,
+                  ),
+                ],
+              ),
+              if (radio.exploring) const _ExploreControls(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExploreControls extends ConsumerWidget {
+  const _ExploreControls();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final radio = ref.watch(radioControllerProvider);
+    final countdown = radio.status == RadioStatus.playing
+        ? 'Next station in ${radio.secondsLeft} s'
+        : 'Tuning in…';
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, right: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.shuffle, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Auto explore · $countdown',
+                    key: const Key('radio_explore_countdown')),
+              ),
+              SegmentedButton<Duration>(
+                key: const Key('radio_explore_dwell'),
+                showSelectedIcon: false,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                segments: [
+                  for (final d in radioExploreDwellChoices)
+                    ButtonSegment(
+                      value: d,
+                      label: Text('${d.inSeconds}s',
+                          key: Key('radio_dwell_${d.inSeconds}')),
+                      tooltip: 'Stay ${d.inSeconds} seconds per station',
+                    ),
+                ],
+                selected: {radio.dwell},
+                onSelectionChanged: (s) => radio.setDwell(s.first),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  key: const Key('radio_explore_keep'),
+                  icon: const Icon(Icons.check),
+                  label: const Text('Keep'),
+                  onPressed: radio.keep,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('radio_explore_next'),
+                  icon: const Icon(Icons.skip_next),
+                  label: const Text('Next'),
+                  onPressed: radio.exploreNext,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('radio_explore_stop'),
+                  icon: const Icon(Icons.stop),
+                  label: const Text('Stop'),
+                  onPressed: radio.stopExplore,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+
+class _Message extends StatelessWidget {
+  const _Message({
+    super.key,
+    required this.icon,
+    required this.text,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String text;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          Icon(icon, size: 48),
+          const SizedBox(height: 12),
+          Text(text, textAlign: TextAlign.center),
+          if (actionLabel != null) ...[
+            const SizedBox(height: 12),
+            FilledButton(onPressed: onAction, child: Text(actionLabel!)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Option {
+  const _Option(this.value, this.label, this.count);
+
+  final String value;
+  final String label;
+  final int count;
+}
+
+/// The user's choice in a [_PickerSheet]; [value] null means "any".
+class _Pick {
+  const _Pick(this.value, this.label);
+
+  final String? value;
+  final String? label;
+}
+
+/// Bottom sheet listing genres or countries with a filter field.
+class _PickerSheet extends StatefulWidget {
+  const _PickerSheet({
+    required this.title,
+    required this.searchHint,
+    required this.load,
+  });
+
+  final String title;
+  final String searchHint;
+  final Future<List<_Option>> Function() load;
+
+  @override
+  State<_PickerSheet> createState() => _PickerSheetState();
+}
+
+class _PickerSheetState extends State<_PickerSheet> {
+  late Future<List<_Option>> _options = widget.load();
+  String _filter = '';
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.75,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: TextField(
-                  decoration: const InputDecoration(
-                      labelText: 'Search stations',
-                      prefixIcon: Icon(Icons.search)),
-                  onChanged: (value) => setState(() => _query = value))),
-          if (_loading && _loadingApi?.isCurrent() == true)
-            const LinearProgressIndicator(),
-          if (_stationsApi != null && !currentStations ||
-              _loadingApi != null && !_loadingApi!.isCurrent())
-            TextButton(
-                onPressed: _load,
-                child: const Text('Account changed. Refresh stations.')),
-          if (_error != null)
-            Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(children: [
-                  Text(_error!),
-                  TextButton(onPressed: _load, child: const Text('Retry'))
-                ])),
-          if (_stations != null && stations.isEmpty)
-            Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(_query.isEmpty
-                    ? 'No stations yet. Ask an administrator to add one.'
-                    : 'No matching stations.')),
-          Expanded(
-              child: StreamBuilder<PlaybackState>(
-                  stream: handler.playbackState,
-                  builder: (context, snapshot) {
-                    final request = handler.currentMetadataRequest;
-                    final state = snapshot.data;
-                    return ListView.builder(
-                        itemCount: stations.length,
-                        itemBuilder: (context, index) {
-                          final station = stations[index];
-                          final active = request is LiveRadioPlaybackRequest &&
-                              request.stationId == station['id'];
-                          final busy = _opening == station['id'] ||
-                              active &&
-                                  (state?.processingState ==
-                                          AudioProcessingState.loading ||
-                                      state?.processingState ==
-                                          AudioProcessingState.buffering);
-                          final failed = active &&
-                              (_playError != null ||
-                                  state?.processingState ==
-                                      AudioProcessingState.error ||
-                                  state?.processingState ==
-                                      AudioProcessingState.completed);
-                          final status = busy
-                              ? 'Buffering…'
-                              : failed
-                                  ? (_playError ??
-                                      'Station disconnected. Retry to reconnect.')
-                                  : active && state?.playing == true
-                                      ? 'Live'
-                                      : active
-                                          ? 'Stopped · Play reconnects live'
-                                          : 'Live radio';
-                          return Card(
-                              child: Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        ListTile(
-                                            leading: _cover(station),
-                                            title:
-                                                Text(station['name'] as String),
-                                            subtitle: Text(status),
-                                            trailing: admin
-                                                ? PopupMenuButton<String>(
-                                                    tooltip: 'Manage station',
-                                                    onSelected: (action) =>
-                                                        action == 'edit'
-                                                            ? _edit(station)
-                                                            : _delete(station),
-                                                    itemBuilder: (_) => [
-                                                          const PopupMenuItem(
-                                                              value: 'edit',
-                                                              child:
-                                                                  Text('Edit')),
-                                                          const PopupMenuItem(
-                                                              value: 'delete',
-                                                              child: Text(
-                                                                  'Remove'))
-                                                        ])
-                                                : null),
-                                        Wrap(spacing: 8, children: [
-                                          FilledButton.icon(
-                                              onPressed: busy
-                                                  ? null
-                                                  : active &&
-                                                          state?.playing == true
-                                                      ? () => handler.pause()
-                                                      : () => _play(station),
-                                              icon: Icon(active &&
-                                                      state?.playing == true
-                                                  ? Icons.stop
-                                                  : Icons.play_arrow),
-                                              label: Text(busy
-                                                  ? 'Buffering'
-                                                  : active &&
-                                                          state?.playing == true
-                                                      ? 'Stop'
-                                                      : failed
-                                                          ? 'Retry'
-                                                          : 'Play')),
-                                          if ((station['homepage_url']
-                                                  as String)
-                                              .isNotEmpty)
-                                            TextButton(
-                                                onPressed: () => _website(
-                                                    station['homepage_url']
-                                                        as String),
-                                                child: const Text(
-                                                    'Station website'))
-                                        ])
-                                      ])));
-                        });
-                  }))
-        ]));
+                key: const Key('radio_picker_filter'),
+                autofocus: false,
+                decoration: InputDecoration(
+                  labelText: widget.searchHint,
+                  prefixIcon: const Icon(Icons.search),
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (text) =>
+                    setState(() => _filter = text.trim().toLowerCase()),
+              ),
+            ),
+            Expanded(
+              child: FutureBuilder<List<_Option>>(
+                future: _options,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return _Message(
+                      icon: Icons.cloud_off,
+                      text: radioErrorMessage(snapshot.error!),
+                      actionLabel: 'Retry',
+                      onAction: () => setState(() => _options = widget.load()),
+                    );
+                  }
+                  final options = snapshot.data;
+                  if (options == null) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final shown = options
+                      .where((o) => o.label.toLowerCase().contains(_filter))
+                      .toList();
+                  return ListView(
+                    key: const Key('radio_picker_list'),
+                    children: [
+                      ListTile(
+                        key: const Key('radio_picker_any'),
+                        leading: const Icon(Icons.all_inclusive),
+                        title: Text('Any ${widget.title.toLowerCase()}'),
+                        onTap: () =>
+                            Navigator.of(context).pop(const _Pick(null, null)),
+                      ),
+                      for (final o in shown)
+                        ListTile(
+                          key: Key('radio_picker_${o.value}'),
+                          title: Text(o.label),
+                          trailing: o.count > 0 ? Text('${o.count}') : null,
+                          onTap: () => Navigator.of(context)
+                              .pop(_Pick(o.value, o.label)),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
-}
-
-class RadioStationEditor extends StatefulWidget {
-  const RadioStationEditor({super.key, this.station, required this.api});
-  final RadioApi api;
-  final Map<String, dynamic>? station;
-  @override
-  State<RadioStationEditor> createState() => _StationEditorState();
-}
-
-class _StationEditorState extends State<RadioStationEditor> {
-  late final _fields = {
-    for (final key in ['name', 'stream_url', 'homepage_url', 'artwork_url'])
-      key: TextEditingController(text: widget.station?[key] as String? ?? '')
-  };
-  late bool _local = widget.station?['local_network'] == true;
-  bool _saving = false;
-  String? _error;
-  @override
-  void dispose() {
-    for (final field in _fields.values) {
-      field.dispose();
-    }
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      final data = {
-        for (final field in _fields.entries) field.key: field.value.text.trim(),
-        'local_network': _local
-      };
-      await widget.api.save(widget.station?['id'] as int?, data);
-      if (mounted) Navigator.pop(context, true);
-    } on DioException catch (error) {
-      if (mounted) {
-        setState(() => _error = !widget.api.isCurrent()
-            ? 'Account changed. Close this dialog and refresh stations.'
-            : error.response?.data is Map
-                ? '${(error.response!.data as Map)['error']}'
-                : 'Could not save station. Check connection and retry.');
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() => _error = widget.api.isCurrent()
-            ? 'Could not save station. Check connection and retry.'
-            : 'Account changed. Close this dialog and refresh stations.');
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-          title: Text(widget.station == null ? 'Add station' : 'Edit station'),
-          content: SingleChildScrollView(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-            for (final field in _fields.entries)
-              Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: TextField(
-                      controller: field.value,
-                      keyboardType: field.key == 'name'
-                          ? TextInputType.text
-                          : TextInputType.url,
-                      decoration: InputDecoration(
-                          labelText: switch (field.key) {
-                        'name' => 'Station name',
-                        'stream_url' => 'Stream URL',
-                        'homepage_url' => 'Website URL (optional)',
-                        _ => 'Artwork URL (optional)'
-                      }))),
-            CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Allow local-network station'),
-                subtitle: const Text(
-                    'Permit private or loopback stream and artwork hosts.'),
-                value: _local,
-                onChanged: _saving
-                    ? null
-                    : (value) => setState(() => _local = value!)),
-            if (_error != null)
-              Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error))
-          ])),
-          actions: [
-            TextButton(
-                onPressed: _saving ? null : () => Navigator.pop(context),
-                child: const Text('Cancel')),
-            FilledButton(
-                onPressed: _saving ? null : _save,
-                child: Text(_saving ? 'Saving…' : 'Save'))
-          ]);
 }

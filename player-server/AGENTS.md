@@ -149,6 +149,7 @@ Global shortcuts are registered in `web/js/keyboard.js`. They are **disabled** w
 | `F` | Toggle favorite for the selected media |
 | `A` | Open the admin panel (admins only) |
 | `u` | Upload to the current set |
+| `w` | Open web radio (explore, auto explore, bookmarks); inside it `j`/`k`/arrows move between stations, `Enter` plays, `Esc` closes while the station keeps playing |
 
 ---
 
@@ -236,8 +237,6 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 | `MAX_UPLOAD_SIZE_MB` | `100` | ≥ 1 | Max upload size per file (MB) |
 | `SESSION_TIMEOUT_HOURS` | `24` | ≥ 1 | Cookie / session expiry |
 | `GC_INTERVAL_MINUTES` | `30` | ≥ 1 | Garbage collector tick interval |
-| `SCAN_WATCH_SECONDS` | `0` (off) | 0 or 10–86400 | Poll source metadata for changes; automatic inventory scan on change |
-| `SCAN_INTERVAL_MINUTES` | `0` (off) | 0–10080 | Scheduled automatic inventory scan interval |
 | `SHARE_DEFAULT_EXPIRY_DAYS` | `7` | ≥ 1 | Default share link lifetime |
 | `MEDIA_PAGE_SIZE` | `100` | ≥ 1 | Items displayed per thumbnail grid page |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` | Log verbosity |
@@ -247,17 +246,9 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 | `TRANSCODE_CACHE_MAX_MB` | `4096` | ≥ 1 | Size the transcode cache is pruned back to (least recently used first); also the largest single rendition |
 | `TRANSCODE_MAX_JOBS` | `1` | ≥ 1 | Parallel ffmpeg transcodes; each needs about 400 MB of memory at 1080p |
 | `THUMBNAIL_CACHE_DIR` | unset | writable directory outside `MEDIA_ROOT` | When set, all generated thumbnails are stored there (mirroring the media tree) instead of in `.thumbnails` beside each media file; unset keeps them beside the media |
-| `MUSIC_ENRICHMENT_URL` | unset (disabled) | HTTP(S) JSON agent endpoint | Optional artist/album biography, image and links; explicit admin refresh only. Implements the [Player external-agent contract](../docs/music-m10-implementation.md), not arbitrary provider APIs. |
-| `LYRICS_PROVIDER_URL` | unset (disabled) | HTTP(S) JSON agent endpoint without user info or fragment | Optional lyrics; explicit authenticated lookup with media access only. GET playback/download requests never launch provider lookup. See [A03c contract](../docs/music-a03c-implementation.md). |
-| `PLUGIN_DIR` | unset (empty) | directory of plugin folders | Optional A08 WASM plugins (`manifest.json` + entry wasm per subdirectory). Empty means no plugins; music playback never requires them. |
-| `PROXY_AUTH_TRUSTED_SOURCES` | unset (disabled) | comma-separated CIDRs and optional `@` | Enables reverse-proxy authentication for peers in these ranges (`@` = UNIX socket). Empty keeps password/Bearer-only auth. |
-| `PROXY_AUTH_USER_HEADER` | `Remote-User` when proxy auth is on | non-empty header name | Header trusted proxies set to the Player username (exact `users.username` match; no auto-create). Requires `PROXY_AUTH_TRUSTED_SOURCES`. |
-| `PROXY_AUTH_LOGOUT_URL` | unset | absolute URL | When set with proxy auth, `POST /api/logout` returns `{"logout_url"}` for IdP logout. Requires `PROXY_AUTH_TRUSTED_SOURCES`. |
-| `SUBSONIC_ENABLED` | `false` | `true` / `false` | Optional Subsonic/OpenSubsonic `/rest` compatibility (A01a auth + library browse/search). Off by default; Player `/api` routes stay intact. |
-| `JUKEBOX_ENABLED` | `false` | `true` / `false` | Optional A02a server-host audio (admin remote control). Off by default; ordinary client streaming never requires it. |
-| `JUKEBOX_MPV_PATH` | `mpv` | executable path | Binary used by the bounded MPV adapter when jukebox is enabled. |
-
-**Reverse-proxy auth:** only the immediate peer (`RemoteAddr`) is checked — never `X-Forwarded-For`. The proxy must strip client-supplied user headers and set the configured header only after authentication. Untrusted clients forging the header are ignored. See `docs/api.md` (Authentication §3).
+| `RADIO_BROWSER_URL` | `https://all.api.radio-browser.info` | http(s) URL | Radio Browser API that web radio searches |
+| `RADIO_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let the radio relay connect to loopback/private addresses (stations on your own network); off by default because station entries come from a public directory |
+| `PODCAST_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let podcast feed, cover and episode downloads connect to loopback/private addresses (feeds on your own network); off by default because feeds are third-party documents whose URLs must not reach services on the server's network |
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
 
@@ -286,17 +277,7 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 
 ## Podcast Support
 
-Podcasts live under one shared **podcast set** (`sets.is_podcast = 1`, `root_path = "podcast"`). Each catalog feed is a `podcast_feeds` row and gets its own folder inside that single set.
-
-The contract is `../docs/podcast-sync-contract.md`. Keep its three kinds of state apart:
-
-- **Catalog** (`podcast_feeds`, `podcast_episodes`, shared): identified by `feed_key` / `episode_key` (`internal/podcast/identity*.go`, shared test vectors in `internal/podcast/testdata/identity-vectors.json`); database and media ids are never identities. Episodes are ingested only through `IngestFeedEpisodes` (`podcast.MatchEpisodes` on the whole document), never inserted one by one. Aliases (`podcast_feed_aliases`, `podcast_episode_aliases`) come only from the server's own observations (ingest, 301/308, `new-feed-url`), never from client input.
-- **Per-account state** (`podcast_subscriptions`, `podcast_episode_state`): last-writer-wins registers with edit-time millisecond clocks; equal clocks keep the stored value; unsubscribe is a tombstone kept forever. Every written row takes its own `change_seq` from `podcast_sync_seq` inside the write transaction (`nextChangeSeq`). These tables reference only `users` (listed in `userOwned`), never `media` or `podcast_episodes`.
-- **Availability** (server copies, device downloads): never synchronized.
-
-`migratePodcastSync` (`repository/podcast_sync_migration.go`) upgrades every database, fresh or old: `tablesSchema` still creates the two podcast tables in their pre-sync shape. Do not reuse `UnsubscribeFeed` (`DELETE /api/podcasts/{id}`) for unsubscribing or file cleanup: it removes server copies, and the catalog row only when nobody is subscribed. Catalog rows a non-admin subscription created are fetched (feed, cover, enclosure) only through the restricted client of `service/podcast_outbound.go` (public unicast addresses, checked in the dialer); the checker skips feeds without an active subscription.
-
-Episode registers are the only listening history of an episode (contract §7.1). Every write goes through `mergeEpisodeEdit` (`repository/podcast_episode_register.go`), which stores a changed row under a new `change_seq` and rewrites the `playback_progress` mirror of every server copy (`writeEpisodeMirror`: `finished = completed && completion_ms >= position_ms`, an unfinished position within 5 s of the copy's end projected as 0 per §4.2, `accumulated_seconds` kept) in the same transaction: the sync API, the legacy toggle (`ToggleEpisodeCompletion`) and, for media linked to an episode, the progress routes (`podcast_episode_bridge.go`: `UpsertProgress`, `FinishProgress`, `ResetProgressAt`, `SyncPlayback` decide by the registers' clocks, clamp clocks per §4 rule 4 against the store's clock (`SQLite.WithClock`, wired to the services' clock), and never write `playback_resets`). The progress service asks `PositionEditTime` (position register) before a save and `ProgressEditTime` (latest of both) for server-time ties. A new download seeds mirrors (`UpdateEpisodeMedia`). `podcast_status` is read-only for one release: never read or write it. Keep any new write path of episode copies on this bridge. In the web UI, **Unsubscribe** (`web/js/podcast-subscriptions.js`) posts a tombstone to `/api/podcasts/sync`; only the admin **Remove from server** button calls the DELETE.
+Podcasts live under one shared **podcast set** (`sets.is_podcast = 1`, `root_path = "podcast"`). Each subscribed podcast is a `podcast_feeds` row and gets its own folder inside that single set.
 
 ### Subscribing
 
@@ -306,17 +287,10 @@ Admin opens the **Podcasts** button in the admin panel (or calls `POST /api/podc
 
 ### Episode Management
 
-The web sidebar lists **All podcast episodes** and one row per subscribed feed
-(`feed_key`). Those views call `GET /api/podcasts/episodes` with completion
-filters (`uncompleted` default, `completed`, `all`) and pagination; downloaded
-episodes stay as podcast cards via `server_copy`. Mark completed/uncompleted
-writes a sync completion edit (`web/js/podcast-episode-state.js`).
-
-The shared podcast set browse grid still shows undownloaded episode cards and
-downloaded media as ordinary cards:
+Episodes are stored in `podcast_episodes` and rendered in the browse grid under the shared podcast set:
 - **Undownloaded** episodes show a **Download to server** button (calls `POST /api/podcasts/episodes/{id}/download`).
-- **Downloaded** episodes become regular `media` rows in set browse.
-- Users can mark episodes completed/uncompleted via the checkmark button.
+- **Downloaded** episodes become regular `media` rows and appear as normal media cards.
+- Users can mark episodes as listened/unlistened via the checkmark button.
 
 ### Background Feed Checker
 
@@ -327,17 +301,15 @@ A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable v
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/podcasts` | List subscribed podcast feeds |
-| `POST` | `/api/podcasts` | Subscribe to a new feed (admin); also writes the admin's subscription register |
-| `POST` | `/api/podcasts/sync` | Synchronize the caller's subscription and episode registers (any user); advertised as `podcast_sync` in `/api/config` |
-| `DELETE` | `/api/podcasts/{id}` | Remove a feed's server copies; the feed itself only when nobody is subscribed (admin) |
-| `GET` | `/api/podcasts/episodes` | Subscribed / all-episodes views (`feed_key`, `filter`, page; contract §6.3) |
-| `GET` | `/api/podcasts/{id}/episodes` | List episodes by set id (legacy) |
+| `POST` | `/api/podcasts` | Subscribe to a new feed (admin) |
+| `DELETE` | `/api/podcasts/{id}` | Unsubscribe a feed and delete its downloaded episodes (admin) |
+| `GET` | `/api/podcasts/{id}/episodes` | List episodes with status |
 | `POST` | `/api/podcasts/episodes/{id}/download` | Server-side download |
-| `POST` | `/api/podcasts/episodes/{id}/complete` | Toggle the caller's completion register (manual edit at server time) |
+| `POST` | `/api/podcasts/episodes/{id}/complete` | Toggle completion |
 
 ### New Files
 
-- `internal/model/podcast.go` — PodcastFeed, PodcastEpisode, episode views
+- `internal/model/podcast.go` — PodcastFeed, PodcastEpisode, PodcastStatus
 - `internal/repository/podcast.go` — CRUD and queries
 - `internal/podcast/feed.go` — RSS/Atom parser using `gofeed`
 - `internal/podcast/cover.go` — Cover image downloader
@@ -345,6 +317,35 @@ A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable v
 - `internal/api/handlers_podcast.go` — REST handlers
 - `internal/service/import.go` — Shared `ImportMediaFile` helper (used by uploads + downloader)
 - `web/js/podcasts.js` — Feed manager modal and episode renderer
+
+---
+
+## Web Radio
+
+Stations come from the Radio Browser directory (`internal/radio.BrowserDirectory`,
+`RADIO_BROWSER_URL`); routes and JSON are in `docs/api.md` ("Web Radio").
+Layers: `internal/radio` (directory client, guarded `Fetcher`) →
+`service.RadioService` (validation, station cache, bookmarks, stream slots) →
+`api/handlers_radio.go`. Bookmarks live in `radio_bookmarks` (per user, with
+a copy of the station data so they play while the directory is down).
+
+- **Never send a station's own URL to a client.** Clients get relay paths
+  (`/api/radio/stations/{uuid}/stream`, `/favicon`); the relay only fetches
+  URLs the directory or a bookmark gave for that UUID. Do not add an
+  endpoint that relays a client-supplied URL.
+- **The relay refuses non-public addresses** in the dialer's `Control`
+  function (`radio.PublicAddr`), so redirects and DNS answers are covered.
+  The transport has no proxy on purpose. `RADIO_ALLOW_PRIVATE_NETWORKS=true`
+  lifts it (home stations, e2e tests).
+- **Streams outlive the 30 s write timeout:** `relayStream` sets a deadline
+  per write and ends the relay after 30 s without station data. HLS stations
+  are dropped at the directory client; playlists answered by a station are
+  `415`. Favicons: raster images only (an SVG on our origin could run
+  script), at most 1 MiB, with `X-Content-Type-Options: nosniff` and
+  `Content-Security-Policy: sandbox` like streams.
+- **Tests:** `internal/app/radio_test.go` drives the production wiring with a
+  fake directory and station; `internal/radio/fetch_test.go` covers the
+  address guard, content types and Shoutcast `ICY 200 OK` answers.
 
 ---
 
@@ -405,19 +406,18 @@ A share's `max_uses` counts **viewings**, not HTTP requests. Browsers and player
 
 ---
 
-## Auth Middleware — Bearer / Cookie / Trusted-Proxy Unified Pattern
+## Auth Middleware — Bearer-or-Cookie Unified Pattern
 
 `RequireSession` in `internal/api/middleware.go` implements a single unified
 authentication path: it tries a Bearer token first (via the `Authorization:
-Bearer <token>` header), then a valid `session` cookie, then (when
-`PROXY_AUTH_TRUSTED_SOURCES` is configured) a username from the trusted
-reverse-proxy header. All paths resolve to the same `*model.Session` value in
-the request context, so all downstream handlers are auth-method-agnostic. Do
-not add a separate middleware or a parallel code path for Bearer-only,
-cookie-only, or proxy-only routes — doing so would create duplicate auth logic
-and silently break the unified contract. If you need to handle a new auth
-mechanism, extend `authenticate()` inside `Middleware` and keep the single
-`RequireSession` wrapper as the sole gate for session-required routes.
+Bearer <token>` header) and falls back to the `session` cookie if no Bearer
+header is present. Both paths resolve to the same `*model.Session` value in the
+request context, so all downstream handlers are auth-method-agnostic. Do not
+add a separate middleware or a parallel code path for Bearer-only or
+cookie-only routes — doing so would create duplicate auth logic and silently
+break the unified contract. If you need to handle a new auth mechanism, extend
+`authenticate()` inside `Middleware` and keep the single `RequireSession`
+wrapper as the sole gate for session-required routes.
 
 ## Route Registration — `handleBoth` Convention
 

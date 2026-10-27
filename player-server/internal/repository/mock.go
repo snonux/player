@@ -70,6 +70,7 @@ type MockStore struct {
 	BookmarkRepo            MockBookmarkRepo
 	PodcastRepo             MockPodcastRepo
 	PodcastSyncRepo         MockPodcastSyncRepo
+	RadioRepo               MockRadioRepo
 }
 
 // FinishProgress calls FinishProgressFunc or returns nil.

@@ -71,6 +71,31 @@ Map<String, dynamic> _mediaDetailEnvelope({
 // ---------------------------------------------------------------------------
 
 void main() {
+  group('audio format', () {
+    test('server and share endpoints parse the format', () async {
+      final (:dio, :adapter) = _buildTestDio();
+      adapter.onGet(
+          '/api/v1/media/42/format',
+          (server) => server.reply(200, {
+                'codec': 'mp3',
+                'codec_label': 'MP3',
+                'bitrate': 320000,
+                'sample_rate': 44100,
+                'channels': 2,
+                'lossless': false,
+                'transcoded': false,
+              }));
+      adapter.onGet('/s/token/format?view=credential',
+          (server) => server.reply(200, {'lossless': false}));
+      final client = DioPlayerApiClient(dio: dio);
+      final format = await client.getMediaAudioFormat(42);
+      expect(format.summary, 'MP3 · 44.1 kHz · 320 kbps · Stereo');
+      final shared =
+          await client.getSharedAudioFormat('token', view: 'credential');
+      expect(shared.summary, isEmpty);
+    });
+  });
+
   group('lyrics', () {
     test('server endpoint parses timestamps and keeps configured auth',
         () async {

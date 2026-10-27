@@ -1313,6 +1313,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   int _stopGeneration = 0;
   int _sourceGeneration = 0;
   bool _controlsEnabled = false;
+  // A live stream (web radio) has no duration: seeking and the ±15 s skip
+  // buttons are hidden and ignored while it plays.
   bool Function()? _ownsSource;
   Future<void>? _sourceOperationTail;
   final _playbackErrors = StreamController<Object>.broadcast();
@@ -1708,7 +1710,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> seek(Duration position) async {
     ++_completionCycle;
-    if (_canControlSource) await seekForSession(position, _sourceGeneration);
+    if (_canControlSource && !isLiveRadio) {
+      await seekForSession(position, _sourceGeneration);
+    }
   }
 
   Future<T> _serializeSourceOperation<T>(Future<T> Function() operation) {
@@ -1798,6 +1802,19 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         duration: _player.duration,
       ),
     );
+  }
+
+  /// Like [setMediaItem] for a stream without an end (web radio): the
+  /// notification then offers play/pause and stop only, and seek and skip
+  /// requests are ignored until the next source session.
+  void setLiveMediaItem({
+    required String id,
+    required String title,
+    String? artist,
+  }) {
+    mediaItem
+        .add(MediaItem(id: id, title: title, artist: artist, isLive: true));
+    _broadcastState();
   }
 
   // ---------------------------------------------------------------------------

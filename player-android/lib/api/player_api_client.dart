@@ -273,6 +273,9 @@ class PlayerApiClient implements ProgressSyncClient {
   Future<Lyrics> getSharedLyrics(String token, {String? view}) =>
       throw UnimplementedError();
 
+  Future<AudioFormat> getSharedAudioFormat(String token, {String? view}) =>
+      throw UnimplementedError();
+
   Future<String> getSharedMediaPage(String token) => throw UnimplementedError();
 
   Future<Uint8List> streamSharedMedia(
@@ -346,6 +349,10 @@ class PlayerApiClient implements ProgressSyncClient {
   /// Available server sidecar or embedded lyrics; empty when unavailable.
   Future<Lyrics> getMediaLyrics(int mediaId) => throw UnimplementedError();
   Future<Lyrics> changeMediaLyrics(int mediaId, {bool remove = false}) =>
+      throw UnimplementedError();
+
+  /// Codec and quality of an audio item; empty when unknown.
+  Future<AudioFormat> getMediaAudioFormat(int mediaId) =>
       throw UnimplementedError();
 
   /// [cancelToken] lets a caller that stops waiting also abort the request.
@@ -587,6 +594,43 @@ class PlayerApiClient implements ProgressSyncClient {
     String? setName,
   }) =>
       throw UnimplementedError();
+
+  // ---------------------------------------------------------------------------
+  // Web radio
+  // ---------------------------------------------------------------------------
+
+  /// Searches the station directory (GET /api/v1/radio/stations).
+  Future<List<RadioStation>> searchRadioStations({
+    String? search,
+    String? tag,
+    String? country,
+    RadioOrder order = RadioOrder.popular,
+    int? limit,
+    int? offset,
+  }) =>
+      throw UnimplementedError();
+
+  /// Genre tags with the most stations first (GET /api/v1/radio/tags).
+  Future<List<RadioTag>> listRadioTags({int? limit}) =>
+      throw UnimplementedError();
+
+  /// Countries with the most stations first (GET /api/v1/radio/countries).
+  Future<List<RadioCountry>> listRadioCountries() => throw UnimplementedError();
+
+  /// The signed-in user's bookmarked stations, newest first.
+  Future<List<RadioStation>> listRadioBookmarks() => throw UnimplementedError();
+
+  /// Bookmarks a station; idempotent (PUT /api/v1/radio/bookmarks/{uuid}).
+  Future<RadioStation> addRadioBookmark(String uuid) =>
+      throw UnimplementedError();
+
+  /// Removes a station bookmark (DELETE /api/v1/radio/bookmarks/{uuid}).
+  Future<void> removeRadioBookmark(String uuid) => throw UnimplementedError();
+
+  /// Absolute URL of a server-relative radio path ([RadioStation.streamUrl]
+  /// or [RadioStation.faviconUrl]).
+  String radioUrl(String path) =>
+      path.startsWith('/') ? '$baseUrl$path' : '$baseUrl/$path';
 
   // ---------------------------------------------------------------------------
   // Admin – Users

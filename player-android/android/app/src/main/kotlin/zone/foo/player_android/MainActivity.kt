@@ -78,6 +78,7 @@ class MainActivity : AudioServiceFragmentActivity() {
         playlistExport = PlaylistExport(this, flutterEngine.dartExecutor.binaryMessenger)
         artworkPicker = ArtworkPicker(this, flutterEngine.dartExecutor.binaryMessenger)
         serverWifi = ServerWifi(this, flutterEngine.dartExecutor.binaryMessenger)
+        TurboNotes(this, flutterEngine.dartExecutor.binaryMessenger)
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, CastDiscovery.CHANNEL)
             .setStreamHandler(CastDiscovery(applicationContext))
         documentChannel = MethodChannel(

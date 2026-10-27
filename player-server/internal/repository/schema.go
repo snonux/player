@@ -283,6 +283,24 @@ CREATE TABLE IF NOT EXISTS podcast_status (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, episode_id)
 );
+
+CREATE TABLE IF NOT EXISTS radio_bookmarks (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    station_uuid TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    stream_url TEXT NOT NULL,
+    homepage TEXT NOT NULL DEFAULT '',
+    favicon_url TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
+    country_code TEXT NOT NULL DEFAULT '',
+    language TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '',
+    codec TEXT NOT NULL DEFAULT '',
+    bitrate INTEGER NOT NULL DEFAULT 0,
+    votes INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, station_uuid)
+);
 `
 
 // indexesSchema defines all CREATE INDEX statements.

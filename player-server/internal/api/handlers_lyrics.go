@@ -63,3 +63,34 @@ func (s *Server) handleShareLyrics(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, result)
 }
+
+func (s *Server) handleAudioFormat(w http.ResponseWriter, r *http.Request) {
+	if !requireService(w, s.media.Browse) {
+		return
+	}
+	id, err := pathID(r, "id")
+	if err != nil || id == 0 {
+		badRequest(w, "invalid media id")
+		return
+	}
+	result, err := s.media.Browse.GetAudioFormat(r.Context(), id, userIDFromContext(r))
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, result)
+}
+func (s *Server) handleShareAudioFormat(w http.ResponseWriter, r *http.Request) {
+	preparePublicShare(w)
+	if !requireService(w, s.media.Share) {
+		return
+	}
+	access := shareAccess(r)
+	result, err := s.media.Share.GetSharedAudioFormat(r.Context(), access.Token, access.Credentials...)
+	if err != nil {
+		s.writeShareError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}

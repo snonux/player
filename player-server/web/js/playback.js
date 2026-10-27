@@ -53,6 +53,7 @@ import { initPlaybackSpeed } from './playback-speed.js';
 import { initCompactControls } from './compactControls.js';
 import { initKeyboardAccess } from './keyboard-access.js';
 import { initLyrics, seekLyric } from './lyrics.js';
+import { initAudioFormat } from './audioFormat.js';
 import { initPlaybackPersonal } from './playback-personal.js';
 import { castItem, castPosition, castDuration, castSeek, castTogglePlay, pauseCastPlayback, initCast, isCasting, stopCasting } from './cast.js';
 
@@ -93,6 +94,7 @@ let failureHandler = null;
 let resetSeekPreview = () => {};
 let audioVisuals = null;
 let lyrics = null;
+let audioFormat = null;
 let personal = null;
 let osSession = null;
 let playbackSpeed = null;
@@ -212,6 +214,7 @@ export function initPlayer(options = {}) {
     }
     return !isDetached() && seekLyric(audioTransport, seconds);
   } });
+  audioFormat = initAudioFormat(e);
   playbackSpeed = initPlaybackSpeed({ ...e, audio: audioTransport, ownsSource: () => !isDetached(), remoteStep: delta => {
     postToDetach({ type: 'detach-command', action: 'speed-step', delta }); return true;
   } });
@@ -628,6 +631,7 @@ export function stopAndClose() {
   playbackSpeed?.setMedia(null);
   sleepTimer?.setMedia(null);
   lyrics?.setMedia(null);
+  audioFormat?.setMedia(null);
   resetSeekPreview();
   cancelPendingSource();
   const m = currentMediaElement();
@@ -781,6 +785,7 @@ function showMedia(media, source, thumbnailUrl) {
   audioVisuals?.setCasting(isCasting());
   audioVisuals?.setMedia(media, thumbnailUrl, state.sets.find((set) => set.id === media.set_id)?.name || '');
   lyrics?.setMedia(media.live_radio ? null : media, source.url, {pending:source.library && playbackCacheEnabled(media)});
+  audioFormat?.setMedia(media, source.url);
   if (!source.library && media.type === 'audio' && !media.live_radio) gapless?.message('Normal streaming · shared or detached playback.');
   updateMinimizedTitle();
   updateMusicIdentity(media, thumbnailUrl);

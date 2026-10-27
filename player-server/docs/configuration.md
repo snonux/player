@@ -20,8 +20,9 @@ All settings are environment variables. Unset variables use defaults.
 | `TRANSCODE_CACHE_MAX_MB` | `4096` | ≥ 1 | Size the transcode cache is pruned back to (least recently used first); also the largest single rendition |
 | `TRANSCODE_MAX_JOBS` | `1` | ≥ 1 | Parallel ffmpeg transcodes; each needs about 400 MB of memory at 1080p |
 | `THUMBNAIL_CACHE_DIR` | unset | writable directory outside `MEDIA_ROOT` | When set, all generated thumbnails are stored there (mirroring the media tree) instead of in `.thumbnails` beside each media file; unset keeps them beside the media |
-| `MUSIC_ENRICHMENT_URL` | unset (disabled) | HTTP(S) JSON agent endpoint | Optional artist/album biography, image and links; explicit admin refresh only. Implements the [Player external-agent contract](../../docs/music-m10-implementation.md), not arbitrary provider APIs. |
-| `PLUGIN_DIR` | unset (empty) | directory of plugin folders | Optional A08 WASM plugins (`manifest.json` + entry wasm per subdirectory). Empty means no plugins; music playback never requires them. |
+| `RADIO_BROWSER_URL` | `https://all.api.radio-browser.info` | http(s) URL | Radio Browser API that web radio searches |
+| `RADIO_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let the radio relay connect to loopback/private addresses (stations on your own network); off by default because station entries come from a public directory |
+| `PODCAST_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let podcast feed, cover and episode downloads connect to loopback/private addresses (feeds on your own network); off by default because feeds are third-party documents whose URLs must not reach services on the server's network |
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
 

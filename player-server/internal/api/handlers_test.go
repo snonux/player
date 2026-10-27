@@ -1997,6 +1997,22 @@ func (m *mockPingStore) ResolveMusicIdentityConflict(ctx context.Context, id int
 func (m *mockPingStore) GetMediaByIDAny(ctx context.Context, id int64) (*model.Media, error) {
 	return m.store.GetMediaByIDAny(ctx, id)
 }
+func (m *mockPingStore) UpsertRadioBookmark(ctx context.Context, b *model.RadioBookmark) (*model.RadioBookmark, error) {
+	return m.store.UpsertRadioBookmark(ctx, b)
+}
+
+func (m *mockPingStore) ListRadioBookmarks(ctx context.Context, userID int64) ([]model.RadioBookmark, error) {
+	return m.store.ListRadioBookmarks(ctx, userID)
+}
+
+func (m *mockPingStore) GetRadioBookmark(ctx context.Context, userID int64, uuid string) (*model.RadioBookmark, error) {
+	return m.store.GetRadioBookmark(ctx, userID, uuid)
+}
+
+func (m *mockPingStore) DeleteRadioBookmark(ctx context.Context, userID int64, uuid string) error {
+	return m.store.DeleteRadioBookmark(ctx, userID, uuid)
+
+}
 
 func (m *mockPingStore) CreateBookmark(ctx context.Context, bookmark *model.Bookmark) (int64, error) {
 	return m.store.CreateBookmark(ctx, bookmark)

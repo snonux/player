@@ -217,6 +217,16 @@ func TestLoadConfig_InvalidValues(t *testing.T) {
 			env:     []envPair{{"PROXY_AUTH_TRUSTED_SOURCES", "not-a-network"}},
 			wantErr: "PROXY_AUTH_TRUSTED_SOURCES",
 		},
+		{
+			name:    "invalid RADIO_BROWSER_URL",
+			env:     []envPair{{"RADIO_BROWSER_URL", "ftp://radio.example"}},
+			wantErr: "invalid RADIO_BROWSER_URL",
+		},
+		{
+			name:    "invalid RADIO_ALLOW_PRIVATE_NETWORKS",
+			env:     []envPair{{"RADIO_ALLOW_PRIVATE_NETWORKS", "sometimes"}},
+			wantErr: "invalid RADIO_ALLOW_PRIVATE_NETWORKS",
+		},
 	}
 
 	for _, tc := range cases {
@@ -255,6 +265,8 @@ func clearEnv() {
 		"PLUGIN_DIR",
 		"SUBSONIC_ENABLED",
 		"JUKEBOX_ENABLED", "JUKEBOX_MPV_PATH",
+		"RADIO_BROWSER_URL", "RADIO_ALLOW_PRIVATE_NETWORKS",
+		"PODCAST_ALLOW_PRIVATE_NETWORKS",
 	} {
 		os.Unsetenv(k)
 	}
@@ -476,5 +488,43 @@ func TestLoadConfig_TranscodeMaxJobs(t *testing.T) {
 	setEnvPairs(t, []envPair{{"TRANSCODE_MAX_JOBS", "3"}})
 	if cfg, err = LoadConfig(); err != nil || cfg.TranscodeMaxJobs != 3 {
 		t.Fatalf("TRANSCODE_MAX_JOBS=3 -> %d, %v", cfg.TranscodeMaxJobs, err)
+	}
+}
+
+func TestLoadConfig_Radio(t *testing.T) {
+	clearEnv()
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RadioBrowserURL != DefaultRadioBrowserURL || cfg.RadioAllowPrivateNetworks {
+		t.Fatalf("defaults = %q %v", cfg.RadioBrowserURL, cfg.RadioAllowPrivateNetworks)
+	}
+	setEnvPairs(t, []envPair{{"RADIO_BROWSER_URL", "http://127.0.0.1:9000/"}, {"RADIO_ALLOW_PRIVATE_NETWORKS", "true"}})
+	cfg, err = LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RadioBrowserURL != "http://127.0.0.1:9000" || !cfg.RadioAllowPrivateNetworks {
+		t.Fatalf("overrides = %q %v", cfg.RadioBrowserURL, cfg.RadioAllowPrivateNetworks)
+	}
+}
+
+func TestLoadConfig_PodcastPrivateNetworks(t *testing.T) {
+	clearEnv()
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PodcastAllowPrivateNetworks {
+		t.Fatal("podcast private networks must be refused by default")
+	}
+	setEnvPairs(t, []envPair{{"PODCAST_ALLOW_PRIVATE_NETWORKS", "true"}})
+	cfg, err = LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.PodcastAllowPrivateNetworks {
+		t.Fatal("PODCAST_ALLOW_PRIVATE_NETWORKS=true was ignored")
 	}
 }

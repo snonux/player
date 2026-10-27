@@ -55,6 +55,9 @@ abstract final class AppRoutes {
   /// Device subscriptions, available independently of server login.
   static const podcasts = '/podcasts';
 
+  /// Web radio: station explorer, auto explore and bookmarked stations.
+  static const radio = '/radio';
+
   /// Route that shows the Continue Watching screen (in-progress media items).
   static const continueWatching = '/continue';
 

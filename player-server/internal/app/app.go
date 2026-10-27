@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,6 +24,7 @@ import (
 	"github.com/snonux/player/internal/jukebox"
 	"github.com/snonux/player/internal/plugin"
 	"github.com/snonux/player/internal/probe"
+	"github.com/snonux/player/internal/radio"
 	"github.com/snonux/player/internal/repository"
 	"github.com/snonux/player/internal/scanner"
 	"github.com/snonux/player/internal/service"
@@ -56,6 +58,7 @@ type Deps struct {
 	PodcastSyncSvc  service.PodcastSyncService
 	PlaybackHintSvc service.PlaybackHintsService
 	CompatSvc       service.CompatStreamService
+	RadioSvc        service.RadioService
 	// Transcodes is the rendition cache behind CompatSvc. RunWithSignal
 	// uses it for the startup check and to wait for running ffmpeg jobs on
 	// shutdown.
@@ -148,7 +151,7 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		return fsScanner.SourceSignature(ctx, cfg.MediaRoot)
 	})
 
-	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, &http.Client{Timeout: service.DefaultHTTPClientTimeout}, cfg.PodcastCheckMinutes, logger).
+	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, podcastHTTPClient(cfg.PodcastAllowPrivateNetworks), cfg.PodcastCheckMinutes, logger).
 		WithThumbnailLayout(thumbLayout)
 
 	pluginMgr, err := plugin.NewManager(plugin.Options{Dir: cfg.PluginDir})
@@ -195,9 +198,36 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		Logger:          logger,
 		AppCtx:          appCtx,
 		Thumbnails:      thumbLayout,
+		RadioSvc:        wireRadio(cfg, store, clk, logger, appCtx),
 	}
 	wireTranscoding(deps, runner)
 	return deps
+}
+
+// podcastHTTPClient returns the client for podcast feeds, covers and
+// episodes. Feed documents are third-party content, and the episode and
+// image URLs in them are fetched by the server (episode downloads on any
+// signed-in user's request), so unless allowPrivate is set it refuses to
+// connect to loopback, private and other non-public addresses, like the
+// radio relay. The check runs on the dialled address, so it covers
+// redirects and DNS names too, and there is no proxy for the same reason.
+func podcastHTTPClient(allowPrivate bool) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if !allowPrivate {
+		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: radio.RefusePrivate}
+		transport.DialContext = dialer.DialContext
+		transport.Proxy = nil
+	}
+	return &http.Client{Timeout: service.DefaultHTTPClientTimeout, Transport: transport}
+}
+
+// wireRadio builds the web radio service: the Radio Browser directory and
+// the guarded fetcher that relays station streams and favicons.
+func wireRadio(cfg *internal.Config, store repository.Store, clk clock.Clock, logger *slog.Logger, appCtx context.Context) service.RadioService {
+	userAgent := "player/" + internal.Version
+	dir := radio.NewBrowserDirectory(cfg.RadioBrowserURL, &http.Client{Timeout: 15 * time.Second}, userAgent)
+	fetcher := radio.NewFetcher(userAgent, cfg.RadioAllowPrivateNetworks)
+	return service.NewRadioService(store, dir, fetcher, clk, logger, appCtx)
 }
 
 // wireThumbnails returns the thumbnail layout and the maker creating
@@ -434,6 +464,7 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 			MusicLibraries: deps.MusicLibs,
 			MusicIdentity:  deps.MusicIdentity,
 			PathRoots:      deps.PathRoots,
+			Radio:          deps.RadioSvc,
 		},
 		StaticFS:      staticFS,
 		MediaStreamer: streamer,

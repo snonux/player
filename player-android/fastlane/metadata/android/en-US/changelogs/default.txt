@@ -1,3 +1,2 @@
-Play legacy MPG and MPEG videos from your server, including shared videos.
-The server prepares a compatible playback copy while keeping original files unchanged.
-Rescan your server library after upgrading to discover previously skipped MPEG videos.
+Podcast notes opened from the library now use the episode title instead of the file name.
+Notes in TurboNotes: while an audiobook or podcast episode plays, a notes button opens Book-And-Podcast-Notes/TITLE.md in TurboNotes, which creates the note on first use.

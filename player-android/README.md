@@ -49,6 +49,28 @@ in another terminal (the test runner can clear grants when reinstalling).
 The native test generates its own music and checks nonzero waveform/spectrum
 data for all five modes, Off, pause/resume and replacing the track.
 
+## Notes in TurboNotes
+
+While an audiobook or a podcast episode plays, the player's app bar has a
+notes button (**Book note in TurboNotes** or **Episode note in TurboNotes**).
+It opens [TurboNotes](https://github.com/snonux/turbonotes) on
+`Book-And-Podcast-Notes/TITLE.md` in its notes folder, and TurboNotes creates
+that note on first use with the title as heading. Playback keeps going in the
+background; switch back to Player from the notification or recent apps.
+
+- Podcast episodes (server media in a podcast set) use the episode title.
+  Opened from the library, the file name `2024-01-01 - Title.mp3` gives `Title`.
+- Audiobooks are recognized like the visuals do: `.m4b` files and set,
+  folder or file names containing "audiobook" or "audio book". The title is
+  the `.m4b` file's name, or for chapter files the folder holding them
+  (`Audiobooks/Dune/01.mp3` gives `Dune`). Device files and offline
+  downloads only have their file name to go by.
+- Characters that are not allowed in file names (`/ \ : * ? " < > |`) become
+  `_`, and long titles are cut to 120 characters.
+
+Music, videos and public shares show no notes button. Without TurboNotes
+installed, the button says how to get it.
+
 ## Screenshots
 
 | On this device | Empty library | Audio player |
@@ -258,6 +280,33 @@ stopped. Progress is saved while casting. Public share links can be cast too.
 Casting does not need Google Play Services. The cast device fetches the media
 itself through a short-lived link from the server, so it must be able to reach
 the server address set in the app. Files in **On this device** cannot be cast.
+
+## Web radio
+
+Open **Web radio** from the server navigation menu. **Explore** searches the
+free Radio Browser station directory through your Player server: type a name,
+pick a **Genre** or **Country**, and choose the sort order (Popular, Most
+votes, Name, Random). Tap a station to play it. The server relays the stream
+and the station icon, so cleartext (`http://`) stations play too and the
+phone never contacts station hosts directly. Radio plays in the background
+with notification and lock-screen play/pause and stop; there is no seeking in
+a live stream. Starting a station stops library playback, and playing
+library media stops the radio.
+
+Tap the bookmark button of a station (in a list or the now-playing bar) to
+keep it on the **Bookmarks** tab. Bookmarks are stored on the server for your
+account, so the web UI shows the same stations.
+
+**Auto explore** plays random stations from the current filters one after
+the other. The now-playing bar shows a countdown to the next station; choose
+15, 30 or 60 seconds per station. **Keep** stops exploring and stays on the
+current station, **Next** skips at once, **Stop** ends radio. A station that
+does not start within 10 seconds is skipped; after five such stations in a
+row auto explore stops with a message.
+
+Verify with `flutter test test/services/radio_controller_test.dart
+test/services/radio_engine_test.dart test/api/radio_api_test.dart
+test/screens/radio_screen_test.dart`.
 
 ## Lyrics
 

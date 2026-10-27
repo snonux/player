@@ -67,6 +67,7 @@ type Server struct {
 	pathRoots     *service.PathRoots
 	// subsonicSvc adapts the music catalog for optional /rest clients (A01a).
 	subsonicSvc   *service.SubsonicService
+	radio         service.RadioService
 	streamer      service.MediaStreamer
 	staticFS      http.FileSystem
 	shareRenderer *web.SharePageRenderer
@@ -98,6 +99,7 @@ type ServerServices struct {
 	MusicIdentity *service.MusicIdentityService
 	// PathRoots is the streaming allowlist shared with MediaStreamer.
 	PathRoots *service.PathRoots
+	Radio   service.RadioService
 }
 
 // ServerDeps contains the dependencies needed to construct a Server.
@@ -190,6 +192,7 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 		musicIdentity: deps.Services.MusicIdentity,
 		pathRoots:     deps.Services.PathRoots,
 		subsonicSvc:   subsonicSvc,
+		radio:         deps.Services.Radio,
 		streamer:      deps.MediaStreamer,
 		staticFS:      deps.StaticFS,
 		shareRenderer: web.NewSharePageRenderer(deps.StaticFS),
@@ -314,6 +317,7 @@ func (s *Server) routesSharePublic() {
 	s.shareRoute(http.MethodGet, "/s/{token}/compat", s.handleShareCompatStream)
 	s.shareRoute(http.MethodGet, "/s/{token}/thumbnail", s.handleShareThumbnail)
 	s.shareRoute(http.MethodGet, "/s/{token}/lyrics", s.handleShareLyrics)
+	s.shareRoute(http.MethodGet, "/s/{token}/format", s.handleShareAudioFormat)
 	s.shareRoute(http.MethodGet, "/s/{token}/download", s.handleShareDownload)
 	// Everything else below /s/ is unknown. Without this the request would
 	// fall through to the session-protected catch-all and be told
@@ -460,6 +464,7 @@ func (s *Server) routesMedia() {
 	s.handleBoth(http.MethodGet, "/api/media/{id}/lyrics", s.requireSession(s.handleLyrics))
 	s.handleBoth(http.MethodPost, "/api/media/{id}/lyrics", s.requireSession(s.handleChangeLyrics))
 	s.handleBoth(http.MethodDelete, "/api/media/{id}/lyrics", s.requireSession(s.handleChangeLyrics))
+	s.handleBoth(http.MethodGet, "/api/media/{id}/format", s.requireSession(s.handleAudioFormat))
 	s.handleBoth(http.MethodPost, "/api/media/{id}/thumbnail", s.requireSession(s.handleRegenThumbnail))
 	s.handleBoth(http.MethodPost, "/api/media/{id}/favorite", s.requireSession(s.handleFavorite))
 	s.handleBoth(http.MethodGet, "/api/tags", s.requireSession(s.handleListTags))
@@ -548,6 +553,7 @@ func (s *Server) routes() {
 	s.routesShares()
 	s.routesAdmin()
 	s.routesPodcast()
+	s.routesRadio()
 }
 
 // routesSubsonic wires the optional Subsonic/OpenSubsonic /rest surface (A01a).
