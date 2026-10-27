@@ -112,8 +112,10 @@ impact during integrated host verification. No vendored dependency was edited.
 
 Shared Chrome catalog journeys: `music-albums.test.ts` + `music-search.test.ts`
 7/7 passed against fixture 18850
-(`/home/paul/tmp/codex/player-m55-web-chrome.log`). Firefox: 6/7 passed; one
-ordered-collection case hit the known floating-player overlay flake.
+(`/home/paul/tmp/codex/player-m55-web-chrome.log`). Firefox ordered-collection
+was later unblocked by removing a merge-duplicate `initRadio` import that
+aborted `app.js` before login bound, plus e2e overlay hardening
+(`71799dd`); re-run both projects against the music fixture when regressing M02.
 
 Android Auto Desktop Head Unit package is installed at
 `Android/Sdk/extras/google/auto/desktop-head-unit` (`sdkmanager
@@ -125,7 +127,7 @@ to `adb forward tcp:5277` then exits because
 An Automotive x86_64 AVD (`Player_Automotive_API34`, system image
 `android-34-ext9;android-automotive;x86_64`) boots and runs
 `com.android.car.media`. Phone DHU remains blocked by the gearhead stub; the
-Automotive host is the accepted Auto path for this task.
+Automotive host is the accepted Auto path for M55 (task `7l3`).
 
 AAOS `MediaSource` skipped Player until the browse service declared
 `androidx.car.app.launchable=true` (same opt-in as Local Media Player). The
@@ -143,3 +145,55 @@ fixture titles; album play opens Now Playing; `media_session` for
 `Aurora` returns matching tracks/artists. Evidence under
 `/home/paul/tmp/codex/player-m55-evidence/` (`m55-g-*` … `m55-j-*`,
 `m55-automotive-acceptance.txt`).
+
+## Phone DHU / non-stub Android Auto host (follow-up `7s3`)
+
+M55 acceptance does **not** require phone Desktop Head Unit. The Automotive
+AVD exercises the same `AutoBrowseService` MediaBrowser contract through
+`com.android.car.media`. Use phone DHU only when you need projection-specific
+behavior (gearhead template chrome, wireless/USB transport, DHU input modes).
+
+### Detect the stub
+
+```sh
+adb shell dumpsys package com.google.android.projection.gearhead \
+  | grep -E 'versionName|versionCode'
+# Stub (cannot host DHU media): versionName=…-stub  (e.g. 1.2.531830-stub)
+# Real Auto: a non-stub Play Store build with HeadUnitServerService present.
+```
+
+Google APIs emulator system images ship the stub on purpose. Installing DHU
+via `sdkmanager 'extras;google;auto'` does not replace it. Sideloading a
+Play-signed gearhead APK onto an AVD is not a supported or redistributable
+path for this repo — do not commit or fetch unofficial APKs.
+
+### Obtain a usable phone Auto host
+
+1. **Physical device (preferred).** A phone/tablet with Google Play, Android
+   Auto installed from Play (not the emulator stub), developer mode, and USB
+   debugging. Enable Developer settings inside the Android Auto app
+   (tap Version ~10 times) → **Start head unit server**.
+2. **Connect DHU from the workstation:**
+
+```sh
+adb forward tcp:5277 tcp:5277
+"$ANDROID_HOME/extras/google/auto/desktop-head-unit" -a
+# Optional: -i touch|rotary|hybrid   -c /path/to/dhu-config.ini
+```
+
+3. **Install Player** on that device (same debug/release APK used for phone
+   acceptance), sign in against the music fixture (`adb reverse` as usual),
+   then open Player from the DHU media launcher and repeat browse / search /
+   play checks.
+
+Emulator phone AVDs without Play Store cannot satisfy this path. A Play Store
+system image still often ships stub gearhead until a real Auto update is
+applied on-device; prefer hardware.
+
+### When Automotive is enough
+
+For MediaBrowser tree, search, queue, trusted-caller gating, and
+`MediaSource` opt-in, keep using `Player_Automotive_API34` (or successor AAOS
+AVDs). Record evidence under a dated directory next to
+`player-m55-evidence`. Only open a new Auto regression on phone DHU when a
+change is projection-specific or a reviewer explicitly requires gearhead.
