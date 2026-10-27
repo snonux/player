@@ -12,7 +12,8 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
-/// Disposable, complete song copies. Kept downloads use a separate repository.
+/// Disposable, complete copies of played songs and videos. Kept downloads use
+/// a separate repository.
 class PlaybackCache extends ChangeNotifier {
   PlaybackCache({Directory? directory}) : _directory = directory;
   Directory? _directory;
@@ -28,6 +29,7 @@ class PlaybackCache extends ChangeNotifier {
   bool _disposed = false;
   String status = '';
   bool get busy => _activeKey != null;
+  static const budgets = [0, 128, 512, 1024, 2048, 4096];
   int get budget => _preferences?.getInt('playback-cache-budget') ?? 128;
   bool get prefetch =>
       _preferences?.getBool('playback-cache-prefetch') ?? false;
@@ -106,7 +108,8 @@ class PlaybackCache extends ChangeNotifier {
     if (budget == 0) return result;
     for (final entry in _rows.entries.toList()) {
       final row = entry.value;
-      if (_invalidated.contains(entry.key) ||
+      if (row['type'] == 'video' ||
+          _invalidated.contains(entry.key) ||
           !await _file(entry.key).exists() ||
           await _file(entry.key).length() != row['size']) {
         continue;
@@ -138,6 +141,7 @@ class PlaybackCache extends ChangeNotifier {
     await initialize();
     final row = _rows[key];
     if (row == null ||
+        row['type'] == 'video' ||
         row['origin'] != origin ||
         row['user'] != user ||
         _invalidated.contains(key) ||
@@ -305,7 +309,7 @@ class PlaybackCache extends ChangeNotifier {
     }
     cancel();
     if (megabytes != null) {
-      if (![0, 128, 512, 1024].contains(megabytes)) {
+      if (!budgets.contains(megabytes)) {
         throw ArgumentError('Invalid budget');
       }
       await _preferences!.setInt('playback-cache-budget', megabytes);
@@ -359,6 +363,38 @@ class PlaybackCache extends ChangeNotifier {
     _changed();
   }
 
+  /// Removes the given share of cached items that were played longest ago.
+  /// The playing item is kept; returns how many items were removed.
+  Future<int> clearLeastRecent(int percent) async {
+    if (percent <= 0 || percent > 100) throw ArgumentError('Invalid share');
+    await initialize();
+    cancel();
+    var removed = 0, freed = 0;
+    await _write(() async {
+      final oldest = _rows.entries.toList()
+        ..sort((a, b) =>
+            (a.value['used'] as int).compareTo(b.value['used'] as int));
+      final count = (oldest.length * percent / 100).ceil();
+      for (final entry in oldest.take(count)) {
+        if (_protectedKeys.contains(entry.key)) continue;
+        if (await _file(entry.key).exists()) await _file(entry.key).delete();
+        await _deleteLyrics(entry.key);
+        freed += (entry.value['size'] as int) +
+            (entry.value['lyrics_bytes'] as int? ?? 0);
+        _rows.remove(entry.key);
+        removed++;
+      }
+      await _save();
+    });
+    status = removed == 0
+        ? 'Nothing to remove.'
+        : 'Removed $removed least recently played '
+            '${removed == 1 ? 'item' : 'items'} '
+            '(${(freed / 1048576).toStringAsFixed(1)} MB).';
+    _changed();
+    return removed;
+  }
+
   Future<void> download(
       {required String key,
       required Uri uri,
@@ -368,6 +404,7 @@ class PlaybackCache extends ChangeNotifier {
       MusicMetadata? music,
       bool automationMusicEligible = false,
       String sourceName = '',
+      String kind = 'audio',
       required String origin,
       required int userId,
       required bool Function() authorized}) async {
@@ -375,6 +412,7 @@ class PlaybackCache extends ChangeNotifier {
     if (budget == 0 || !authorized() || _rows.containsKey(key)) return;
     if (busy) return;
     final epoch = ++_epoch;
+    final noun = kind == 'video' ? 'Video' : 'Song';
     _activeKey = key;
     status = 'Caching $title…';
     _changed();
@@ -392,13 +430,13 @@ class PlaybackCache extends ChangeNotifier {
       final response =
           await request.close().timeout(const Duration(seconds: 30));
       if (response.statusCode != 200 ||
-          !(response.headers.contentType?.mimeType.startsWith('audio/') ??
+          !(response.headers.contentType?.mimeType.startsWith('$kind/') ??
               false)) {
-        throw const HttpException('Server did not return complete audio.');
+        throw HttpException('Server did not return complete $kind.');
       }
       final declared = response.contentLength;
       if (declared > budget * 1048576) {
-        throw StateError('Song exceeds the cache budget.');
+        throw StateError('$noun exceeds the cache budget.');
       }
       output = await _file(key, partial: true).open(mode: FileMode.write);
       var received = 0;
@@ -406,7 +444,7 @@ class PlaybackCache extends ChangeNotifier {
         if (!wanted()) throw StateError('Transfer cancelled.');
         received += chunk.length;
         if (received > budget * 1048576) {
-          throw StateError('Song exceeds the cache budget.');
+          throw StateError('$noun exceeds the cache budget.');
         }
         await output.writeFrom(chunk);
       }
@@ -418,7 +456,7 @@ class PlaybackCache extends ChangeNotifier {
       await output.flush();
       await output.close();
       output = null;
-      final lyrics = mediaId == null
+      final lyrics = mediaId == null || kind != 'audio'
           ? null
           : await fetchLyricSnapshot(
               audioUri: uri,
@@ -444,6 +482,7 @@ class PlaybackCache extends ChangeNotifier {
         }
         _rows[key] = {
           'title': title,
+          if (kind != 'audio') 'type': kind,
           if (lyricBytes > 0) 'lyrics_bytes': lyricBytes,
           if (mediaId != null) 'media_id': mediaId,
           if (music != null) 'music': music.toJson(),
@@ -457,11 +496,11 @@ class PlaybackCache extends ChangeNotifier {
         };
         await _prune();
       });
-      status = 'Song cached.';
+      status = '$noun cached.';
     } catch (_) {
       if (wanted()) {
-        status =
-            'Could not cache song. Streaming and kept downloads remain available.';
+        status = 'Could not cache ${noun.toLowerCase()}. '
+            'Streaming and kept downloads remain available.';
       }
     } finally {
       client?.close(force: true);

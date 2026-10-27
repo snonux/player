@@ -260,4 +260,95 @@ void main() {
             type: DioExceptionType.cancel)),
         isFalse);
   });
+  test('videos are cached apart from the offline song library', () async {
+    SharedPreferences.setMockInitialValues({});
+    final directory =
+        await Directory.systemTemp.createTemp('player-cache-video-');
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      request.response.headers.contentType = ContentType('video', 'mp4');
+      request.response.contentLength = 4;
+      request.response.add([1, 2, 3, 4]);
+      await request.response.close();
+    });
+    final cache = PlaybackCache(directory: directory);
+    try {
+      final origin = 'http://127.0.0.1:${server.port}',
+          key = cache.key(origin, 7, 21, 'video');
+      await cache.download(
+          key: key,
+          uri: Uri.parse('$origin/api/v1/media/21/stream'),
+          headers: {},
+          title: 'Clip',
+          mediaId: 21,
+          kind: 'video',
+          origin: origin,
+          userId: 7,
+          authorized: () => true);
+      expect(cache.status, 'Video cached.');
+      expect(await cache.lookup(key), isNotNull);
+      expect(cache.items.single['type'], 'video');
+      expect(await cache.offlineLibrary(), isEmpty);
+      expect(() => cache.offlineRequest(key, origin, 7), throwsStateError);
+      await cache.download(
+          key: cache.key(origin, 7, 22, 'auto'),
+          uri: Uri.parse('$origin/api/v1/media/22/stream'),
+          headers: {},
+          title: 'Not audio',
+          origin: origin,
+          userId: 7,
+          authorized: () => true);
+      expect(cache.items, hasLength(1));
+    } finally {
+      cache.dispose();
+      await server.close(force: true);
+      await directory.delete(recursive: true);
+    }
+  });
+
+  test('clearLeastRecent removes the oldest share and keeps the playing item',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final directory =
+        await Directory.systemTemp.createTemp('player-cache-trim-');
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      request.response.headers.contentType = ContentType('audio', 'mpeg');
+      request.response.contentLength = 3;
+      request.response.add([1, 2, 3]);
+      await request.response.close();
+    });
+    final cache = PlaybackCache(directory: directory);
+    try {
+      final origin = 'http://127.0.0.1:${server.port}';
+      final keys = [for (var i = 0; i < 4; i++) cache.key(origin, 7, i, 'a')];
+      for (final (i, key) in keys.indexed) {
+        await cache.download(
+            key: key,
+            uri: Uri.parse('$origin/api/v1/media/$i/stream'),
+            headers: {},
+            title: 'Song $i',
+            origin: origin,
+            userId: 7,
+            authorized: () => true);
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      // Replaying the first song makes the second the least recent.
+      await cache.lookup(keys[0], protect: false);
+      expect(await cache.clearLeastRecent(25), 1);
+      expect(cache.items.map((row) => row['title']),
+          unorderedEquals(['Song 0', 'Song 2', 'Song 3']));
+      expect(cache.status, startsWith('Removed 1 least recently played item'));
+      expect(File('${directory.path}/${keys[1]}.audio').existsSync(), isFalse);
+
+      await cache.lookup(keys[2]);
+      expect(await cache.clearLeastRecent(75), 2);
+      expect(cache.items.single['title'], 'Song 2');
+      expect(() => cache.clearLeastRecent(0), throwsArgumentError);
+    } finally {
+      cache.dispose();
+      await server.close(force: true);
+      await directory.delete(recursive: true);
+    }
+  });
 }

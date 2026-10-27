@@ -17,6 +17,9 @@ import '../providers/api_client_provider.dart';
 import '../providers/cast_provider.dart';
 import '../providers/playback_session_provider.dart';
 import '../providers/progress_queue_provider.dart';
+import '../providers/playback_cache_provider.dart';
+import '../services/playback_cache.dart';
+import '../services/playback_cache_access.dart';
 import '../services/playback_request.dart';
 import '../services/playback_source_resolver.dart';
 import '../services/shared_video_events.dart';
@@ -341,14 +344,18 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
               .mediaUri(request.sourceUri)
           : request.sourceUri;
       if (!_isCurrent(attempt)) return;
-      controller = request is OfflinePlaybackRequest
-          ? VideoPlayerController.file(File.fromUri(request.sourceUri))
-          : request is LocalPlaybackRequest
-              ? VideoPlayerController.contentUri(request.sourceUri)
-              : VideoPlayerController.networkUrl(
-                  sourceUri,
-                  httpHeaders: headers,
-                );
+      final cached = await _cachedVideo(request, sourceUri, headers);
+      if (!_isCurrent(attempt)) return;
+      controller = cached != null
+          ? VideoPlayerController.file(File.fromUri(cached))
+          : request is OfflinePlaybackRequest
+              ? VideoPlayerController.file(File.fromUri(request.sourceUri))
+              : request is LocalPlaybackRequest
+                  ? VideoPlayerController.contentUri(request.sourceUri)
+                  : VideoPlayerController.networkUrl(
+                      sourceUri,
+                      httpHeaders: headers,
+                    );
       // Track the controller while initialization is pending so a library
       // mutation or ownership transfer can dispose its URI before releasing it.
       _videoController = controller;
@@ -366,12 +373,74 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
       _watchCompletion(attempt, nativePlayerId);
       _showPlayer(attempt, controller, nativePlayerId);
+      if (cached == null) _cacheVideo(request, sourceUri, headers);
       await _playController(controller, attempt.lease, nativePlayerId);
     } catch (error) {
       final message = _failureText(error, request);
       await _cleanUpFailedStart(attempt, controller, message);
       _showMessage(message, attempt.generation);
     }
+  }
+
+  bool _cacheable(PlaybackRequest request) =>
+      request is ServerPlaybackRequest &&
+      request.userId > 0 &&
+      !isCompatStreamUrl(request.sourceUri);
+
+  String _videoCacheKey(PlaybackCache cache, ServerPlaybackRequest request) =>
+      cache.key(request.serverOrigin, request.userId, request.mediaId, 'video');
+
+  /// Returns a still-authorized cached copy of [request], if any. A changed
+  /// ETag or denied access discards it; without a network the copy is used.
+  Future<Uri?> _cachedVideo(PlaybackRequest request, Uri transport,
+      Map<String, String> headers) async {
+    if (!_cacheable(request)) return null;
+    final cache = ref.read(playbackCacheProvider);
+    try {
+      await cache.initialize();
+      final key = _videoCacheKey(cache, request as ServerPlaybackRequest);
+      final saved = await cache.lookup(key, protect: false);
+      if (saved == null) return null;
+      try {
+        if (await validateCachedAudio(transport, headers, cache.etag(key))) {
+          return saved;
+        }
+      } catch (error) {
+        if (cacheTransportFailure(error)) return saved;
+        if (cacheAccessDenied(error)) await cache.invalidate(key);
+        return null;
+      }
+      await cache.remove(key);
+    } catch (_) {}
+    return null;
+  }
+
+  /// Copies a streamed server video into the playback cache in the
+  /// background while the account that started it stays signed in.
+  void _cacheVideo(
+      PlaybackRequest request, Uri transport, Map<String, String> headers) {
+    if (!_cacheable(request)) return;
+    final server = request as ServerPlaybackRequest;
+    final cache = ref.read(playbackCacheProvider);
+    final mutations = ref.read(credentialMutationQueueProvider);
+    final generation = mutations.generation;
+    unawaited(cache
+        .download(
+          key: _videoCacheKey(cache, server),
+          uri: transport,
+          headers: headers,
+          title: server.title,
+          mediaId: server.mediaId,
+          sourceName: server.sourceName,
+          kind: 'video',
+          origin: server.serverOrigin,
+          userId: server.userId,
+          authorized: () =>
+              generation == mutations.generation &&
+              mutations.credentialsEnabled &&
+              mutations.credentialOrigin == server.serverOrigin,
+        )
+        .catchError((_) {}));
   }
 
   /// Disposes [controller] and returns false when [attempt] was superseded

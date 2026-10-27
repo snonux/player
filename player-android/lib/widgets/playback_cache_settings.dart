@@ -47,16 +47,17 @@ class _PlaybackCacheSettingsState extends ConsumerState<PlaybackCacheSettings> {
     final origin = ref.watch(playerBaseUrlProvider).origin;
     final items = cache.items
         .where((row) => row['user'] == user && row['origin'] == origin)
-        .toList();
+        .toList()
+      ..sort((a, b) => (b['used'] as int).compareTo(a['used'] as int));
     final bytes = items.fold<int>(0, (n, row) => n + (row['size'] as int));
     return ExpansionTile(
         tilePadding: EdgeInsets.zero,
         title: const Text('Playback cache'),
         subtitle: Text(
-            '${(bytes / 1048576).toStringAsFixed(1)} MB · ${items.length} songs'),
+            '${(bytes / 1048576).toStringAsFixed(1)} MB · ${items.length} items'),
         children: [
           const Text(
-              'Disposable song copies for replay while this server account is unlocked. Kept downloads are separate. Cached songs can be evicted automatically.'),
+              'Played songs and videos are cached automatically for replay while this server account is unlocked. Kept downloads are separate. The least recently played items are evicted when the budget is full.'),
           if (loading) const LinearProgressIndicator(),
           if (error != null)
             Text(error!,
@@ -68,7 +69,9 @@ class _PlaybackCacheSettingsState extends ConsumerState<PlaybackCacheSettings> {
                 DropdownMenuItem(value: 0, child: Text('Off')),
                 DropdownMenuItem(value: 128, child: Text('128 MB')),
                 DropdownMenuItem(value: 512, child: Text('512 MB')),
-                DropdownMenuItem(value: 1024, child: Text('1 GB'))
+                DropdownMenuItem(value: 1024, child: Text('1 GB')),
+                DropdownMenuItem(value: 2048, child: Text('2 GB')),
+                DropdownMenuItem(value: 4096, child: Text('4 GB'))
               ],
               onChanged: loading
                   ? null
@@ -109,9 +112,22 @@ class _PlaybackCacheSettingsState extends ConsumerState<PlaybackCacheSettings> {
                 onPressed: loading ? null : () => run(cache.clear),
                 child: const Text('Clear cache'))
           ]),
-          if (items.isEmpty) const ListTile(title: Text('No cached songs.')),
+          const Text('Remove least recently played'),
+          Wrap(spacing: 8, children: [
+            for (final percent in const [25, 50, 75])
+              OutlinedButton(
+                  key: ValueKey('playback_cache_trim_$percent'),
+                  onPressed: loading || cache.items.isEmpty
+                      ? null
+                      : () => run(() => cache.clearLeastRecent(percent)),
+                  child: Text('$percent%')),
+          ]),
+          if (items.isEmpty) const ListTile(title: Text('Nothing cached yet.')),
           for (final row in items)
             ListTile(
+                leading: Icon(row['type'] == 'video'
+                    ? Icons.movie_outlined
+                    : Icons.music_note_outlined),
                 title: Text(row['title'] as String,
                     maxLines: 2, overflow: TextOverflow.ellipsis),
                 subtitle: Text(
