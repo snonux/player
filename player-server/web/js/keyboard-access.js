@@ -199,7 +199,8 @@ export function initKeyboardAccess() {
   }
 
   function openMediaActions(card) {
-    const originals = [...card.querySelectorAll('.card-actions button, button[data-action]')];
+    const originals = [...card.querySelectorAll('.card-actions button, button[data-action]')]
+      .filter(button => button.dataset.action !== 'more');
     if (!originals.length) return;
     selectByElement(card);
     const menu = document.createElement('div');

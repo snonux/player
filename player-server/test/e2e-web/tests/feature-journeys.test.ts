@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { bootstrap, triggerRescan, waitForScanIdle, waitForServer } from './helpers/server';
 import { headerItem } from './helpers/header-menu';
+import { cardAction } from './helpers/card-actions';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -29,10 +30,10 @@ test('tag load failure is shown to the user and can be retried', async ({ page }
   const card = page.locator('#media-grid .image-card').first();
   await expect(card).toBeVisible();
   await page.route(/\/api\/media\/\d+$/, route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'tag detail failed' }) }));
-  await card.locator('[data-action="tags"]').click();
+  await cardAction(page, card, 'Tags');
   await expect(page.locator('#toast')).toContainText('tag detail failed');
   await page.unrouteAll();
-  await card.locator('[data-action="tags"]').click();
+  await cardAction(page, card, 'Tags');
   await expect(page.locator('#tags-modal')).toHaveClass(/open/);
 });
 
@@ -43,7 +44,7 @@ test('tags can be added, filtered, and removed through the browser', async ({ pa
   const id = await card.getAttribute('data-id');
   const tag = `ci2-browser-${Date.now()}`;
 
-  await card.locator('[data-action="tags"]').click();
+  await cardAction(page, card, 'Tags');
   await expect(page.locator('#tags-modal')).toHaveClass(/open/);
   await page.locator('#tags-new').fill(tag);
   await page.locator('#tags-add').click();
@@ -55,7 +56,7 @@ test('tags can be added, filtered, and removed through the browser', async ({ pa
   await page.locator('#search-input').fill(`tag:${tag}`);
   await expect(page.locator(`#media-grid .image-card[data-id="${id}"]`)).toBeVisible();
   await expect(page.locator('#media-grid .image-card')).toHaveCount(1);
-  await page.locator(`#media-grid .image-card[data-id="${id}"] [data-action="tags"]`).click();
+  await cardAction(page, page.locator(`#media-grid .image-card[data-id="${id}"]`), 'Tags');
   await page.locator('#tags-list .tag-chip').filter({ hasText: tag }).locator('.tag-remove').click();
   await expect(page.locator('#tags-list .tag-chip').filter({ hasText: tag })).toHaveCount(0);
   await page.locator('#tags-close').click();
@@ -66,7 +67,7 @@ test('closing Tags with Escape restores vi navigation and search', async ({ page
   await page.getByRole('button', { name: 'Set images' }).click();
   const card = page.locator('#media-grid .image-card').first();
   await expect(card).toBeVisible();
-  await card.locator('[data-action="tags"]').click();
+  await cardAction(page, card, 'Tags');
   await expect(page.locator('#tags-modal')).toHaveClass(/open/);
   await expect(page.locator('#tags-new')).toBeFocused();
   await page.keyboard.press('Escape');
@@ -127,7 +128,7 @@ test('open dialogs keep vi and admin shortcuts from acting behind them', async (
   const card = page.locator('#media-grid .image-card').first();
   await expect(card).toBeVisible();
   const id = await card.getAttribute('data-id');
-  await card.locator('[data-action="tags"]').click();
+  await cardAction(page, card, 'Tags');
   await expect(page.locator('#tags-modal')).toHaveClass(/open/);
   // A focused dialog button used to swallow every key; now it only keeps
   // native activation, so the dialog guard must stop grid and admin keys.

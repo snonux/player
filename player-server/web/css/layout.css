@@ -403,12 +403,14 @@ body {
   align-self: end;
   position: relative;
   bottom: auto;
+  justify-self: start;
   margin: 0 0.35rem 0.35rem;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
   z-index: 2;
 }
 .media-card .card-actions .icon-btn { flex: 0 0 var(--control-height-sm); }
+.card-actions .card-action-extra { display: none; }
 .set-card .set-open,
 .folder-card .folder-open {
   display: block;
@@ -994,3 +996,7 @@ body {
 }
 [data-rule-form] legend { color: var(--text-secondary); padding-inline: .25rem; }
 [data-rule-form] [data-summary] { overflow-wrap: anywhere; }
+
+/* Listening presence only concerns music, so it stays out of image and video views. */
+.main-content > .music-presence { display: none; }
+.main-content:has(#media-grid :is(.audio-card, .media-row, .album-card, [data-artist], [data-playlist])) > .music-presence { display: block; }

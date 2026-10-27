@@ -484,7 +484,7 @@ function bindPager(grid) {
 function bindMediaItems(grid) {
   grid.querySelectorAll('.media-card[data-id], .media-row[data-id]').forEach(row => {
     const song = state.media.find(item => String(item.id) === row.dataset.id);
-    if (song) row.insertAdjacentHTML('beforeend', songActionButtons(song));
+    if (song?.type === 'audio') row.insertAdjacentHTML('beforeend', songActionButtons(song));
   });
   bindSongActions(grid);
   grid.querySelectorAll('.media-card, .media-row').forEach((el) => {
@@ -512,6 +512,10 @@ function bindMediaItems(grid) {
       await callbacks.moveToTrash?.(el.dataset.id, trashBtn);
     });
     const notStartedBtn = el.querySelector('[data-action="mark-not-started"]');
+    el.querySelector('[data-action="more"]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.dispatchEvent(new CustomEvent('media:actions', { detail: el }));
+    });
     playBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
       selectByElement(el);
@@ -558,9 +562,9 @@ function bindMediaItems(grid) {
 
 function renderProgressActions() {
   return `
-    <button type="button" class="icon-btn btn-sm" data-action="trash" title="Move to trash" aria-label="Move to trash">🗑</button>
-    <button type="button" class="icon-btn btn-sm" data-action="mark-finished" title="Mark as finished" aria-label="Mark as finished">✓</button>
-    <button type="button" class="icon-btn btn-sm" data-action="mark-not-started" title="Mark as not started" aria-label="Mark as not started">↺</button>
+    <button type="button" class="icon-btn btn-sm card-action-extra" data-action="trash" title="Move to trash" aria-label="Move to trash">🗑</button>
+    <button type="button" class="icon-btn btn-sm card-action-extra" data-action="mark-finished" title="Mark as finished" aria-label="Mark as finished">✓</button>
+    <button type="button" class="icon-btn btn-sm card-action-extra" data-action="mark-not-started" title="Mark as not started" aria-label="Mark as not started">↺</button>
   `;
 }
 
@@ -569,10 +573,11 @@ function renderMediaActions(extra = '') {
     <div class="card-actions">
       <button type="button" class="icon-btn btn-sm" data-action="play" title="Play" aria-label="Play">▶</button>
       <button type="button" class="icon-btn btn-sm" data-action="favorite" title="Favorite" aria-label="Favorite">♥</button>
-      <button type="button" class="icon-btn btn-sm" data-action="notes" title="Notes" aria-label="Notes">📝</button>
+      <button type="button" class="icon-btn btn-sm card-more" data-action="more" title="More actions (a)" aria-label="More actions" aria-haspopup="menu">⋯</button>
+      <button type="button" class="icon-btn btn-sm card-action-extra" data-action="notes" title="Notes" aria-label="Notes">📝</button>
       ${renderProgressActions()}
-      <button type="button" class="icon-btn btn-sm" data-action="download" title="Download" aria-label="Download">⬇</button>
-      <button type="button" class="icon-btn btn-sm" data-action="tags" title="Tags" aria-label="Tags">🏷</button>
+      <button type="button" class="icon-btn btn-sm card-action-extra" data-action="download" title="Download" aria-label="Download">⬇</button>
+      <button type="button" class="icon-btn btn-sm card-action-extra" data-action="tags" title="Tags" aria-label="Tags">🏷</button>
       ${extra}
     </div>
   `;
@@ -582,7 +587,7 @@ function renderItem(m, index) {
   const sizeText = fmtSize(m.file_size_bytes);
   const flattenedFolder = m.flattened_folder ? 'true' : 'false';
   const title = escapeHtml(mediaTitle(m));
-  const regenThumb = '<button type="button" class="icon-btn btn-sm" data-action="regen-thumb" title="Regenerate thumbnail" aria-label="Regenerate thumbnail">🔄</button>';
+  const regenThumb = '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="regen-thumb" title="Regenerate thumbnail" aria-label="Regenerate thumbnail">🔄</button>';
   if (m.type === 'video') {
     return `
       <div class="media-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" role="group" aria-label="${title}">

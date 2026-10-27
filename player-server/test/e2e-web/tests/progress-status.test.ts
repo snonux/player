@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Response } from '@playwright/test';
 import { bootstrap, triggerRescan, waitForServer } from './helpers/server';
+import { cardAction } from './helpers/card-actions';
 
 const baseURL = process.env.PLAYER_URL || 'http://localhost:8080';
 let adminCookie: string;
@@ -59,8 +60,8 @@ async function expectStatusRequest(page: Page, click: () => Promise<void>, id: n
 
 test('grid progress buttons send numeric IDs to the live handler', async ({ page }) => {
   const { card, id } = await openMediaCard(page);
-  await expectStatusRequest(page, () => card.locator('[data-action="mark-finished"]').click(), id, 'finished');
-  await expectStatusRequest(page, () => card.locator('[data-action="mark-not-started"]').click(), id, 'not_started');
+  await expectStatusRequest(page, () => cardAction(page, card, 'Mark as finished'), id, 'finished');
+  await expectStatusRequest(page, () => cardAction(page, card, 'Mark as not started'), id, 'not_started');
 });
 
 test('media info progress buttons send numeric IDs to the live handler', async ({ page }) => {

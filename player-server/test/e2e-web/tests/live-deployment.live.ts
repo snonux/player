@@ -15,6 +15,7 @@
  */
 import { test, expect, type Browser, type Page } from '@playwright/test';
 import { headerItem } from './helpers/header-menu';
+import { cardAction } from './helpers/card-actions';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
@@ -422,14 +423,14 @@ test.describe('library as admin', () => {
   test('a note is saved, survives a reload and can be deleted', async ({ page }) => {
     const text = `live e2e note ${Date.now()}`;
     await openSet(page, 'test-audio');
-    const notes = () => card(page, 'sample-flac.flac').locator('[data-action="notes"]');
-    await notes().click({ force: true });
+    const notesCard = () => card(page, 'sample-flac.flac');
+    await cardAction(page, notesCard(), 'Notes');
     await expect(page.locator('#notes-modal')).toHaveClass(/open/);
     await page.locator('#notes-textarea').fill(text);
     await page.locator('#notes-save').click();
     await expect(page.locator('#notes-modal')).not.toHaveClass(/open/);
     await openSet(page, 'test-audio');
-    await notes().click({ force: true });
+    await cardAction(page, notesCard(), 'Notes');
     await expect(page.locator('#notes-textarea')).toHaveValue(text);
     await page.locator('#notes-delete').click();
     await expect(page.locator('#notes-modal')).not.toHaveClass(/open/);
@@ -441,7 +442,7 @@ test.describe('library as admin', () => {
     const tag = `live-e2e-${Date.now()}`;
     await openSet(page, 'test-images');
     const target = card(page, 'sample-png.png');
-    await target.locator('[data-action="tags"]').click({ force: true });
+    await cardAction(page, target, 'Tags');
     await expect(page.locator('#tags-modal')).toHaveClass(/open/);
     await page.locator('#tags-new').fill(tag);
     await page.locator('#tags-add').click();
@@ -450,7 +451,7 @@ test.describe('library as admin', () => {
     await page.keyboard.press('/');
     await page.locator('#search-input').fill(`tag:${tag}`);
     await expect(page.locator('#media-grid .media-card[data-id]')).toHaveCount(1);
-    await target.locator('[data-action="tags"]').click({ force: true });
+    await cardAction(page, target, 'Tags');
     await page.locator('#tags-list .tag-chip').filter({ hasText: tag }).locator('.tag-remove').click();
     await expect(page.locator('#tags-list .tag-chip').filter({ hasText: tag })).toHaveCount(0);
   });

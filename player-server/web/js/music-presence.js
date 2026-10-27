@@ -12,7 +12,7 @@ export function localMusicPresenceSnapshot() {
 
 export function mountMusicPresence(parent, { getSnapshot = localMusicPresenceSnapshot, getAccount = () => state.user?.id } = {}) {
   const panel = document.createElement('details');
-  panel.className = 'card-body music-column';
+  panel.className = 'card-body music-column music-presence';
   panel.innerHTML = '<summary>Listeners</summary><label><input type="checkbox"> Share my listening</label><p class="text-muted">Off by default. Sharing shows your username, client and current song to signed-in people who can access that song. Local server-library music only; downloads, public shares, radio and remote output are excluded.</p><p role="status" data-presence-status></p><button class="btn" type="button" data-presence-retry>Retry</button><ul data-presence-list></ul>';
   parent.append(panel);
   const summary = panel.querySelector('summary');
