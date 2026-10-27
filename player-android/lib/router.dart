@@ -266,7 +266,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                       const [])
                   : const [],
               traverseFolders: state.extra is Map &&
-                  (state.extra as Map)['traverseFolders'] == true);
+                  (state.extra as Map)['traverseFolders'] == true,
+              fromPlayback: state.extra is Map &&
+                  (state.extra as Map)['fromPlayback'] == true);
         },
       ),
       GoRoute(

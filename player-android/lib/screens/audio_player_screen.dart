@@ -16,6 +16,7 @@ import 'dart:async';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'media_playback_navigation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -1085,6 +1086,9 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                   tooltip: context.tr('Info'),
                   icon: const Icon(Icons.info_outline),
                   onPressed: _showMusicInfo),
+            if (_activeRequest case final ServerPlaybackRequest request
+                when !widget.isPublicShare && !casting)
+              PlaybackDetailsButton(mediaId: request.mediaId),
             buildCastButton(ready: !_isLoading && _error == null),
             if (_activeRequest != null &&
                 !_isLoading &&

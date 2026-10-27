@@ -100,7 +100,8 @@ class _Client extends PlayerApiClient {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
-  testWidgets('grid to detail to full image uses authenticated stream',
+  testWidgets(
+      'grid opens the full image directly; details link back to the viewer',
       (tester) async {
     final client = _Client();
     final router = GoRouter(
@@ -112,8 +113,9 @@ void main() {
         ),
         GoRoute(
           path: AppRoutes.mediaDetail,
-          builder: (_, state) =>
-              MediaDetailScreen(mediaId: state.pathParameters['id']!),
+          builder: (_, state) => MediaDetailScreen(
+              mediaId: state.pathParameters['id']!,
+              fromPlayback: (state.extra as Map?)?['fromPlayback'] == true),
         ),
         GoRoute(
           path: AppRoutes.imageViewer,
@@ -151,15 +153,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('media_card_9')));
-    await tester.pumpAndSettle();
-    expect(find.text('View Image'), findsOneWidget);
-
-    await tester.ensureVisible(find.byKey(const Key('media_detail_play')));
-    await tester.tap(find.byKey(const Key('media_detail_play')));
     await tester.pump();
     await tester.pump();
     await tester.pump();
 
+    expect(find.byType(MediaDetailScreen), findsNothing);
     expect(find.byType(ImageViewerScreen), findsOneWidget);
     expect(find.byType(AudioPlayerScreen), findsNothing);
     expect(find.byKey(const Key('image_viewer_zoom')), findsOneWidget);
@@ -194,14 +192,26 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(client.media.favorite, isTrue);
 
+    await tester.tap(find.byKey(const Key('playback_details_button')));
+    await _pumpFrames(tester);
+    expect(find.byType(MediaDetailScreen), findsOneWidget);
+    expect(find.text('View Image'), findsOneWidget);
+    expect(find.byTooltip('Remove from favourites'), findsOneWidget);
+
+    // Play from details returns to the open viewer instead of stacking one.
+    await tester.ensureVisible(find.byKey(const Key('media_detail_play')));
+    await tester.tap(find.byKey(const Key('media_detail_play')));
+    await _pumpFrames(tester);
+    expect(find.byType(MediaDetailScreen), findsNothing);
+    expect(find.byType(ImageViewerScreen), findsOneWidget);
+
     await tester.tap(find.descendant(
       of: find.byType(ImageViewerScreen),
       matching: find.byTooltip('Back'),
     ));
-    await tester.pumpAndSettle();
-    expect(find.byType(MediaDetailScreen), findsOneWidget);
+    await _pumpFrames(tester);
     expect(find.byType(ImageViewerScreen), findsNothing);
-    expect(find.byTooltip('Remove from favourites'), findsOneWidget);
+    expect(find.byKey(const Key('media_card_9')), findsOneWidget);
   });
 
   testWidgets('direct image route rejects an audio item before requesting it',
@@ -243,7 +253,15 @@ void main() {
     final calls = client.mediaIds.length;
     expect(find.byTooltip('Notes'), findsNothing);
     expect(find.byTooltip('Add to favorites'), findsNothing);
+    expect(find.byKey(const Key('playback_details_button')), findsNothing);
     await tester.pump();
     expect(client.mediaIds.length, calls);
   });
+}
+
+/// Advances route transitions without waiting for image loaders to idle.
+Future<void> _pumpFrames(WidgetTester tester) async {
+  for (var i = 0; i < 10; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
 }

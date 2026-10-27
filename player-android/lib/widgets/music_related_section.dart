@@ -8,6 +8,7 @@ import '../models/media.dart';
 import '../providers/api_client_provider.dart';
 import '../services/music_collections.dart';
 import '../services/music_queue.dart';
+import '../screens/media_playback_navigation.dart';
 import 'music_collection_actions.dart';
 import 'authenticated_network_image.dart';
 import 'server_song_actions.dart';
@@ -67,10 +68,12 @@ class _MusicRelatedSectionState extends ConsumerState<MusicRelatedSection> {
 
   void _open(Map<String, dynamic> item) {
     final key = item['key'] as String;
-    final route = widget.kind == 'song'
-        ? AppRoutes.mediaDetailPath(int.parse(key))
-        : '${widget.kind == 'album' ? AppRoutes.musicAlbums : AppRoutes.musicArtists}?${widget.kind == 'album' ? 'album' : 'artist'}=${Uri.encodeComponent(key)}';
-    context.push(route);
+    if (widget.kind == 'song') {
+      openMediaPlaybackById(context, ref, int.parse(key));
+      return;
+    }
+    context.push(
+        '${widget.kind == 'album' ? AppRoutes.musicAlbums : AppRoutes.musicArtists}?${widget.kind == 'album' ? 'album' : 'artist'}=${Uri.encodeComponent(key)}');
   }
 
   @override

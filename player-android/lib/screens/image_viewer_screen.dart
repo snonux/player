@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'media_playback_navigation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
@@ -79,6 +80,8 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
     final fallbackTitle = widget.isPublicShare ? 'Shared Image' : 'Image';
     return Scaffold(
       appBar: AppBar(title: Text(widget.mediaTitle ?? fallbackTitle), actions: [
+        if (!widget.isPublicShare && int.tryParse(widget.mediaId) != null)
+          PlaybackDetailsButton(mediaId: int.parse(widget.mediaId)),
         if (_personalStore != null)
           PersonalMediaActions(
               store: _personalStore!,

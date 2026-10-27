@@ -11,6 +11,7 @@ import '../widgets/authenticated_network_image.dart';
 import '../widgets/thumbnail_zoom.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
+import 'media_playback_navigation.dart';
 
 // ---------------------------------------------------------------------------
 // Data models (file-private)
@@ -236,12 +237,9 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     );
   }
 
-  /// Navigates to the [MediaDetailScreen] for [mediaId].
-  void _openMedia(int mediaId) =>
-      context.push(AppRoutes.mediaDetailPath(mediaId), extra: {
-        'sequence': List<Media>.of(_result?.media ?? []),
-        'traverseFolders': true
-      });
+  /// Opens [item]'s player directly; Next/Previous follow this folder.
+  void _openMedia(Media item) => openMediaPlayback(context, ref, item,
+      sequence: _result?.media ?? const [], traverseFolders: true);
 
   /// Returns the URL for the cover image of a folder at [folderPath] within
   /// [widget.setId].
@@ -365,7 +363,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
                   item: item,
                   thumbnailUrl: _thumbnailUrl(item.id),
                   thumbnailSize: 48 * scale,
-                  onTap: () => _openMedia(item.id),
+                  onTap: () => _openMedia(item),
                 );
               },
             ),

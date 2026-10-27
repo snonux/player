@@ -13,6 +13,7 @@ import '../utils/error_mappers.dart';
 import '../widgets/search_filter_bar.dart';
 import '../widgets/media_filter_sheet.dart';
 import '../widgets/thumbnail_zoom.dart';
+import 'media_playback_navigation.dart';
 
 // ---------------------------------------------------------------------------
 // _buildMediaWithFavorite  (file-private helper)
@@ -612,9 +613,10 @@ class _MediaGrid extends StatelessWidget {
 ///   - A heart icon in the bottom-right corner of the thumbnail that reflects
 ///     the favourite state and fires [onFavoriteToggle] when tapped.
 ///
-/// Tapping the card body navigates to [AppRoutes.mediaDetailPath] for the item.
+/// Tapping the card body opens the item's player through [openMediaPlayback];
+/// the player links to the details screen.
 /// Tapping the heart icon triggers the favourite toggle without navigating.
-class _MediaCard extends StatelessWidget {
+class _MediaCard extends ConsumerWidget {
   const _MediaCard({
     required this.item,
     required this.sequence,
@@ -634,16 +636,13 @@ class _MediaCard extends StatelessWidget {
   final VoidCallback onFavoriteToggle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Card(
       key: Key('media_card_${item.id}'),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () async {
-          await context.push(AppRoutes.mediaDetailPath(item.id), extra: {
-            'sequence': List<Media>.of(sequence),
-            'traverseFolders': false,
-          });
+          await openMediaPlayback(context, ref, item, sequence: sequence);
           onReturn();
         },
         child: Stack(

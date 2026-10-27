@@ -27,6 +27,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
+import 'package:player_android/models/models.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/folder_browser_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -211,6 +212,21 @@ const _kEmptyBrowseResult = {
 /// Stub route shown after navigating to the media-detail screen.
 const _kMediaDetailKey = Key('nav_media_detail');
 
+/// Stub player route; [_lastPlayerExtra] keeps the extras it was opened with.
+const _kPlayerKey = Key('nav_player');
+Map<dynamic, dynamic>? _lastPlayerExtra;
+
+GoRoute _playerStub(String kind) => GoRoute(
+      path: '/$kind/:mediaId',
+      builder: (context, state) {
+        _lastPlayerExtra = state.extra as Map?;
+        return Scaffold(
+          body: Text('$kind ${state.pathParameters['mediaId']}',
+              key: _kPlayerKey),
+        );
+      },
+    );
+
 /// Builds a [GoRouter] with [FolderBrowserScreen] and stub detail + child routes
 /// so navigation tests can verify that the correct destination is reached.
 GoRouter _buildRouter(
@@ -243,6 +259,8 @@ GoRouter _buildRouter(
           ),
         ),
       ),
+      _playerStub('video'),
+      _playerStub('audio'),
     ],
   );
 }
@@ -520,8 +538,11 @@ void main() {
   // Media tap navigates to detail
   // --------------------------------------------------------------------------
 
-  group('media tap navigates to detail', () {
-    testWidgets('tapping a media tile navigates to /media/:id', (tester) async {
+  group('media tap starts playback', () {
+    setUp(() => _lastPlayerExtra = null);
+
+    testWidgets('tapping a video tile opens the video player, not details',
+        (tester) async {
       final fakeClient = _FakeApiClient()
         ..browseResult = Map<String, dynamic>.from(_kRootBrowseResult);
 
@@ -531,9 +552,28 @@ void main() {
       await tester.tap(find.byKey(const Key('media_tile_1')));
       await tester.pumpAndSettle();
 
-      // Stub route at /media/:id should be on screen.
-      expect(find.byKey(_kMediaDetailKey), findsOneWidget);
-      expect(find.text('Media 1'), findsOneWidget);
+      expect(find.text('video 1'), findsOneWidget);
+      expect(find.byKey(_kMediaDetailKey), findsNothing);
+      expect(_lastPlayerExtra?['title'], 'root_video.mp4');
+      expect(_lastPlayerExtra?['mediaUrl'], isNotEmpty);
+    });
+
+    testWidgets('tapping an audio tile plays it within the folder sequence',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..browseResult = Map<String, dynamic>.from(_kFolderABrowseResult);
+
+      await _pumpScreen(tester, fakeClient, path: 'FolderA');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('media_tile_2')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('audio 2'), findsOneWidget);
+      expect(find.byKey(_kMediaDetailKey), findsNothing);
+      final sequence = _lastPlayerExtra?['sequence'] as List<Media>;
+      expect(sequence.map((m) => m.id), [2, 3]);
+      expect(_lastPlayerExtra?['traverseFolders'], isTrue);
     });
   });
 

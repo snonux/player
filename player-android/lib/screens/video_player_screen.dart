@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'media_playback_navigation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart'
@@ -945,6 +946,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       backgroundColor: Colors.black,
       appBar: AppBar(
         actions: [
+          if (_activeRequest case final ServerPlaybackRequest request
+              when !widget.isPublicShare && !casting)
+            PlaybackDetailsButton(mediaId: request.mediaId),
           buildCastButton(
             ready: !_isLoading && _error == null && _videoController != null,
           ),

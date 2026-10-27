@@ -401,15 +401,27 @@ GoRouter _buildRouter(PlayerApiClient fakeClient) {
         path: '/media/:id',
         builder: (context, state) => Scaffold(
           appBar: AppBar(title: const Text('Media detail')),
-          body: Text(
-            'Media ${state.pathParameters['id']}',
-            key: _kDestinationKey,
-          ),
+          body: Text('Media ${state.pathParameters['id']}'),
         ),
       ),
+      for (final kind in ['video', 'audio', 'image'])
+        GoRoute(
+          path: '/$kind/:mediaId',
+          builder: (context, state) {
+            _lastPlayerExtra = state.extra as Map?;
+            return Scaffold(
+              appBar: AppBar(title: const Text('Player')),
+              body: Text('$kind ${state.pathParameters['mediaId']}',
+                  key: _kDestinationKey),
+            );
+          },
+        ),
     ],
   );
 }
+
+/// Extras of the last player route opened through [_buildRouter].
+Map<dynamic, dynamic>? _lastPlayerExtra;
 
 /// Pumps [MediaGridScreen] (set 10, name "Movies") inside a [ProviderScope]
 /// that overrides [apiClientProvider] and [tokenStorageProvider] with fakes.
@@ -525,7 +537,11 @@ void main() {
       expect(tagged.fileName, 'song.mp3');
       await tester.tap(find.byKey(const Key('media_card_2')));
       await tester.pumpAndSettle();
-      expect(find.text('Media 2'), findsOneWidget);
+      // Audio opens the player directly with the grid as its sequence.
+      expect(find.text('audio 2'), findsOneWidget);
+      expect(find.text('Media 2'), findsNothing);
+      expect((_lastPlayerExtra?['sequence'] as List<Media>).single.id, 2);
+      expect(_lastPlayerExtra?['title'], '東京 Tagged Song');
     });
 
     testWidgets('shows a card for each item returned by listMedia',
@@ -583,7 +599,7 @@ void main() {
   // Tap navigation
   // --------------------------------------------------------------------------
 
-  group('tap navigates to media detail', () {
+  group('tap starts playback', () {
     testWidgets('folder action preserves the set and returns to the grid',
         (tester) async {
       final client = _FakeApiClient()..mediaResult = [_kVideo];
@@ -597,7 +613,8 @@ void main() {
       expect(find.byKey(const Key('media_grid')), findsOneWidget);
     });
 
-    testWidgets('tapping a media card navigates to /media/:id', (tester) async {
+    testWidgets('tapping a video card opens the video player, not details',
+        (tester) async {
       final fakeClient = _FakeApiClient()..mediaResult = [_kVideo];
 
       await _pumpScreen(tester, fakeClient);
@@ -606,13 +623,13 @@ void main() {
       // The media card must be visible before tapping.
       expect(find.byKey(const Key('media_card_1')), findsOneWidget);
 
-      // Tap the card; go_router pushes `/media/1` above the grid.
+      // Tap the card; go_router pushes `/video/1` above the grid.
       await tester.tap(find.byKey(const Key('media_card_1')));
       await tester.pumpAndSettle();
 
-      // The stub route at '/media/:id' is now on screen.
-      expect(find.byKey(_kDestinationKey), findsOneWidget);
-      expect(find.text('Media 1'), findsOneWidget);
+      expect(find.text('video 1'), findsOneWidget);
+      expect(find.text('Media 1'), findsNothing);
+      expect(_lastPlayerExtra?['mediaUrl'], isNotEmpty);
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('media_grid')), findsOneWidget);
@@ -912,7 +929,7 @@ void main() {
       // Navigation happened — no pending toggle completer means toggle was not called.
       // (If it had been called the completer would be non-null and the test would
       // crash on dispose with an unhandled Completer future.)
-      expect(find.byKey(_kDestinationKey), findsOneWidget);
+      expect(find.text('video 1'), findsOneWidget);
     });
   });
 

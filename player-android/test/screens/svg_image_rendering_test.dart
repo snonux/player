@@ -330,7 +330,7 @@ void _viewerBitmapTests() {
   });
 }
 
-/// Media grid whose cards open the media detail screen.
+/// Media grid plus the details route its items link to.
 GoRouter _gridAndDetailRouter() => GoRouter(
       initialLocation: AppRoutes.mediaGridPath(1),
       routes: [
@@ -358,7 +358,8 @@ void _thumbnailTests() {
     await pumpUntilFound(tester, find.descendant(of: card, matching: _picture));
     await _expectPaintedRed(tester, _pictureBoundary);
 
-    await tester.tap(card);
+    // Cards open the player; the details screen holds the banner.
+    router.push(AppRoutes.mediaDetailPath(9));
     final banner = find.descendant(
         of: find.byKey(const Key('media_detail_thumbnail')),
         matching: _picture);

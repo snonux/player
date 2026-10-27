@@ -935,7 +935,7 @@ void main() {
 
   testWidgets('shows the server audio format under the seek bar',
       (tester) async {
-    final (player, handler) = _usePlayableHandler();
+    final (player, handler) = _usePlayableHandler(tester);
     final client = _FakeApiClient()
       ..formatResult = AudioFormat.fromJson({
         'codec_label': 'FLAC',

@@ -16,6 +16,7 @@ import '../widgets/authenticated_network_image.dart';
 import '../widgets/tag_picker.dart';
 import '../widgets/keep_offline_button.dart';
 import 'create_share_dialog.dart';
+import 'media_playback_navigation.dart';
 
 // ---------------------------------------------------------------------------
 // MediaDetailScreen
@@ -44,11 +45,15 @@ class MediaDetailScreen extends ConsumerStatefulWidget {
 
   final List<Media> sequence;
   final bool traverseFolders;
+
+  /// True when a player opened this screen; Play then returns to it.
+  final bool fromPlayback;
   const MediaDetailScreen(
       {super.key,
       required this.mediaId,
       this.sequence = const [],
-      this.traverseFolders = false});
+      this.traverseFolders = false,
+      this.fromPlayback = false});
 
   @override
   ConsumerState<MediaDetailScreen> createState() => _MediaDetailScreenState();
@@ -224,61 +229,24 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   // Navigation
   // ---------------------------------------------------------------------------
 
-  /// Opens the viewer or player appropriate for [media.type].
-  ///
-  /// The URLs are obtained from [PlayerApiClient] — keeping the API paths in
-  /// one place and preventing Dio internals from leaking into the UI layer
-  /// (Dependency Inversion).  The URL is passed as a route extra so the
-  /// player screen can start playback without a second API call.
-  ///
-  /// Audio and video use [PlayerApiClient.playbackUrl], which is the server's
-  /// compatibility stream for items it marks as transcoded. Images are always
-  /// shown from the original.
+  /// Opens the viewer or player appropriate for [media.type] through
+  /// [openMediaPlayback]. When a player opened this screen, Play returns to
+  /// that player so playback is not restarted in a second route.
   Future<void> _play() async {
     final media = _media;
     if (media == null) return;
-
-    final client = ref.read(apiClientProvider);
-    // Delegate URL construction to the client; avoids coupling the screen to
-    // the underlying Dio base URL or request structure.
-    final streamUrl = client.streamUrl(media.id);
-    final playbackUrl = client.playbackUrl(media);
-
-    if (media.type == 'image') {
-      final epoch = ref.read(credentialMutationQueueProvider).generation;
-      await context.push(
-        AppRoutes.imageViewerPath(media.id.toString()),
-        extra: {
-          'mediaUrl': streamUrl,
-          'sourceName': media.relPath,
-          'title': media.displayTitle
-        },
-      );
-      if (mounted &&
-          widget.mediaId == media.id.toString() &&
-          ref.read(credentialMutationQueueProvider).generation == epoch) {
-        await _load();
-      }
-    } else if (media.type == 'video') {
-      context.push(
-        AppRoutes.videoPlayerPath(media.id.toString()),
-        extra: {
-          'mediaUrl': playbackUrl,
-          'sourceName': media.relPath,
-          'title': media.displayTitle
-        },
-      );
-    } else if (media.type == 'audio') {
-      context.push(
-        AppRoutes.audioPlayerPath(media.id.toString()),
-        extra: {
-          'sequence': widget.sequence.isEmpty ? [media] : widget.sequence,
-          'traverseFolders': widget.traverseFolders,
-          'mediaUrl': playbackUrl,
-          'sourceName': media.relPath,
-          'title': media.displayTitle
-        },
-      );
+    if (widget.fromPlayback && context.canPop()) {
+      context.pop();
+      return;
+    }
+    final epoch = ref.read(credentialMutationQueueProvider).generation;
+    await openMediaPlayback(context, ref, media,
+        sequence: widget.sequence, traverseFolders: widget.traverseFolders);
+    if (media.type == 'image' &&
+        mounted &&
+        widget.mediaId == media.id.toString() &&
+        ref.read(credentialMutationQueueProvider).generation == epoch) {
+      await _load();
     }
   }
 
