@@ -58,8 +58,9 @@ lookup retained the previous Tracks mode and queue; online retry switched to
 Albums. The catalog endpoint excluded restricted songs for the viewer, returned
 no membership after real Music permission revocation, and isolated the queue
 across account changes. Evidence and screenshots are under
-`/home/paul/tmp/codex/player-m19-evidence`; the fixture is
-`/home/paul/tmp/codex/player-m19-18872`. Early Chrome runner setup failures
+`/home/paul/tmp/codex/player-m19-evidence`; the disposable fixture ran from
+`/home/paul/tmp/codex/player-m19-18872` and was removed after acceptance.
+Early Chrome runner setup failures
 were corrected before the final focused passes and remain in the append-only
 evidence log.
 

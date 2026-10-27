@@ -120,8 +120,10 @@ headers and invalid decoder bytes. The narrow popover's Gapless checkbox was
 also toggled through its visible controls in both browsers. The latter two use
 controlled browser responses, not oversized media files. Evidence, WAV
 captures and screenshots are in `/home/paul/tmp/codex/player-m21-evidence`.
-The isolated fixture is
-`/home/paul/tmp/codex/player-m21-18858` on port 18858. Run the focused suite
+The isolated fixture ran from
+`/home/paul/tmp/codex/player-m21-18858` on port 18858 and was removed after
+acceptance. Recreate it with
+`python3 player-android/integration_test/support/music_fixture.py up /home/paul/tmp/codex/player-m49-server --port 18858 --no-doubles --dir /home/paul/tmp/codex/player-m21-18858 --evidence /home/paul/tmp/codex/player-m21-evidence`. Run the focused suite
 with `PLAYER_MUSIC_FIXTURE` pointing there, `GOMAXPROCS=2`, one Playwright worker,
 and each `--project=chrome` and `--project=firefox` serially.
 
