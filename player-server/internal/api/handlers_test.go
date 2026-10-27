@@ -424,6 +424,26 @@ func TestServer_StaticPages(t *testing.T) {
 		}
 	})
 
+	t.Run("only the exact offline music shell is public", func(t *testing.T) {
+		srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		for _, path := range []string{"/?offline=music", "/index.html?offline=music"} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "index") {
+				t.Fatalf("%s: expected public app shell, got %d %q", path, rr.Code, rr.Body.String())
+			}
+		}
+		for _, path := range []string{"/?music=album", "/index.html?offline=music&set=1", "/other?offline=music"} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if rr.Code != http.StatusUnauthorized {
+				t.Fatalf("%s: expected session requirement, got %d", path, rr.Code)
+			}
+		}
+	})
+
 	t.Run("login public", func(t *testing.T) {
 		srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		req := httptest.NewRequest(http.MethodGet, "/login.html", nil)

@@ -363,12 +363,23 @@ func (s *Server) routesStatic() {
 
 // routesHTML wires the SPA HTML page routes.
 // /login.html and /bootstrap.html are public (the user reaches them before
-// authenticating); the rest sit behind RequireSession.
+// authenticating). The exact offline music URL may also serve the app shell
+// without a session; its JavaScript reads only local downloads. Other app
+// navigations still require a session.
 func (s *Server) routesHTML() {
 	s.handlePublic("/login.html", http.HandlerFunc(s.serveLogin))
 	s.handlePublic("/bootstrap.html", http.HandlerFunc(s.serveBootstrap))
-	s.mux.Handle("/", s.mw.RequireSession(http.HandlerFunc(s.serveIndex)))
-	s.mux.Handle("GET /index.html", s.mw.RequireSession(http.HandlerFunc(s.serveIndex)))
+	protectedIndex := s.mw.RequireSession(http.HandlerFunc(s.serveIndex))
+	index := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+			(r.URL.Path == "/" || r.URL.Path == "/index.html") && r.URL.RawQuery == "offline=music" {
+			s.serveIndex(w, r)
+			return
+		}
+		protectedIndex.ServeHTTP(w, r)
+	})
+	s.mux.Handle("/", index)
+	s.mux.Handle("GET /index.html", index)
 	s.mux.Handle("GET /detach.html", s.mw.RequireSession(http.HandlerFunc(s.serveDetach)))
 }
 

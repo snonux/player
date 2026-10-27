@@ -104,6 +104,28 @@ offline. It also checks reload, local Unpin/Remove behavior, narrow theme,
 account isolation, and a real permission denial and retry. Evidence stays
 outside the repository; stop the fixture with `music_fixture.py down`.
 
+For M49 offline music browsing, use a fresh disposable music fixture on an
+unused port and run one installed browser at a time. The suite needs exclusive
+use of that fixture while it creates and removes its playlist:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M49_ISOLATED=1 \
+PLAYER_M49_EVIDENCE=/tmp/player-m49-web-evidence \
+PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-offline-browse.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+The focused test checks a fresh browser with no downloads, then pins a real
+album and overlapping playlist, caches an unpinned song through playback, and
+opens the music view after the browser network is disabled. It covers cold
+service-worker reload, browsing and search by keyboard, complete and partial
+collections, local queue and measured audio, separate saved accounts, and
+explicit sign-in after reconnection. It records screenshots, audio and API
+request counts outside the repository. Stop the fixture after the browser and
+Android acceptance runs are finished.
+
 For M36 personal listening, start a disposable `music_fixture.py up` server on
 an unused port and run the focused journey in installed Chrome and Firefox,
 one browser at a time:

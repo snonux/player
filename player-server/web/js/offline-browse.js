@@ -53,6 +53,7 @@ export function initOfflineMusicApp() {
   }
   const rows=selectedRows();selected=Math.max(0,Math.min(selected,rows.length-1));
   if(!rows.length){message('No downloaded music matches.');return;}
+  if(status.textContent===t('No downloaded music matches.'))message('Saved on this device. Online actions need a connection and sign-in.');
   rows.forEach((row,i)=>{
    const item=document.createElement('div'),open=button('',()=>{selected=i;detail=row;render();results.querySelector('button')?.focus();});
    open.dataset.offlineRow=String(i);open.textContent=row.title;
