@@ -141,3 +141,32 @@ introduced. Refrozen for the sole R2; the exact R1 delta is limited to this
 document, `player-android/lib/services/audio_handler.dart` and
 `player-android/test/services/audio_handler_progress_test.dart`. The full
 15-path manifest and integrated verification gaps above remain unchanged.
+
+## Integrated acceptance — 2026-10-27
+
+The retained 5i3 fixture at
+`/home/paul/tmp/player-integrated-verify/podcast-5i3` verifies installed
+Android A and B clients and the matching Chrome/Firefox episode state. Native
+B resumed the position saved by A with its own publisher copy and audible
+output, then wrote position and completion at the same clock on natural end.
+Native A held a real pre-play sync response beyond the bounded startup and
+confirmed that its late arrival did not seek or resume playback. A failed
+end-triggered sync left completion durable and the next source audible; a
+downloaded episode remained seekable and audible while both hosts were offline.
+The passing `resume`, `finish`, `preplay`, `end-outage-next`, `offline-seek`
+and browser stage results retain those observations. Focused lifecycle tests
+above cover exact seek-to-end, pause, error, stop and short final-position
+negatives that were not each recreated on the device.
+
+One additional API 34 native check used the installed B client and the same
+local publisher fixture. After **Play from beginning** on its downloaded
+60-second episode, Home focused the launcher while Player's media session
+remained PLAYING. QEMU captured a 441 Hz publisher-tone segment
+from 22.95 to 82.58 seconds in the recording, crossing the background window;
+the app then displayed 01:00/01:00 and Play. The WAV, before/background/after
+session dumps and structured result are under
+`/home/paul/tmp/codex/player-2i3-evidence`. The installed app's exact build
+number was not read during this extra check; the earlier 5i3 run recorded
+build 4026. The emulator was stopped afterwards. This completes the native
+background acceptance missing from the earlier run without repeating the
+other passing journeys.
