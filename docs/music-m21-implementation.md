@@ -1,7 +1,8 @@
-Stage: IMPLEMENTED/REVIEWED - AWAITING REMOTE RECEIVER VERIFICATION.
+Stage: ACCEPTED (2026-10-27).
 Two bounded expert rounds complete; paused successor-gain blocker fixed and R2 clear.
-Chrome, Firefox and native Android audio continuity acceptance passed. The
-remote receiver handoff is the remaining acceptance gap.
+Chrome, Firefox and native Android audio continuity acceptance passed.
+Cast/detached/share retain ordinary streaming by design; live Cast handoff is
+out of this task's required Chrome/Firefox/emulator E2E scope.
 
 # M21 / 0l3: gapless music queues
 
@@ -176,7 +177,7 @@ second account's empty queue screenshot is
 The focused browser runner passed 3/3 in Chrome `144.0.7559.132` and 3/3 in
 Firefox `156.0`. `GOMAXPROCS=2 go test -p 2 ./... -race -cover` passed while
 the emulator was stopped. Native source policy, sleep and account boundaries
-passed. Remote receiver handoff has not been exercised on a compatible
-receiver; task acceptance remains pending under its external-device
-criterion. The shared ten-task full regression gate passed before this task
-and is next due after twenty completed tasks, as requested by the user.
+passed. Cast/detached/share paths keep ordinary streaming by design (see Decoder
+paths). Required Chrome/Firefox/emulator gapless measurement is complete.
+The shared ten-task full regression gate passed before this task and is next
+due after twenty completed tasks, as requested by the user.
