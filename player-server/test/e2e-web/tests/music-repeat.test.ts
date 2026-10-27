@@ -129,7 +129,7 @@ test('M20 offline restore Retry retains mode and resumed selection',async({page,
   await page.route('**/api/media/*',route=>route.abort('failed'));await page.reload();await openQueue(page);await expect(panel(page).getByRole('button',{name:'Retry restore',exact:true})).toBeVisible();
   await page.unroute('**/api/media/*');await context.setOffline(true);
   await panel(page).getByRole('button',{name:'Retry restore',exact:true}).click();await expect(panel(page)).toContainText('Check your connection and retry');
-  expect(await page.evaluate(()=>JSON.parse(Object.entries(localStorage).find(([key])=>key.startsWith('player.queue.'))![1]).repeat)).toBe('one');expect((await audioState(page)).paused).toBe(true);
+  expect((await saved(page)).repeat).toBe('one');expect((await audioState(page)).paused).toBe(true);
   await context.setOffline(false);await panel(page).getByRole('button',{name:'Retry restore',exact:true}).click();await expect(panel(page).getByRole('button',{name:'Resume queue',exact:true})).toBeVisible();
   expect((await q(page)).repeat).toBe('one');expect((await q(page)).index).toBe(before.index);
   e.record({feature:'M20',scenario:'initial transport abort then real browser offline Retry retains repeat mode, online restore paused',result:'pass',data:{before,after:await saved(page)}});

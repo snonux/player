@@ -11,13 +11,18 @@ import { state } from './state.js';
 import { currentElement } from './selection.js';
 import { escapeHtml as esc, toast } from './utils.js';
 
-let context = null, collectionIntent = 0;
+let contexts = [], collectionIntent = 0;
+function activeContext() {
+ contexts = contexts.filter(owner => owner.root.isConnected);
+ const active = contexts.filter(owner => owner.current());
+ return active.findLast(owner => owner.catalog) || active.at(-1) || null;
+}
 export function collectionButtons(label) {
  return html`<span class="playlist-actions" data-collection-actions><button class="btn btn-primary" data-collection-play>▶ ${ui(label)}</button><button class="btn" data-collection-shuffle>Shuffle</button><button class="btn" data-collection-menu>Queue actions ▾</button><button class="btn" data-collection-download>Download…</button><button class="btn" data-collection-pin>Pin offline…</button><button class="btn" data-collection-share>Share…</button><span role="status" data-collection-status></span></span>`;
 }
 export function bindCollectionActions(root, collections, current, sourceLabel = t('Selected collections')) {
  const owner = {root, collections, current, sourceLabel, busy:false, generation:0};
- context = owner;
+ contexts.push(owner);
  root.querySelector('[data-collection-play]').onclick = () => run(owner, 'replace');
  root.querySelector('[data-collection-shuffle]').onclick = () => run(owner, 'shuffle');
  root.querySelector('[data-collection-share]').onclick = () => run(owner, 'share');
@@ -69,6 +74,7 @@ async function run(owner, action, targets, settings = {}) {
  }
 }
 export function queueCollectionSelected(action) {
+ const context = activeContext();
  if (!context?.current() || !context.root.isConnected) return false;
  const card = currentElement();
  if (card?.dataset.id) return false;
@@ -80,6 +86,7 @@ export function queueCollectionSelected(action) {
  return false;
 }
 export function cancelCollectionSelection() {
+ const context = activeContext();
  if (context?.catalog && context.current() && context.root.isConnected && context.selecting) { context.cancel(); return true; }
  return false;
 }

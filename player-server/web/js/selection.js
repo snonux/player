@@ -19,7 +19,7 @@ export function initSelection() {
 export function focusSelectedCard() {
   const el = currentElement();
   const nested = typeof el?.querySelector === 'function'
-    ? el.querySelector('.set-open, .folder-open, .media-open')
+    ? el.querySelector('.set-open, .folder-open, .media-open, .collection-open')
     : null;
   const target = nested || el;
   target?.focus?.();

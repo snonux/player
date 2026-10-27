@@ -121,6 +121,7 @@ test.beforeEach(async({page},info)=>{
 
 test('M54 actual MPRIS artwork metadata and OS previous next play pause follow real sources',async({page})=>{
  const a=track(f,'Music/Aurora Lane - Night Transit (2021)/01 - First Light.mp3');
+ test.skip(a.duration_s < 40, 'Requires --session-artwork fixture');
  const b=track(f,'Music/Tag Verification/source_001.flac');
  const c=track(f,'Music/Untagged/track_0042.mp3');
  const blue=[43,76,126],orange=[210,90,32];
@@ -171,6 +172,7 @@ test('M54 actual MPRIS artwork metadata and OS previous next play pause follow r
 
 test('M54 detached OS owner, denied artwork and offline retry keep the current track identity',async({page,context},info)=>{
  const a=track(f,'Music/Aurora Lane - Night Transit (2021)/01 - First Light.mp3');
+ test.skip(a.duration_s < 40, 'Requires --session-artwork fixture');
  const b=track(f,'Music/Tag Verification/source_001.flac');
  const d=track(f,'Music/Partial Tags/Lonely Single.mp3');
  let pid='';const proof:any[]=[];

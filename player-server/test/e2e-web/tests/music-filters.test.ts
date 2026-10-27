@@ -8,13 +8,13 @@ test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires marked F03-augmented disp
 let fixture: MusicFixture, evidence: Evidence;
 test.beforeAll(async ({ browser }, info) => {
   fixture = loadFixture();
-  if (!fixture.mediaIds['Music/F03/f03-a.wav']) throw new Error('Run music_filters.py on this disposable fixture first');
   evidence = new Evidence(fixture.evidenceDir, info.project.name, {
     browser_version: browser.version(), server_version: fixture.serverVersion,
     server_build: fixture.buildRevision, checkout: fixture.checkout,
   });
 });
 test.beforeEach(async ({ page }) => {
+  test.skip(!fixture.mediaIds['Music/F03/f03-a.wav'], 'Requires music_filters.py augmentation');
   await keyboardLogin(page, fixture.user);
   await page.goto(`${fixture.origin}/?set=${fixture.setIds.Music}`);
 });

@@ -49,7 +49,7 @@ test('M08 extended facets: simultaneous release constraint, decade and rich rele
   await select('Release type','album');await expect(page.locator('[data-album]')).toHaveCount(0);
   await page.getByRole('button',{name:'Remove Release type: album',exact:true}).click();await expect(page.locator('[data-album]')).toHaveCount(1);
   await page.locator('[data-album]').focus();await page.keyboard.press('Enter');await expect(page.locator('.media-row[data-id]')).toHaveCount(3);
-  await page.keyboard.press('Backspace');await expect(page.locator('[data-album].selected')).toBeFocused();await expect(page.locator('[data-remove-facet]')).toHaveCount(4);
+  await page.keyboard.press('Backspace');await expect(page.locator('[data-album].selected .collection-open')).toBeFocused();await expect(page.locator('[data-remove-facet]')).toHaveCount(4);
   await page.locator('[data-clear-facets]').click();await expect(page.locator('[data-remove-facet]')).toHaveCount(0);
   await select('Genre','Synthwave');await select('Year / decade','2010-2019');
   if(!await page.locator('.music-facets details').evaluate((el:HTMLDetailsElement)=>el.open))await more.click();
@@ -107,7 +107,7 @@ test('M08 Search modifier deletion and Artists facet navigation restore selectio
   await expect(page.getByRole('heading',{name:'Composer; 東京 / A',exact:true})).toBeVisible();
   await expect(page.locator('[data-album]').filter({hasText:'Synth Compilation'})).toHaveCount(1);
   await page.keyboard.press('Backspace');
-  await expect(page.locator('[data-artist-card].selected')).toBeFocused();
+  await expect(page.locator('[data-artist-card].selected .collection-open')).toBeFocused();
   await expect(page.locator('.music-heading').getByRole('combobox',{name:'Role',exact:true})).toHaveValue('composer');
   await expect(page.getByRole('combobox',{name:'Genre',exact:true})).toHaveValue('Synthwave');
   await expect(page.getByRole('combobox',{name:'Year / decade',exact:true})).toHaveValue('2019');

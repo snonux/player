@@ -36,6 +36,23 @@ function remember() {
  const selected = document.querySelector('#media-grid .selected');
  positions.set(viewKey(state.music), {album:selected?.dataset.album, artist:selected?.dataset.artistCard, song:selected?.dataset.id, playlist:selected?.dataset.playlist, scroll:window.scrollY});
 }
+function restoreSavedScroll(grid, saved, current) {
+ if (!saved) return;
+ const scroll = saved.scroll;
+ let observer, timeout, stopped=false;
+ const stop = () => { stopped=true; observer?.disconnect(); clearTimeout(timeout); for (const event of ['wheel','touchstart','pointerdown','keydown']) window.removeEventListener(event,stop); };
+ const restore = () => {
+  if (stopped) return;
+  if (!current()) { stop(); return; }
+  window.scrollTo(0,scroll);
+ };
+ // Artwork and discovery sections may grow after the cards first render.
+ observer = new ResizeObserver(() => requestAnimationFrame(restore));
+ observer.observe(grid);
+ timeout = setTimeout(stop,3000);
+ for (const event of ['wheel','touchstart','pointerdown','keydown']) window.addEventListener(event,stop,{once:true});
+ restore();
+}
 function descend(next) { remember(); history.push({...state.music}); state.music=next; reload(); }
 export function openArtists() { openAlbums('', '', true); }
 function openDiscoveryCollection(collection, items) { descend({...state.music,collection,collectionKeys:items.map(a=>a.album_key)}); }
@@ -75,7 +92,7 @@ export function backMusic() {
  if (!state.music) return false;
  if(state.music.search) { document.dispatchEvent(new Event('search:restore')); return true; }
  remember();
- if (history.length) state.music=history.pop();
+ if (history.length) { state.music=history.pop(); delete state.music.focusFacet; }
  else if (state.music.playlist) state.music.playlist='';
  else if (state.music.album) state.music.album = '';
  else if (state.music.collection) { delete state.music.collection; delete state.music.collectionKeys; }
@@ -159,7 +176,7 @@ export async function renderMusic(grid, isCurrent) {
   const restored = saved?.album ? grid.querySelector(`[data-album="${CSS.escape(saved.album)}"]`) : saved?.song ? grid.querySelector(`[data-id="${CSS.escape(saved.song)}"]`) : null;
   const target = restored || (!view.album && selectedAlbum ? grid.querySelector(`[data-album="${CSS.escape(selectedAlbum)}"]`) : grid.querySelector('.media-row, .album-card'));
   if (target) { selectByElement(target); focusSelectedCard(); } else grid.querySelector('[data-music-back]')?.focus();
-  if (saved) window.scrollTo(0,saved.scroll);
+  restoreSavedScroll(grid,saved,current);
   await mountMusicFacets(grid,view,current,reload);
   if(!view.album) { bindMusicLayout(grid,'albums',layoutPreferences,reload,remember);if(view.collection) grid.querySelectorAll('[data-layout-sort], [data-layout-direction], [data-rating-order]').forEach(control=>{control.disabled=true;control.title='This collection uses its own order.';}); }
  } catch (e) {
@@ -210,7 +227,7 @@ async function renderArtists(grid, view, current) {
  const saved=positions.get(viewKey(view));
  const target=(saved?.artist && grid.querySelector(`[data-artist-card="${CSS.escape(saved.artist)}"]`)) || (saved?.album && grid.querySelector(`[data-album="${CSS.escape(saved.album)}"]`)) || grid.querySelector('.media-card');
  if (target) { selectByElement(target); focusSelectedCard(); } else grid.querySelector('select, [data-music-back]')?.focus();
- if (saved) window.scrollTo(0,saved.scroll);
+ restoreSavedScroll(grid,saved,current);
 }
 
 function discHeading(disc) {

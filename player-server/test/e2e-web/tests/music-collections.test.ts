@@ -118,7 +118,9 @@ test('M15 album artist playlist catalog reverse selection follows visible order;
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     const shot=artifact(`m15-selection-${theme}-${width}.png`);await page.screenshot({path:shot,fullPage:true});artifacts.push(shot);
    }
-   await page.keyboard.press('Escape');await expect(grid(page).getByRole('button',{name:'Select '+target.kind+'s',exact:true})).toBeVisible();
+   await page.keyboard.press('Escape');
+   if (await grid(page).getByRole('button',{name:'Cancel selection',exact:true}).isVisible()) await page.keyboard.press('Escape');
+   await expect(grid(page).getByRole('button',{name:'Select '+target.kind+'s',exact:true})).toBeVisible();
    await expect(grid(page).locator('[data-collection-check]:visible')).toHaveCount(0);
    await page.setViewportSize({width:1366,height:844});
    const first=grid(page).locator('[data-collection-key]').first();await first.focus();await page.keyboard.press('j');await page.keyboard.press('k');await page.keyboard.press('Enter');
@@ -148,7 +150,7 @@ test('M15 pending shortcut single submission and visible offline error preserve 
   await page.goto('/?music=album&id='+setup.a.album_key);await playCollection(page,'Play album');await expectPlaying(page,setup.details[0].songs[0].id);await pause(page);await page.keyboard.press('Escape');
   await page.goto('/?music=albums');const card=grid(page).locator(`[data-collection-key="${setup.a.album_key}"]`);await card.focus();
   await ready(page);const before=await queue(page);await context.setOffline(true);await page.keyboard.press('e');
-  const status=grid(page).locator('[data-collection-status]');await expect(status).toContainText('Could not load songs');await expect(status).toBeVisible();expect((await queue(page)).ids).toEqual(before.ids);
+  const status=grid(page).locator(':scope > .grid-full > .playlist-actions > [data-collection-status]');await expect(status).toContainText('Could not load songs');await expect(status).toBeVisible();expect((await queue(page)).ids).toEqual(before.ids);
   await context.setOffline(false);
   const admin=await request.newContext({baseURL:f.origin});
   await admin.post('/api/v1/auth/login',{data:f.admin});

@@ -10,10 +10,19 @@ const rows=(page:Page)=>page.locator('#media-grid .media-row');
 const order=(page:Page)=>panel(page).locator('.queue-track').evaluateAll(nodes=>nodes.map(n=>n.childNodes[0].textContent));
 const songs=()=>['01 - First Light.mp3','02 - Long Road Home.mp3','03 - Harbour.flac'].map(name=>track(fixture,`Music/Aurora Lane - Night Transit (2021)/${name}`));
 test.beforeAll(async({browser},info)=>{fixture=loadFixture();evidence=new Evidence(fixture.evidenceDir,info.project.name,{browser_version:browser.version(),server_version:fixture.serverVersion,server_build:fixture.buildRevision,checkout:fixture.checkout});});
-test.beforeEach(async({page})=>{await page.addInitScript(installAudioTap);await keyboardLogin(page,fixture.user);});
+test.beforeEach(async({page})=>{
+ await page.addInitScript(installAudioTap);await keyboardLogin(page,fixture.user);
+ await page.keyboard.press('Q');await expect(panel(page)).toHaveClass(/open/);
+ await panel(page).getByRole('button',{name:'Continue session',exact:true}).click();
+ await expect.poll(async()=>page.evaluate(async()=>{const q=await import('/js/queue.js' as string);return q.queueState().status;})).toContain('Session continued');
+ if(await panel(page).locator('.queue-row').count())await panel(page).getByRole('button',{name:'Clear queue',exact:true}).click();
+ await expect(panel(page).locator('.queue-row')).toHaveCount(0);
+ await panel(page).getByRole('button',{name:'Close queue',exact:true}).click();
+});
 async function album(page:Page, start=true) {
  await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();
  await page.getByRole('button',{name:'Albums',exact:true}).click();
+ if(await page.locator('#menu-close').isVisible())await page.locator('#menu-close').click();
  await page.getByRole('button',{name:'Open album Night Transit by Aurora Lane',exact:true}).click();
  if(start){await page.getByRole('button',{name:'▶ Play album',exact:true}).click();await expectPlaying(page,songs()[0].id);await page.locator('#btn-play').click();await page.keyboard.press('Escape');}
 }
@@ -58,6 +67,7 @@ test('M14 single and selected insertion preserves FIFO, duplicates, position, Un
   await rows(page).nth(1).focus();await page.keyboard.press('a');await expect(page.getByRole('group',{name:'Media actions'})).toBeVisible();await page.keyboard.press('Escape');await expect(rows(page).nth(1)).toBeFocused();
   await page.keyboard.press('/');await page.getByRole('searchbox',{name:'Search media'}).fill('e E Q j k');await expect(page.getByRole('searchbox',{name:'Search media'})).toHaveValue('e E Q j k');await page.getByRole('searchbox',{name:'Search media'}).fill('');await page.keyboard.press('Escape');
   await page.keyboard.press('Q');expect((await order(page)).length).toBe(6);await page.keyboard.press('Escape');
+  if((await panel(page).getAttribute('class')||'').includes('open'))await panel(page).getByRole('button',{name:'Close queue',exact:true}).click();
   await album(page,false);await expect(page.locator('[data-selection-count]')).toBeVisible();await expect(page.getByRole('button',{name:'Selected song actions',exact:true})).toBeVisible();
   await albumScreens(page,artifacts);
   evidence.record({feature:'M14',scenario:'selected/single FIFO duplicate semantics and playback/Undo/focus/typing',result:'pass',data:{before,after,proof,ids},artifacts});
@@ -76,7 +86,9 @@ test('M14 repeated Play next actually advances FIFO with audible sources and fin
  const proof:any[]=[];
  try{
   const [a,b,c]=songs();for(const song of [a,b,c])await resetProgress(page,song.id);
-  await album(page);await action(page,'Harbour','Play next');await action(page,'Long Road Home','Play next');
+  await album(page);await action(page,'Harbour','Play next');
+  await expect.poll(()=>page.evaluate(async()=>{const {queueState}=await import('/js/queue.js' as string);return queueState().entries.map((entry:any)=>entry.media.id);})).toEqual([a.id,c.id,b.id,c.id]);
+  await action(page,'Long Road Home','Play next');
   await page.keyboard.press('Q');expect(await order(page)).toEqual(['First Light','Harbour','Long Road Home','Long Road Home','Harbour']);await page.keyboard.press('Escape');
   await rows(page).first().focus();await page.keyboard.press('p');proof.push(await audible(page,a,'m14-natural-a'));
   proof.push(await audible(page,c,'m14-natural-c'));proof.push(await audible(page,b,'m14-natural-b'));
@@ -88,17 +100,17 @@ test('M14 repeated Play next actually advances FIFO with audible sources and fin
  }catch(error){evidence.record({feature:'M14',scenario:'natural FIFO',result:'fail',detail:String(error),data:{proof}});throw error;}
 });
 
-test('M14 empty queues, offline modules and reload',async({page})=>{
+test('M14 empty enqueue, durable queue, offline modules and reload',async({page})=>{
  const proof:any[]=[];
  try{
   await album(page,false);await action(page,'Harbour','Add to queue');await page.keyboard.press('Q');expect(await order(page)).toEqual(['Harbour']);expect((await audioState(page)).paused).toBe(true);await page.keyboard.press('Escape');
   await action(page,'First Light','Play next');await page.keyboard.press('Q');expect(await order(page)).toEqual(['Harbour','First Light']);await page.keyboard.press('Escape');
   await action(page,'Long Road Home','Play now');proof.push(await audible(page,songs()[1],'m14-empty-play-now'));
-  await page.goto('/');await expect(page.getByRole('button',{name:'Toggle sets sidebar',exact:true})).toBeVisible();await page.keyboard.press('Q');await expect(panel(page)).toContainText('Queue is empty');await page.keyboard.press('Escape');
+  await page.goto('/');await expect(page.getByRole('button',{name:'Toggle sets sidebar',exact:true})).toBeVisible();await page.keyboard.press('Q');await expect(panel(page)).toContainText('Queue restored · paused');expect(await order(page)).toEqual(['Harbour','Long Road Home','First Light']);await panel(page).getByRole('button',{name:'Close queue',exact:true}).click();
   await expect.poll(()=>page.evaluate(()=>!!navigator.serviceWorker.controller)).toBe(true);
   await expect.poll(()=>page.evaluate(async()=>!!(await caches.match('/js/queue-actions.js')))).toBe(true);
   await page.context().setOffline(true);await page.reload();await expect(page.getByRole('button',{name:'Toggle sets sidebar',exact:true})).toBeVisible();await page.keyboard.press('Q');await expect(panel(page)).toContainText('Queue is empty');
-  evidence.record({feature:'M14',scenario:'empty enqueue paused, Play now audible, reload empty and actual offline cached module import',result:'pass',data:{proof},artifacts:[evidence.path('m14-offline.png')]});await page.screenshot({path:evidence.path('m14-offline.png')});
+  evidence.record({feature:'M14',scenario:'empty enqueue paused, Play now audible, durable online queue and actual offline cached module import',result:'pass',data:{proof},artifacts:[evidence.path('m14-offline.png')]});await page.screenshot({path:evidence.path('m14-offline.png')});
  }catch(error){evidence.record({feature:'M14',scenario:'empty/offline',result:'fail',detail:String(error),data:{proof}});throw error;}finally{await page.context().setOffline(false);}
 });
 
@@ -107,7 +119,9 @@ test('M14 Sets audio actions retain current source; real permission denial recov
  const proof:any[]=[];const admin=await request.newContext({baseURL:fixture.origin});let userId=0;
  try{
   await album(page);
-  await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();await page.locator('#set-list').getByRole('button',{name:'Set Music',exact:true}).click();await page.locator('#menu-close').click();
+  const set=page.locator('#set-list').getByRole('button',{name:'Set Music',exact:true});
+  if(!await set.isVisible())await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();
+  await set.click();if(await page.locator('#menu-close').isVisible())await page.locator('#menu-close').click();
   await page.getByRole('button',{name:'Folder Various Artists - Synth Compilation',exact:true}).click();await page.getByRole('button',{name:'Folder Disc 1',exact:true}).click();
   const source=track(fixture,'Music/Various Artists - Synth Compilation/Disc 1/01 - Neon Rain.m4a');
   await resetProgress(page,source.id);await playCard(page,source.title,source.id);
@@ -121,10 +135,16 @@ test('M14 Sets audio actions retain current source; real permission denial recov
   await admin.post('/api/v1/auth/login',{data:fixture.admin});userId=(await(await admin.get('/api/v1/admin/users')).json()).find((u:any)=>u.username===fixture.user.username).id;
   const target=track(fixture,'Music/Various Artists - Synth Compilation/Disc 1/02 - Glass City.opus');
   const targetCard=page.locator(`#media-grid [data-id="${target.id}"]`);
+  await expect.poll(async()=>page.evaluate(async()=> (await import('/js/queue.js' as string)).queueState().loading)).toBe(false);
+  await targetCard.getByRole('button',{name:target.title,exact:true}).focus();
+  await expect(targetCard).toHaveClass(/selected/);
+  await page.keyboard.press('a');await page.getByRole('group',{name:'Media actions'}).getByRole('button',{name:'Play next',exact:true}).click();
+  await expect.poll(async()=>page.evaluate(async id=>(await import('/js/queue.js' as string)).queueState().entries.some((entry:any)=>entry.media.id===id),target.id)).toBe(true);
   expect((await admin.delete('/api/v1/admin/permissions',{data:{set_id:fixture.setIds.Music,user_id:userId}})).ok()).toBe(true);
   expect((await page.request.get(`/api/v1/media/${target.id}`)).status()).toBe(403);
-  const denied=page.waitForResponse(r=>r.url().includes(`/media/${target.id}/stream`)&&r.status()===403);
-  await targetCard.focus();await page.keyboard.press('a');await page.getByRole('group',{name:'Media actions'}).getByRole('button',{name:'Play now',exact:true}).click();await denied;
+  const denied=page.waitForResponse(r=>r.url().includes(`/media/${target.id}`)&&r.status()===403);
+  if(!(await panel(page).getAttribute('class')||'').includes('open'))await page.getByRole('button',{name:'Queue',exact:true}).first().click();
+  await panel(page).getByRole('button',{name:`Play ${target.title}`,exact:true}).click();await denied;
   await expect(page.locator('#toast')).toContainText('Cannot play');await page.screenshot({path:evidence.path('m14-real-denied.png')});
   await admin.post('/api/v1/admin/permissions',{data:{set_id:fixture.setIds.Music,user_id:userId,role:'viewer'}});
   if(!(await panel(page).getAttribute('class')||'').includes('open'))await page.getByRole('button',{name:'Queue',exact:true}).first().click();await expect(panel(page)).toHaveClass(/open/);const index=await panel(page).locator('.queue-row[aria-current="true"]').getAttribute('data-queue-index');expect(index).not.toBeNull();

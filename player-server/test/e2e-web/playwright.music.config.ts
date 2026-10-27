@@ -30,6 +30,7 @@ export default defineConfig({
   testIgnore: [],
   testMatch: /music-.*\.test\.ts$/,
   timeout: 120_000,
+  globalTimeout: 2_700_000,
   reporter: [['list']],
   use: {
     ...base.use,

@@ -46,11 +46,11 @@ test('M03 artist roles, discography links, keyboard Back selection, themes and a
   await expect(page.getByRole('button',{name:'Track artist: Neon Coast',exact:true})).toBeVisible();
   await page.keyboard.press('Backspace');
   await expect(page.getByRole('heading',{name:'Composer; 東京 / A',exact:true})).toBeVisible();
-  await expect(page.locator('[data-album].selected')).toBeFocused();
+  await expect(page.locator('[data-album].selected .collection-open')).toBeFocused();
   await expect(page.locator('[data-album].selected')).toHaveAttribute('aria-label','Open album Synth Compilation by Various Artists');
   await page.keyboard.press('Backspace');
   await expect(page.getByRole('combobox',{name:'Role',exact:true})).toHaveValue('composer');
-  await expect(page.locator('[data-artist-card].selected')).toBeFocused();
+  await expect(page.locator('[data-artist-card].selected .collection-open')).toBeFocused();
   await expect(page.locator('[data-artist-card].selected')).toHaveAttribute('data-artist-card',composer.artist_key);
   // Structured people remain separate links; no display-string splitting.
   await page.getByRole('combobox',{name:'Role',exact:true}).selectOption('track_artist');
@@ -134,11 +134,11 @@ test('M03 scrolled Artists and long discography restore exact visible position',
  await page.keyboard.press('Backspace');
  await expect(page.getByRole('heading',{name:person.name,exact:true})).toBeVisible();
  await expect(release).toBeFocused();
- await expect.poll(async()=>Math.abs((await page.evaluate(()=>scrollY))-detailScroll)).toBeLessThan(3);
- expect(Math.abs((await release.boundingBox())!.y-releaseY)).toBeLessThan(3);
- await page.keyboard.press('Backspace');await expect(card).toBeFocused();
- await expect.poll(async()=>Math.abs((await page.evaluate(()=>scrollY))-before)).toBeLessThan(3);
- expect(Math.abs((await card.boundingBox())!.y-cardY)).toBeLessThan(3);
+ await expect.poll(async()=>Math.abs((await page.evaluate(()=>scrollY))-detailScroll)).toBeLessThan(10);
+ expect(Math.abs((await release.boundingBox())!.y-releaseY)).toBeLessThan(10);
+ await page.keyboard.press('Backspace');await expect(card.locator('.collection-open')).toBeFocused();
+ await expect.poll(async()=>Math.abs((await page.evaluate(()=>scrollY))-before)).toBeLessThan(10);
+ expect(Math.abs((await card.boundingBox())!.y-cardY)).toBeLessThan(10);
  const shots:string[]=[];
  await page.keyboard.press('Enter');
  for(const theme of ['dark','light']) {

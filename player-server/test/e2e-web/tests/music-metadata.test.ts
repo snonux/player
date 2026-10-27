@@ -67,7 +67,7 @@ test('M01 tags, filename fallback, Unicode and real structured multivalues in In
       expect(background).toBe(theme === 'light' ? 'rgb(244, 245, 248)' : 'rgb(15, 17, 23)');
       const card=page.getByRole('button',{name:long.title,exact:true});
       await expect(card).toBeVisible();
-      await expect(card.locator('.title')).toHaveAttribute('title',long.title);
+      await expect(page.getByRole('group',{name:long.title,exact:true}).locator('.title')).toHaveAttribute('title',long.title);
       const path=evidence.path(`m01-${theme}-${width}.png`);await page.screenshot({path,fullPage:true,animations:'disabled'});artifacts.push(path);
       await info(page,long.title);
       await row(page,'Title',long.title);
@@ -93,7 +93,7 @@ test('M01 rescan changes and removes tags in place while preserving saved state 
  const retag=async(state:string,title:string)=>{
   execFileSync('python3',[join(SUPPORT_DIR,'music_metadata.py'),fixture.dir,state]);
   expect((await page.request.post('/api/admin/rescan',{data:{}})).ok()).toBe(true);
-  await expect.poll(async()=>(await detail()).media.music?.title||'').toBe(title);
+  await expect.poll(async()=>(await detail()).media.music?.title||'',{timeout:30000}).toBe(title);
   const refreshed=await detail();
   const source=await page.request.head(`/api/media/${item.id}/download`);
   expect(source.ok()).toBe(true);

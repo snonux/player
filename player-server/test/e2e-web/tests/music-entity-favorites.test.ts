@@ -63,7 +63,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
     await expect(page.getByRole('heading', { name: 'Night Transit', exact: true })).toBeVisible();
     await expect(await heart(page, 'album', album.album_key)).toHaveAttribute('aria-pressed', 'true');
     await page.keyboard.press('Backspace');
-    await expect(albumCard).toBeFocused();
+    await expect(albumCard.locator('.collection-open')).toBeFocused();
     await expect(page.getByRole('checkbox', { name: 'Favorites only' })).toBeChecked();
 
     await catalog(page, 'Artists');

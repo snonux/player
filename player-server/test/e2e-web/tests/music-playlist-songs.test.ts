@@ -1,4 +1,5 @@
 import { test, expect, request } from '@playwright/test';
+import { randomBytes } from 'node:crypto';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
@@ -28,6 +29,7 @@ test('M27 selected additions long list filtered duplicate move remove Undo origi
   // Native typing owns all normal music keys while this input is focused.
   await filter.fill('r/h/l/?');await expect(filter).toHaveValue('r/h/l/?');await expect(page.locator(modal)).toContainText('No matching songs.');
   await filter.fill('Harbour');await expect(page.getByRole('checkbox',{name:'Select Harbour',exact:true})).toBeChecked();
+  await page.getByRole('combobox',{name:'Repeated songs',exact:true}).selectOption('add');
   await page.getByRole('button',{name:'Add selected songs',exact:true}).click();await expect(page.locator(modal)).not.toHaveClass(/open/);
   const saved=await(await page.request.get('/api/v1/playlists/'+id)).json();
   expect(saved.song_count).toBe(47);expect(saved.songs.slice(-2).map((s:any)=>s.id)).toEqual([detail.songs[0].id,detail.songs[2].id]);
@@ -81,7 +83,13 @@ test('M27 selected add offline and revoked permission retain selection and owner
   expect((await admin.delete('/api/v1/admin/permissions',{data:{set_id:f.setIds.Music,user_id:userId}})).ok()).toBe(true);
   await page.getByRole('button',{name:'Add selected songs',exact:true}).click();await expect(page.locator(modal).getByRole('alert')).not.toBeEmpty();await expect(page.getByRole('checkbox',{name:'Select First Light',exact:true})).toBeChecked();
   expect((await(await page.request.get('/api/v1/playlists/'+id)).json()).song_count).toBe(0);
-  expect((await admin.post('/api/v1/playlists/'+id+'/songs',{data:{action:'add',media_ids:[1]}})).status()).toBe(404);
+  const outsider={username:`m27-outsider-${Date.now()}`,password:randomBytes(18).toString('hex')};
+  const created=await admin.post('/api/v1/admin/users',{data:{...outsider,is_admin:false}});expect(created.ok()).toBe(true);
+  const other=await request.newContext({baseURL:f.origin});
+  try{
+   expect((await other.post('/api/v1/auth/login',{data:outsider})).ok()).toBe(true);
+   expect((await other.post('/api/v1/playlists/'+id+'/songs',{data:{action:'add',media_ids:[1]}})).status()).toBe(404);
+  }finally{await other.dispose();await admin.delete('/api/v1/admin/users/'+(await created.json()).id);}
   await admin.post('/api/v1/admin/permissions',{data:{set_id:f.setIds.Music,user_id:userId,role:'viewer'}});
   await page.getByRole('button',{name:'Add selected songs',exact:true}).click();await expect(page.locator(modal)).not.toHaveClass(/open/);await expect(page.locator('.media-row')).toHaveCount(1);
   await page.getByRole('button',{name:'Add songs',exact:true}).click();await expect(find).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator(modal)).not.toHaveClass(/open/);await expect(page.locator('.media-row.selected')).toBeFocused();
@@ -107,20 +115,20 @@ test('M27 pending selected add cannot be submitted again by changing checkboxes'
    (window as any).__m27Delay=delay;
    window.fetch=async(...args)=>{
     const [input,init]=args;const url=typeof input==='string'?input:input instanceof URL?input.href:input.url;
-    if(new URL(url,location.href).pathname===`/api/playlists/${id}/songs`&&init?.method==='POST'){
+    if(new URL(url,location.href).pathname==='/api/playlists/songs'&&init?.method==='POST'){
      delay.requests++;const response=await original(...args);delay.status=response.status;delay.reached=true;await gate;return response;
     }
     return original(...args);
    };
   },id);
  }else{
-  await page.route('**/api/playlists/'+id+'/songs',async route=>{requests++;const response=await route.fetch();entered();await gate;await route.fulfill({response});});
+  await page.route('**/api/playlists/songs',async route=>{requests++;const response=await route.fetch();entered();await gate;await route.fulfill({response});});
  }
  const count=async()=>firefox?await page.evaluate(()=>(window as any).__m27Delay.requests):requests;
  const resume=async()=>{if(firefox)await page.evaluate(()=>(window as any).__m27Delay.release());else release();};
  try{
   const submit=page.getByRole('button',{name:'Add selected songs',exact:true});await submit.click();
-  if(firefox){await expect.poll(()=>page.evaluate(()=>(window as any).__m27Delay.reached)).toBe(true);expect(await page.evaluate(()=>(window as any).__m27Delay.status)).toBe(200);}else await hit;
+  if(firefox){await expect.poll(()=>page.evaluate(()=>(window as any).__m27Delay.reached)).toBe(true);expect([200,204]).toContain(await page.evaluate(()=>(window as any).__m27Delay.status));}else await hit;
   const choice=page.getByRole('checkbox',{name:'Select Harbour',exact:true});if(await choice.isEnabled())await choice.uncheck();
   await expect(submit).toBeDisabled();expect(await count()).toBe(1);
   await find.fill('First Light');await expect(page.getByRole('checkbox',{name:'Select First Light',exact:true})).toBeDisabled();await expect(submit).toBeDisabled();
@@ -131,6 +139,6 @@ test('M27 pending selected add cannot be submitted again by changing checkboxes'
  }finally{
   await resume();
   if(firefox)await page.evaluate(()=>{window.fetch=(window as any).__m27Delay.original;});
-  else await page.unroute('**/api/playlists/'+id+'/songs');
+  else await page.unroute('**/api/playlists/songs');
  }
 });

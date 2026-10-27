@@ -109,7 +109,8 @@ test('M19 named album mode groups multiple discs, retains pin/source, Undo and r
     const progress = page.locator('#progress-track');
     const box = await progress.boundingBox(); expect(box).toBeTruthy();
     await progress.click({ position: { x: box!.width * .3, y: box!.height / 2 } });
-    await expect.poll(async () => (await audioState(page)).time).toBeGreaterThan(10);
+    const seekTarget = await page.locator('#media-audio').evaluate((audio: HTMLAudioElement) => audio.duration * .3);
+    await expect.poll(async () => (await audioState(page)).time).toBeGreaterThan(seekTarget - .5);
     await openSidebarMusic(page, 'Albums');
     await page.locator(`[data-album="${setup.albums['M04 Compilation'].album_key}"]`).click();
     await page.getByRole('button', { name: `Actions for ${setup.compilation[2].music.title}`, exact: true }).click();

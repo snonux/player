@@ -22,6 +22,12 @@ device or emulator checks that exercise the actual feature. Report any
 verification gap explicitly; passing checks on one platform does not verify
 the others.
 
+Between broad regression gates, run focused checks for the feature just
+implemented on each platform. After every 10 completed tasks, run an overall
+end-to-end regression and fix failures before continuing. Parallelize
+independent task work and compatible checks when resources permit. Run at most
+two Android emulators at once; use one when CPU or memory is under pressure.
+
 ## Shared release version
 
 The server and Android client must always have the same X.Y.Z version.

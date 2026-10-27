@@ -48,6 +48,7 @@ async function recovered(page:Page,snapshot:any) {
  const q=await state(page);expect(q.entries.map((v:any)=>v.id)).toEqual(snapshot.entries.map((v:any)=>v.id));
  expect(q.index).toBe(snapshot.index);expect(q.position).toBeCloseTo(snapshot.position,1);expect(q.active).toBe(false);
  await expect(row(page,q.index)).toContainText('Selected');
+ await expect.poll(async()=>Math.abs((await audioState(page)).time-snapshot.position)).toBeLessThan(.15);
  const before=await audioState(page);expect(before.paused).toBe(true);await page.waitForTimeout(1000);
  const after=await audioState(page);expect(after.paused).toBe(true);expect(Math.abs(after.time-before.time)).toBeLessThan(.15);
  return q;

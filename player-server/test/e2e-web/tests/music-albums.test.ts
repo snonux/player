@@ -89,7 +89,7 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
   }
   await page.keyboard.press('Backspace');
   await expect(page.locator('.album-card.selected')).toHaveAttribute('data-album',album.album_key);
-  await expect(page.locator('.album-card.selected')).toBeFocused();
+  await expect(page.locator('.album-card.selected .collection-open')).toBeFocused();
   await selectByKeys(page,'Open album Synth Compilation by Various Artists',100);await page.keyboard.press('Enter');
   await expect(page.getByRole('heading',{name:'Synth Compilation',exact:true})).toBeVisible();
   await expect(page.locator('.music-number')).toHaveCount(3);

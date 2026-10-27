@@ -113,7 +113,7 @@ test('M04 two discs and compilation: grouped artwork, structured artist links, g
    artifacts.push(await audible(page,`Music/M04/${folder}/Disc 1/2.flac`,`m04-${folder}-disc1-last`));
    await expectPlaying(page,ids[2]);
    artifacts.push(await audible(page,`Music/M04/${folder}/Disc 2/1.flac`,`m04-${folder}-boundary`));
-   await expect.poll(async()=>{const a=await page.locator('#media-audio').evaluate((el:HTMLMediaElement)=>({ended:el.ended,paused:el.paused,src:el.currentSrc}));return a.ended&&a.paused&&a.src.includes(`/media/${ids[2]}/`);},{timeout:25000}).toBe(true);
+   await expect.poll(async()=>page.evaluate(async id=>{const {currentMediaId}=await import('/js/playback.js' as string);const audio=document.getElementById('media-audio') as HTMLAudioElement;return currentMediaId()===id&&audio.ended&&audio.paused;},ids[2]),{timeout:25000}).toBe(true);
    await page.keyboard.press('Escape');
    await page.locator('.media-row').last().focus();await page.keyboard.press('i');
    await expect(page.locator('#media-info-body')).toContainText('Disc subtitle');

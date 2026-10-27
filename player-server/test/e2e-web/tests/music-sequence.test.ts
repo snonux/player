@@ -7,6 +7,7 @@ test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable music fixture'
 let fixture: MusicFixture;
 let evidence: Evidence;
 const album = 'Aurora Lane - Night Transit (2021)';
+const currentMediaId = (page: import('@playwright/test').Page) => page.evaluate(async () => (await import('/js/playback.js' as string)).currentMediaId());
 test.beforeAll(async ({ browser }, info) => {
   fixture = loadFixture();
   evidence = new Evidence(fixture.evidenceDir, info.project.name, {
@@ -45,13 +46,13 @@ test('M12 three natural completions, real track controls, images skipped and pro
       snapshots.push({id:song.id, progress:body.progress});
     }
     // Crossing the folder edge must keep playable media, never cover.jpg.
-    expect((await audioState(page)).src).toMatch(/\/media\/\d+\/(stream|compat)/);
+    expect(await currentMediaId(page)).toBeGreaterThan(0);
     await expect(page.locator('#media-image')).toHaveClass(/hidden/);
     // Finished Sets songs restart at zero. Previous from the first folder
     // wraps to the last playable set item; Next wraps back to the first song.
     await openFolder(page,fixture.setIds.Music,album);
-    const completed=page.getByRole('button',{name:songs[0].title,exact:true});
-    await completed.hover();await completed.locator('button[data-action="play"]').click();
+    const completed=page.locator('.media-card').filter({has:page.getByRole('button',{name:songs[0].title,exact:true})});
+    await completed.hover();await completed.getByRole('button',{name:'Play',exact:true}).click();
     await expectPlaying(page,songs[0].id);
     expect((await audioState(page)).time).toBeLessThan(4);
     await page.getByRole('button',{name:'Previous track',exact:true}).click();
@@ -78,7 +79,7 @@ test('M12 three natural completions, real track controls, images skipped and pro
     await page.keyboard.press('/');
     await page.keyboard.type('Np');
     await expect(page.getByRole('searchbox',{name:'Search media'})).toHaveValue('Np');
-    expect((await audioState(page)).src).toMatch(new RegExp(`/media/${songs[0].id}/`));
+    expect(await currentMediaId(page)).toBe(songs[0].id);
     await page.keyboard.press('Escape');
     if ((await page.locator('#player').getAttribute('class'))?.includes('minimized')) {
       await page.keyboard.press('Shift+C');
@@ -105,14 +106,14 @@ test('M12 saved resume, failed target visible and Retry, keyboard focus and rapi
     await resetProgress(page,second.id);
     await page.request.post('/api/v1/progress',{data:{media_id:first.id,position_seconds:4}});
     await openFolder(page,fixture.setIds.Music,album);
-    const card=page.getByRole('button',{name:first.title,exact:true});
-    await card.hover();await card.locator('button[data-action="play"]').click();
+    const card=page.locator('.media-card').filter({has:page.getByRole('button',{name:first.title,exact:true})});
+    await card.hover();await card.getByRole('button',{name:'Play',exact:true}).click();
     await expectPlaying(page,first.id);
     expect((await audioState(page)).time).toBeGreaterThanOrEqual(4);
     await page.route(`**/media/${second.id}/stream`,route=>route.fulfill({status:403,body:'Forbidden'}));
     await page.getByRole('button',{name:'Next track',exact:true}).click();
     await expect(page.locator('#toast')).toContainText('Cannot play');
-    expect((await audioState(page)).src).toMatch(new RegExp(`/media/${second.id}/`));
+    expect(await currentMediaId(page)).toBe(second.id);
     const shot=evidence.path('m12-failed-target.png');await page.screenshot({path:shot});artifacts.push(shot);
     await page.unroute(`**/media/${second.id}/stream`);
     await page.locator('#btn-play').click();

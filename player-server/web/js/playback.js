@@ -888,7 +888,11 @@ function startSource(m, media, url, resumeFrom) {
       media.podcast_account = prepared.account;
       media.podcast_lease = prepared.lease;
       media.podcast_classified = prepared.classified;
-      resumeFrom = media.podcast_from_beginning ? 0 : prepared.position;
+      // Queue navigation has already chosen an explicit position, including
+      // zero for a fresh collection. Generic media progress must not override it.
+      const queuedMusic = !prepared.episode && queueState().active &&
+        String(queueState().entries[queueState().index]?.media.id) === String(media.id);
+      resumeFrom = media.podcast_from_beginning ? 0 : queuedMusic ? resumeFrom : prepared.position;
     }
     if (networkBlocked) throw new MusicNetworkRestricted(networkPolicyMessage);
     if (tryGapless && !media.podcast_episode && media.podcast_classified !== false && !media.is_podcast && !state.sets.some(set => set.id === media.set_id && set.is_podcast)) {

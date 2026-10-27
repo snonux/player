@@ -1,4 +1,5 @@
 import { test, expect, request } from '@playwright/test';
+import { randomBytes } from 'node:crypto';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, selectByKeys, expectPlaying, captureOutput, assertValidCapture, mainSegment , openSidebarMusic} from './helpers/music-ui';
@@ -44,13 +45,15 @@ test('M26 create add album rename comment cold client persistence account scope 
   await expect(restored.locator('.playlist-comment')).toHaveText('Saved across restart\n東京 <plain text>r');
   await expect.poll(()=>restored.locator('.album-header img').evaluate((img:HTMLImageElement)=>img.complete&&img.naturalWidth>0)).toBe(true);
   await cold.close();
-  const other=await browser.newContext();const otherPage=await other.newPage();await keyboardLogin(otherPage,f.admin);await otherPage.goto('/?music=playlists');await expect(otherPage.getByRole('heading',{name:'Playlists',exact:true})).toBeVisible();await expect(otherPage.getByRole('button',{name:'Open playlist '+renamed,exact:true})).toHaveCount(0);await other.close();
+  const admin=await request.newContext({baseURL:f.origin});await admin.post('/api/v1/auth/login',{data:f.admin});
+  const outsider={username:`m26-outsider-${Date.now()}`,password:randomBytes(18).toString('hex')};
+  const created=await admin.post('/api/v1/admin/users',{data:{...outsider,is_admin:false}});expect(created.ok()).toBe(true);
+  const other=await browser.newContext();
+  try{const otherPage=await other.newPage();await keyboardLogin(otherPage,outsider);await otherPage.goto('/?music=playlists');await expect(otherPage.getByRole('heading',{name:'Playlists',exact:true})).toBeVisible();await expect(otherPage.getByRole('button',{name:'Open playlist '+renamed,exact:true})).toHaveCount(0);
+   const otherApi=await request.newContext({baseURL:f.origin});try{await otherApi.post('/api/v1/auth/login',{data:outsider});expect((await otherApi.get('/api/v1/playlists/'+id)).status()).toBe(404);expect((await otherApi.patch('/api/v1/playlists/'+id,{data:{name:'stolen',comment:''}})).status()).toBe(404);expect((await(await otherApi.get('/api/v1/playlists')).json()).some((p:any)=>p.playlist_id===id)).toBe(false);}finally{await otherApi.dispose();}
+  }finally{await other.close();await admin.delete('/api/v1/admin/users/'+(await created.json()).id);await admin.dispose();}
   await page.reload();await expect(page.getByRole('heading',{name:renamed,exact:true})).toBeVisible();
   await page.keyboard.press('Backspace');await expect(page.getByRole('heading',{name:'Playlists',exact:true})).toBeVisible();await selectByKeys(page,'Open playlist '+renamed,100);await page.keyboard.press('Enter');await expect(page.getByRole('heading',{name:renamed,exact:true})).toBeVisible();
-  const admin=await request.newContext({baseURL:f.origin});await admin.post('/api/v1/auth/login',{data:f.admin});
-  expect((await admin.get('/api/v1/playlists/'+id)).status()).toBe(404);
-  expect((await admin.patch('/api/v1/playlists/'+id,{data:{name:'stolen',comment:''}})).status()).toBe(404);
-  expect((await (await admin.get('/api/v1/playlists')).json()).some((p:any)=>p.playlist_id===id)).toBe(false);await admin.dispose();
   for(const [theme,width]of [['dark',1366],['light',1366],['dark',390],['light',390]]as const){
    await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
@@ -62,7 +65,8 @@ test('M26 create add album rename comment cold client persistence account scope 
   const expected=f.tracks.find(t=>f.mediaIds[t.path]===saved.songs[0].id)!;expect(Math.abs(segment!.tone_hz!-expected.tone_hz[0])).toBeLessThan(5);artifacts.push(capture.wav);
   await page.keyboard.press('q');await expect(page.locator('#player')).not.toHaveClass(/open/);
   await page.getByRole('button',{name:'Add music',exact:true}).click();await page.locator(modal).getByRole('button',{name:'Night Transit — Aurora Lane',exact:true}).click();
-  const duplicated=await (await page.request.get('/api/v1/playlists/'+id)).json();expect(duplicated.song_count).toBe(2*album.song_count);expect(new Set(duplicated.entries.map((entry:any)=>entry.entry_id)).size).toBe(duplicated.song_count);
+  await expect.poll(async()=>(await(await page.request.get('/api/v1/playlists/'+id)).json()).song_count).toBe(2*album.song_count);
+  const duplicated=await (await page.request.get('/api/v1/playlists/'+id)).json();expect(new Set(duplicated.entries.map((entry:any)=>entry.entry_id)).size).toBe(duplicated.song_count);
   await page.locator('.media-row').nth(3).locator('.song-open').click();await expectPlaying(page,saved.songs[0].id);await page.keyboard.press('Q');
   await expect(page.locator('#queue-panel [aria-current=true]')).toHaveAttribute('data-queue-index','3');
   await page.getByRole('button',{name:'Close queue',exact:true}).click();await page.keyboard.press('N');await expectPlaying(page,saved.songs[1].id);await page.keyboard.press('Q');
