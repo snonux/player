@@ -1,12 +1,13 @@
-Stage: IMPLEMENTED/REVIEWED - AWAITING INTEGRATED VERIFICATION.
+Stage: IMPLEMENTED/REVIEWED - AWAITING REMOTE RECEIVER VERIFICATION.
 Two bounded expert rounds complete; paused successor-gain blocker fixed and R2 clear.
-Chrome and Firefox audio continuity acceptance passed; native output is pending.
+Chrome, Firefox and native Android audio continuity acceptance passed. The
+remote receiver handoff is the remaining acceptance gap.
 
 # M21 / 0l3: gapless music queues
 
-Stage: implementation present on web and native Android; focused browser
-acceptance passed and integrated native verification pending. No release,
-version bump, build or emulator audio acceptance is claimed here. Prerequisites are
+Stage: implementation present on web and native Android; focused browser and
+native output acceptance passed. Remote receiver handoff remains unverified.
+No release or version bump is claimed here. Prerequisites are
 1k3 (transport), ck3 (queue), nj3 (interaction design), oj3 (audio fixtures).
 
 ## Interaction contract
@@ -124,6 +125,56 @@ The isolated fixture is
 with `PLAYER_MUSIC_FIXTURE` pointing there, `GOMAXPROCS=2`, one Playwright worker,
 and each `--project=chrome` and `--project=firefox` serially.
 
-Android device output, sleep and remote handoff, network/offline behavior, full
-regression gates and final release builds remain part of integrated acceptance.
-No task acceptance is claimed until all platform checks pass.
+## Focused Android acceptance (2026-10-27)
+
+The native x86_64 release APK (`0.8.2+4022`) ran on the API 34 Google APIs
+emulator (`33.1.24.0`) against the disposable Music fixture on port 18846.
+One emulator ran at a time. `adb reverse tcp:18846 tcp:18846` provided the
+local server. The app was signed in through its real UI, and playlists were
+opened and played through native controls. QEMU's WAV backend captured the
+device's actual 44.1 kHz stereo output. Evidence is in
+`/tmp/player-m21-native` outside the repository.
+
+Both three-song FLAC and MP3 playlists naturally advanced across two
+six-second boundaries while the media session remained PLAYING and progress
+for the outgoing IDs reached completion. The FLAC trace had one 10 ms quiet
+frame away from either boundary; the MP3 trace had no measured silence. A
+seek to about 4.35 seconds before the next MP3 transition and removal of the
+prepared middle successor before the first-to-third transition likewise had
+no detected silence. With Gapless switched off for the same edited queue,
+the native output contained an 802 ms silence between songs. The enabled
+control read “Gapless ready · native decoder playlist”; the disabled control
+read “Gapless off.” Light and dark player screenshots were captured.
+
+The QEMU trace contains several isolated sample discontinuities away from
+track boundaries. Those cannot establish a click-free physical output route;
+the browser AudioWorklet captures provide the stronger click measurement.
+The native comparison establishes the intended no-pause behavior on this
+emulator. Opening a song through wrapping folder traversal correctly used
+normal advance, and an unknown network with Mobile prefetch off visibly
+reported preparation unavailable. Enabling that policy changed the paused
+playlist to ready. Disabling it again removed the prepared successor while
+the current song stayed PAUSED at the same 334 ms position.
+
+A disposable 12-entry MP3 playlist kept music active past the native sleep
+timer's shortest one-minute setting. The timer expired during song ten at
+3.099 seconds; the media session remained PAUSED at that same position in
+five subsequent samples through 67 seconds after starting. The UI read
+“Sleep timer ended · paused.” The saved session timeline is
+`/tmp/player-m21-native/sleep-boundary.json`.
+
+With the three-song MP3 playlist prepared and PAUSED at 334 ms, logging out
+through Settings changed the Android media session to NONE. A hardware media
+PLAY command did not restart it. Signing into the fixture's second account
+left the session at NONE and its visible Now Playing queue empty; another
+media PLAY command still could not revive the first account's music. The
+second account's empty queue screenshot is
+`/tmp/player-m21-native/account-b-empty-queue.png`.
+
+The focused browser runner passed 3/3 in Chrome `144.0.7559.132` and 3/3 in
+Firefox `156.0`. `GOMAXPROCS=2 go test -p 2 ./... -race -cover` passed while
+the emulator was stopped. Native source policy, sleep and account boundaries
+passed. Remote receiver handoff has not been exercised on a compatible
+receiver; task acceptance remains pending under its external-device
+criterion. The shared ten-task full regression gate passed before this task
+and is next due after twenty completed tasks, as requested by the user.
