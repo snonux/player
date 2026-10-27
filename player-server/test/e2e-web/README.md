@@ -1,5 +1,21 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M28 Save queue as playlist, start a disposable music fixture and run the
+focused journey in installed Chrome and Firefox sequentially:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M28_EVIDENCE=/tmp/player-m28-web \
+PLAYER_E2E_PULSE_SINK=player_e2e_null GOMAXPROCS=2 \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-queue-playlist.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+The runner creates a real repeated-song queue, saves it as a named private
+playlist while audio continues, opens it, and checks both failure before save
+and filtering after a song becomes unavailable. It restores the song and
+deletes its disposable playlists. Evidence stays outside the repository.
+
 For M51 selectable download quality, use a disposable `music_fixture.py up`
 server and run the two focused cases in installed Chrome and Firefox, one
 worker and browser at a time:
