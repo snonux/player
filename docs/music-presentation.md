@@ -165,5 +165,8 @@ so artwork checks use the normal compact player, and the first animation oracle
 incorrectly required changing geometry for a steady tone. Original PNGs are
 unaltered. A chat image viewer intermittently omitted white regions that remain
 present and opaque in the original PNG pixels; this was not a product failure.
-Actual Cast boundaries remain unverified. The task entry became unavailable
-during verification; no task completion or replacement entry was recorded.
+Actual Cast boundaries remain unverified (no compatible receiver). Local
+keep-awake, appearance, artwork, visualizer, and Chrome/Firefox presentation
+evidence above stand. Reconfirmed 2026-10-27 on API34: Dark + Plum + Circle +
+Fit (`contain`) + keepScreenOn persist across force-stop
+(`/home/paul/tmp/codex/player-m68-evidence/m68-native-remainder.json`).
