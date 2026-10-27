@@ -1,5 +1,32 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M61 Internet radio, start a fresh disposable `music_fixture.py up` with
+its radio service double. Serve the fixture's cover on another loopback port,
+then run the focused journey in installed Chrome and Firefox, one at a time:
+
+```sh
+python3 player-android/integration_test/support/music_fixture.py up player-server/player \
+  --port 18861 --doubles-port 18862 --dir /tmp/player-m61-fixture
+python3 -m http.server 18863 --bind 127.0.0.1 \
+  --directory '/tmp/player-m61-fixture/media/Music/Aurora Lane - Night Transit (2021)'
+cd player-server/test/e2e-web
+PLAYER_MUSIC_FIXTURE=/tmp/player-m61-fixture PLAYER_M61_ISOLATED=1 \
+PLAYER_M61_EVIDENCE=/tmp/player-m61-evidence \
+PLAYER_M61_ART_URL=http://127.0.0.1:18863/cover.jpg \
+PLAYER_E2E_PULSE_SINK=player_e2e_null GOMAXPROCS=2 \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-internet-radio.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox on the same fixture.
+```
+
+The journey creates and edits a station, rejects a bad URL, loads its artwork,
+checks viewer permissions, verifies the actual decoded 440 Hz stream and live
+controls, then exercises Stop/Play, an unavailable source, browser offline
+refresh/reconnect, keyboard focus, and narrow light/dark layouts. The test
+removes its station. Use the native steps in
+`../../../docs/music-m61-implementation.md` on a running emulator before
+stopping the fixture and the temporary artwork server.
+
 For M42 Artist radio and Instant Mix, use a fresh disposable `music_fixture.py up`
 server with `--no-doubles`, then run the focused journey sequentially in
 installed Chrome and Firefox:

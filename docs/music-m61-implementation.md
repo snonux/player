@@ -1,4 +1,47 @@
-# M61 Internet radio — reviewed implementation
+# M61 Internet radio — verified implementation
+
+## Focused acceptance, 2026-10-27
+
+The disposable Player fixture served a paced live MP3 stream through the normal
+radio relay and a local JPEG cover through its artwork relay. The focused
+Playwright journey passed in installed Google Chrome and Mozilla Firefox,
+sequentially with one worker. Both browsers covered station create/edit,
+rejected fragment URLs, artwork, viewer write denial, search and keyboard
+playback, decoded 440 Hz output, Stop/Play, an off-air stream, browser offline
+refresh and reconnect, and narrow dark/light controls. The browser journeys
+used the same fixture but deleted their own station after each run.
+
+One API 34 Android emulator ran the release x86_64 APK. Native touch checks
+covered viewer search/no-match, live Play/Stop/Back and return, unavailable
+station Retry and recovery, admin edit/add/confirmed remove, local artwork,
+offline Retry, and saved station persistence after server restart. The Android
+media session reported `PLAYING` with the station title; QEMU WAV capture had
+4.15 audible seconds at 440.0 Hz. `KEYCODE_MEDIA_PAUSE` changed the session to
+`PAUSED` and the station row to Stopped/Play. Logout ended the active session;
+the admin subsequently saw management controls. The local artwork file was a
+fixture cover, and the stream was a deterministic service double. No public
+third-party station or LAN receiver was included in this run.
+
+Evidence is outside git at
+`/home/paul/tmp/codex/player-m61-evidence/{chrome,firefox,android}`. The
+browser rerun after the offline-message fix passed on both installed browsers;
+native code and APK were unchanged. The earlier full task-20 regression gate
+passed Go, web, Flutter, Chrome, Firefox and native baseline checks. This
+task's focused acceptance did not rerun the full suites; the next broad gate
+is due after task 30.
+
+To repeat the native journey, boot one `Player_FDroid_Test_API34` emulator with
+`QEMU_AUDIO_DRV=wav` and `QEMU_WAV_PATH`, install the current x86_64 release
+APK, map the Player port with `adb reverse`, and sign in using the disposable
+fixture's `auth.json`. Seed one station through the admin `POST /api/radio`
+using the fixture's `/radio/fixture.mp3` URL and `local_network: true`. Open
+**Internet radio** from the Library drawer, then use the visible controls for
+the viewer and admin journeys above. Change the station URL to
+`/radio/down.mp3` for outage/Retry; use `music_fixture.py restart` for
+persistence; temporarily remove and restore the owned `adb reverse` mapping
+for offline refresh. Measure QEMU audio and inspect Android `dumpsys
+media_session` while playing. Clear the disposable app data and stop only the
+owned fixture/emulator when finished.
 
 Internet radio is a separate live source from library artist/genre mixes. Open
 **Internet radio** in the web sidebar or Android Library drawer. Search station
@@ -66,9 +109,9 @@ image dimensions/pixel count, decodes and emits JPEG; active SVG/HTML and oversi
 images are refused. Native system artwork uses the existing account-scoped
 private file cache. Artwork is optional and never blocks audio.
 
-## Verification stage
+## Implementation-stage verification (historical)
 
-Implementation is awaiting the root-owned bounded review and integrated checks.
+At the implementation freeze, root-owned review and integrated checks remained.
 Cheap targeted tests cover URL/dial/redirect credentials, artwork decoding,
 capacity, persistence/restart and admin permissions. Full suites, final builds,
 actual Chrome/Firefox keyboard/pointer/audio/theme/narrow journeys and Android
@@ -98,7 +141,7 @@ Final focused implementation freeze (2026-10-23):
 - Existing shared endpoint/account boundaries are reused. Native list rows and their dialogs retain the exact API client/credential epoch; stale dialogs cannot retarget station IDs on another server. Initial loads keep their original transport/headset/sleep intent. Pause releases live network bytes but publishes paused-ready system controls; explicit Stop clears the session. Headset reconnect reloads live only with an existing eligible ticket.
 - Web station selection awaits truthful renderer Stop and refuses replacement if the speaker may still be audible; Google Cast teardown must finish before local audio starts. Library error/ended/seek/skip/personal actions cannot consume a live station. No library-media ID is fabricated.
 
-Root-owned remaining work: bounded fresh-context review, API reference and service-worker asset integration, full integrated suites/final builds, and actual installed Chrome/Firefox/native Android acceptance with local art/stream/unsafe/unreachable/offline/restart/permissions/audio/keyboard/touch/system checks. No release, version bump, commit or acceptance was performed by this worker. Errcheck and broad regression suites were not run in this focused implementation slot.
+At that freeze, root-owned work included review, API reference and service-worker asset integration, broad suites/builds, and actual installed Chrome/Firefox/native Android acceptance. No release, version bump, commit or acceptance was performed by that implementation worker. Errcheck and broad regression suites were not run in that focused implementation slot.
 
 Pre-review live HTTP deadline repair: the relay clears the server's absolute
 write deadline during bounded source preparation/idle reads, then gives each

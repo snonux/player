@@ -7,7 +7,9 @@ let stations = [], selected = 0, revision = 0, streamState = 'stopped';
 const byId = id => document.getElementById(id);
 const visible = () => stations.filter(s => s.name.toLocaleLowerCase().includes(byId('radio-search').value.toLocaleLowerCase()));
 async function radioAPI(path = '', options = {}) {
- const response = await fetch(`/api/radio${path}`, {credentials:'same-origin', ...options, headers:{'Content-Type':'application/json'},body:options.body ? JSON.stringify(options.body) : undefined});
+ let response;
+ try { response = await fetch(`/api/radio${path}`, {credentials:'same-origin', ...options, headers:{'Content-Type':'application/json'},body:options.body ? JSON.stringify(options.body) : undefined}); }
+ catch { throw new Error('Could not reach stations. Check your connection and retry.'); }
  if (response.status === 401) redirectToLogin();
  if (!response.ok) { let message = 'Could not reach stations. Check your connection and retry.'; try {message = (await response.json()).error || message;} catch {} throw new Error(message); }
  return response.status === 204 ? null : response.json();
