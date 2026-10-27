@@ -22,7 +22,10 @@ The journey exercises admin refresh for artist and album, provider image and
 links, retained local cover and audio, no match, provider failure, offline
 retry, restart persistence, and viewer/access permissions. Stop the fixture
 with `music_fixture.py down /path/to/fixture` and stop the provider process
-after Android acceptance. Artifacts stay outside the repository.
+after Android acceptance. For a provider on another port, set
+`PLAYER_M10_PROVIDER_URL` to its `/metadata` URL alongside
+`PLAYER_M10_MODE_FILE`; the runner preserves that URL through its server
+restart. Artifacts stay outside the repository.
 
 For M06 music information, create a disposable fixture on an unused port,
 augment it once with the guarded technical tracks, then run installed Chrome

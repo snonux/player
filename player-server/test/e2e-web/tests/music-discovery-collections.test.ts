@@ -182,7 +182,7 @@ test('M38 personal discovery collections expose complete ACL-scoped order, empty
     await expect(page.getByRole('button', { name: 'Remove Year / decade: 2020-2029' })).toBeVisible();
     await expect(page.locator('#media-grid [data-album]').first()).toBeVisible();
     await page.getByRole('button', { name: 'Clear filters' }).click();
-    await expect(page.locator('#media-grid [data-album]')).toHaveCount(28);
+    await expect(page.locator('#media-grid [data-album]')).toHaveCount(added.length);
 
     await page.setViewportSize({ width: 390, height: 844 });
     for (const theme of ['dark', 'light']) {
@@ -206,7 +206,7 @@ test('M38 personal discovery collections expose complete ACL-scoped order, empty
     expect((await admin.post('/api/v1/admin/permissions', { data: { set_id: f.setIds.Music, user_id: userId, role: 'viewer' } })).ok()).toBe(true);
     revoked = false;
     await discovery(page);
-    await expect(panel.locator('section[aria-label="Recently added"]')).toContainText('28 albums');
+    await expect(panel.locator('section[aria-label="Recently added"]')).toContainText(`${added.length} albums`);
     await context.setOffline(true);
     await panel.locator('section[aria-label="Recently added"]').getByRole('button', { name: 'View all recently added' }).click();
     await expect(page.locator('#media-grid [role="alert"]')).toContainText('Could not load albums');

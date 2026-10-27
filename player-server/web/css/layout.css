@@ -896,6 +896,7 @@ body {
 .music-heading h1, #media-grid > .grid-full h1 { font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere; }
 .album-header { display: flex; gap: var(--gap); align-items: flex-start; margin-block: var(--gap); }
 .album-header .album-cover { width: min(30vw, 10rem); flex-shrink: 0; }
+.music-heading > .music-artwork [data-art-preview] { width: min(30vw, 10rem); }
 .album-header > div { min-width: 0; }
 .album-header button[data-artist] { white-space: normal; text-align: left; overflow-wrap: anywhere; }
 .music-song { flex: 1; min-width: 0; display: flex; flex-direction: column; }

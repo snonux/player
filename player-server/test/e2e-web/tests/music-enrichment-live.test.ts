@@ -7,6 +7,7 @@ import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, openSidebarMusic, audioState, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
 
 const modeFile = process.env.PLAYER_M10_MODE_FILE || '/tmp/player-m10-mode';
+const providerURL = process.env.PLAYER_M10_PROVIDER_URL || 'http://127.0.0.1:18910/metadata';
 let fixture: MusicFixture, evidence: Evidence;
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE || !process.env.PLAYER_M10_ISOLATED,
   'Requires disposable music fixture with MUSIC_ENRICHMENT_URL and local provider');
@@ -64,6 +65,11 @@ test('M10 artist/album enrichment refresh, no match, failure, ACL and playback',
       if (await page.locator('html').getAttribute('data-theme') !== theme)
         await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      if (width === 1366) {
+        await page.evaluate(() => scrollTo(0, 0));
+        const play = await page.getByRole('button', { name: '▶ Play artist', exact: true }).boundingBox();
+        expect(play && play.y + play.height).toBeLessThan(844);
+      }
       const shot = evidence.path(`m10-artist-${theme}-${width}.png`);
       await page.screenshot({ path: shot, fullPage: true, animations: 'disabled' }); artifacts.push(shot);
     }
@@ -111,7 +117,7 @@ test('M10 artist/album enrichment refresh, no match, failure, ACL and playback',
     await refresh(page, album);
     await expect(album.locator('[data-enrichment-error]')).toHaveCount(0);
     execFileSync('python3', [join(SUPPORT_DIR, 'music_fixture.py'), 'restart', fixture.dir], {
-      env: { ...process.env, MUSIC_ENRICHMENT_URL: 'http://127.0.0.1:18910/metadata' },
+      env: { ...process.env, MUSIC_ENRICHMENT_URL: providerURL },
     });
     await page.reload();
     const persisted = await openAbout(page);
