@@ -47,3 +47,25 @@ fresh edit ID when required. Eight focused reconciliation tests and affected
 analysis pass, including a real transaction rollback on account change. The
 earlier nine offline/progress regression tests passed. Platform journeys, full
 suites and final builds remain deferred until backlog implementation is done.
+
+## Integrated acceptance — 2026-10-27
+
+The retained four-client fixture at
+`/home/paul/tmp/player-integrated-verify/podcast-5i3` exercised the shared
+registers and global coordinator in installed Chrome, Firefox and two Android
+emulators. Native A and B transferred an episode position without server audio
+and observed completion/uncompletion while retaining separate publisher copies.
+The installed browser conflict stages verified newer subscription tombstones
+and newer completion/position edits against delayed older responses. Native A
+retained an offline unsubscribe tombstone through process restart, isolated
+subscriptions and pending edits across accounts and selected servers, and
+ignored a held reply after logout. An actual partial sync left ordinary music
+progress pending and kept the prior full-success timestamp; Sync now delivered
+that progress after process death. A controlled 48-hour outage displayed stale
+feedback, and a full retry cleared it. These checks passed in the fixture's
+`native-A`, `native-B`, `chrome` and `firefox` stage result files, including
+`globalprogress`, `feedback`, `isolation`, `server-switch`, `unsubscribe`,
+`held-account`, `resume`, `conflict` and `episode-conflict`. The focused SQLite
+tests above cover exact-ID replay, alias collision and epoch rollback edges
+that were not recreated in each installed client. The reviewed implementation
+has not changed since this integrated run; the passing evidence was reused.
