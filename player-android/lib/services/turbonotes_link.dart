@@ -102,6 +102,11 @@ Future<NoteSubject?> noteSubjectFor(
       );
     case PublicSharePlaybackRequest():
       return null;
+    case PodcastPlaybackRequest():
+      return NoteSubject(
+          title: podcastEpisodeTitle(request.title), podcast: true);
+    case LiveRadioPlaybackRequest():
+      return null;
   }
 }
 
