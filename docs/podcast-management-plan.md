@@ -164,6 +164,19 @@ Update the API and podcast documentation to match implemented behavior.
 
 ### Integrated verification snapshot (2026-10-26)
 
+Task `0i3` web subscription browsing was accepted from this snapshot on
+2026-10-27. The existing installed Chrome and Firefox `catalog`, `resume`,
+`completed`, `uncomplete`, `observe-uncompleted`, `cleanup`, `account-switch`
+and `unsubscribed` result files each contain a passing run. The `resume` stage
+opens a subscribed feed through the sidebar, checks its Uncompleted default,
+then checks the aggregate view's podcast names, 100-row page and next/previous
+navigation. It plays a downloaded episode with captured audible output and
+marks a second episode complete. The completion stages verify both filters,
+manual uncompletion and retained position; cleanup verifies a downloaded copy
+remains an episode with its history through delete and redownload. The native
+two-client results below cover the shared podcast feature. No relevant podcast
+code changed after these browser runs, so they were not repeated for `0i3`.
+
 The isolated fixture is under `/home/paul/tmp/player-integrated-verify/podcast-5i3`;
 each platform's `evidence/<platform>/<run>/results.json` records the stage
 result. It uses two separate installed Android emulator clients, Chrome and
