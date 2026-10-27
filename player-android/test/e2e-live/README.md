@@ -1,5 +1,23 @@
 # Android live end-to-end run
 
+For M57 Locale/Tasker music automation, keep a disposable music fixture running,
+install the current x86_64 APK plus a local Locale-compatible fire host
+(`zone.foo.localefire`, built under `/home/paul/tmp/codex/locale-fire-host`),
+and from the repository root run:
+
+```sh
+python3 -u player-android/test/e2e-live/music_automation_e2e.py \
+  /path/to/fixture --apk player-android/build/app/outputs/flutter-apk/app-x86_64-release.apk \
+  --emulator-wav /path/to/emulator-output.wav \
+  --evidence-dir /tmp/player-m57-evidence
+```
+
+The runner signs in as fixture admin, seeds the Now Playing queue with
+**Play album**, saves Start/Shuffle/offline/online actions through the host's
+EDIT_SETTING UI, fires `FIRE_NOW`, and checks real media-session playback plus
+Settings last-result text. Browsers do not load the Android plugin; reuse the
+shared music-queue Playwright journeys for Chrome/Firefox.
+
 For A03c, use the provider and disposable fixture from the web E2E README,
 install the current x86_64 APK on the one running API 34 emulator with QEMU WAV
 output, and run:

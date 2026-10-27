@@ -53,9 +53,10 @@ Future<void> startAutomationQueue(PlayerAudioHandler handler,
     {required bool shuffle,
     required bool Function() current,
     void Function(int revision)? onResume}) async {
-  final transport = handler.transportRevision;
   if (shuffle) await handler.shuffleQueue(reshuffle: true, mode: 'tracks');
-  if (!current() || transport != handler.transportRevision) {
+  // Upcoming reshuffle can race an in-flight play/pause transport bump; the
+  // music-action intent is the ownership signal that still matters here.
+  if (!current()) {
     throw StateError('Music action superseded. Retry.');
   }
   if (handler.musicQueue.active && handler.musicState?.error == null) {

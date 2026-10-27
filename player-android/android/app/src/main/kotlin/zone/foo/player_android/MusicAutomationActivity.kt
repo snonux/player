@@ -70,7 +70,7 @@ class MusicAutomationActivity : Activity() {
                     val result = Intent().putExtra(NativeMusicAutomation.BUNDLE, Bundle().apply { putString("capability", token) })
                         .putExtra(NativeMusicAutomation.BLURB, "${NativeMusicAutomation.actions[action]} · ${config?.get("message")}")
                         // Tasker extension, bounded below the broadcast lifetime.
-                        .putExtra("net.dinglisch.android.tasker.extras.REQUESTED_TIMEOUT", 9000)
+                        .putExtra("net.dinglisch.android.tasker.extras.REQUESTED_TIMEOUT", 16000)
                     setResult(RESULT_OK, result)
                     finish()
                 }

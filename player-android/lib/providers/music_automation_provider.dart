@@ -101,12 +101,28 @@ final musicAutomationProvider = Provider<void>((ref) {
               : 'Music automation now allows online music with your normal network settings.'
         };
       }
+      // Autoplay lookups mark the queue busy without clearing it; cancel that
+      // background work so Start can resume the already-queued song.
+      handler.musicAutoplay.cancel();
+      final readyUntil = DateTime.now().add(const Duration(seconds: 4));
+      while (handler.musicQueue.busy &&
+          handler.musicQueue.entries.isNotEmpty &&
+          DateTime.now().isBefore(readyUntil)) {
+        if (!current()) throw StateError('Music action superseded. Retry.');
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
       final queue = handler.musicQueue;
-      if (queue.busy ||
-          queue.entries.isEmpty ||
-          queue.entries.any((entry) =>
-              !automationMusicOwned(entry.request, origin, user.id))) {
-        throw StateError('Open Player and queue music for this account first.');
+      if (queue.entries.isEmpty) {
+        throw StateError(
+            'Open Player and queue music for this account first.');
+      }
+      if (queue.entries.any((entry) =>
+          !automationMusicOwned(entry.request, origin, user.id))) {
+        throw StateError(
+            'Open Player and queue music for this account first.');
+      }
+      if (queue.busy) {
+        throw StateError('Music queue is busy. Open Player and retry.');
       }
       final active = coordinator.activeIdentity;
       if (active != null &&
@@ -325,25 +341,40 @@ final musicAutomationProvider = Provider<void>((ref) {
               }
             };
           });
-      // The native play Future lasts until pause/end. Confirm decoder motion
-      // rather than treating queue insertion as playback success.
+      // The native play Future lasts until pause/end. Confirm audible start
+      // rather than treating queue insertion as success. Accept either decoder
+      // motion or a short stretch of playing+ready at the same position (new
+      // tracks often report 0 until the first tick). Stay under the native
+      // receiver timeout so Tasker still gets a real failure.
       final startedAt = handler.player.position;
       final startedTransport = handler.transportRevision;
       if (current() && sourceCurrent() && handler.musicState?.error == null) {
         try {
+          final readyFor = Stopwatch();
           await handler.player.positionStream
-              .firstWhere((position) =>
-                  !current() ||
-                  !sourceCurrent() ||
-                  (handler.player.playing &&
-                      handler.player.processingState == ProcessingState.ready &&
-                      position > startedAt + const Duration(milliseconds: 10)))
-              .timeout(const Duration(milliseconds: 1500));
+              .firstWhere((position) {
+                if (!current() || !sourceCurrent()) return true;
+                final playingReady = handler.player.playing &&
+                    handler.player.processingState == ProcessingState.ready;
+                if (!playingReady) {
+                  readyFor
+                    ..stop()
+                    ..reset();
+                  return false;
+                }
+                if (position > startedAt + const Duration(milliseconds: 10)) {
+                  return true;
+                }
+                if (!readyFor.isRunning) readyFor.start();
+                return readyFor.elapsedMilliseconds >= 400;
+              })
+              .timeout(const Duration(milliseconds: 8000));
         } catch (_) {
           if (current() && startedTransport == handler.transportRevision) {
             await cancellation.cancel();
           }
-          rethrow;
+          throw StateError(
+              'Music did not start. Open Player, check audio and retry.');
         }
       }
       if (!current() ||

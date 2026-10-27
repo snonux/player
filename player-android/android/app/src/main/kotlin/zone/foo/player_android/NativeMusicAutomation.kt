@@ -97,7 +97,7 @@ class MusicAutomationReceiver : BroadcastReceiver() {
             bridge.invokeMethod("cancel", invocation)
             finish(false, "Music automation timed out. Open Player and retry.")
         }
-        handler.postDelayed(timeout, 8000)
+        handler.postDelayed(timeout, 15000)
         bridge.invokeMethod("run", mapOf("action" to action, "scope" to scope, "invocation" to invocation),
             object : MethodChannel.Result {
                 override fun success(value: Any?) {

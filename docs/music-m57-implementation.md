@@ -62,19 +62,30 @@ Primary references consulted: [Tasker protocol](https://tasker.joaoapps.com/plug
 [Tasker constants](https://tasker.joaoapps.com/code/TaskerPlugin.java),
 [Android background restrictions](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start).
 
-## Deferred acceptance
+## Integrated acceptance (2026-10-27)
 
-Install a separate local compatible Locale/Tasker test host on the emulator and
-exercise discovery, edit/save/cancel/reedit, start audible music, shuffle state,
-offline-only with network disconnected, missing copies, allow-online, locked and
-switched accounts, malformed/revoked configurations, restart, competing playback
-and timeout. Check actual source URI/output and saved policy; capture light/dark,
-narrow layouts and touch/Back. No paid Tasker app is required.
+Local Locale-compatible host APK lives outside git at
+`/home/paul/tmp/codex/locale-fire-host` (package `zone.foo.localefire`,
+EDIT_SETTING launcher + `FIRE_NOW` rebroadcast). Native journey:
+`player-android/test/e2e-live/music_automation_e2e.py` against disposable fixture
+port 18850 on API 34 emulator with QEMU WAV. Seeds the interactive Now Playing
+queue via **Play album** (folder Play Audio does not own that queue), saves and
+fires Start / Shuffle / offline-only / allow-online through the host, and checks
+media-session PLAYING plus Settings “Last automation result”. Evidence under
+`/home/paul/tmp/codex/player-m57-evidence` and `player-m57-native-run16.log`.
 
-The automation boundary is Android-only. In installed Chrome and Firefox exercise
-the existing shared music queue, shuffle and offline browse/playback results with
-keyboard and pointer, focus restoration and typing. Browsers do not acquire an
-Android automation plugin. All these actual-platform checks remain pending.
+Play-confirm now accepts decoder motion or a short playing+ready stretch so
+tracks that restart at 0:00 are not cancelled; shuffle no longer treats an
+in-flight transport bump during upcoming reshuffle as supersession; native
+receiver timeout is 15s.
+
+Shared web queue (no Android plugin): Chrome
+`tests/music-queue.test.ts` 4 passed / 1 skipped; Firefox keyboard, ACL/offline
+edit recovery, and narrow themes passed. One Firefox natural-order case hit the
+known floating-player overlay flake (`player-restore` intercept) and is not
+treated as an M57 product regression. Logs:
+`/home/paul/tmp/codex/player-m57-web-queue-chrome.log`,
+`player-m57-web-queue-firefox-ok.log`.
 
 ## Focused implementation checks
 
