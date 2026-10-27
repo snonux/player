@@ -1,5 +1,26 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For M30 playlist duplicate and membership tools, start a disposable
+`music_fixture.py up` server with `--no-doubles`, then run the focused journey
+in installed Chrome and Firefox sequentially:
+
+```sh
+cd player-server/test/e2e-web
+PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M30_ISOLATED=1 \
+PLAYER_M30_EVIDENCE=/tmp/player-m30-evidence \
+PLAYER_E2E_PULSE_SINK=player_e2e_null GOMAXPROCS=2 \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-playlist-membership.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+Each browser chooses an additional target from the real picker, confirms Skip
+and Add again produce the requested occurrence counts in both lists, inspects
+readable membership, keeps selection through an offline failure, rejects a
+read-only target atomically, and plays the saved song. Restart the fixture to
+check persistence before Android acceptance; stop it afterward. Evidence is
+kept outside the repository.
+
 For M33 smart playlists, start a **fresh** disposable `music_fixture.py up`
 server with `--no-doubles`. Run the focused journey in installed Chrome, then
 Firefox, one worker and browser at a time:
