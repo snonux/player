@@ -668,8 +668,8 @@ class _MediaCard extends ConsumerWidget {
             // visually. [GestureDetector] is used so taps on the icon do NOT
             // propagate to the [InkWell] above (which would navigate).
             Positioned(
-              right: 4,
-              bottom: 4,
+              right: 0,
+              bottom: 0,
               child: _FavoriteIconButton(
                 isFavorite: item.favorite,
                 mediaId: item.id,
@@ -723,6 +723,8 @@ class _FavoriteIconButton extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: ExcludeSemantics(
+            child: Padding(
+          padding: const EdgeInsets.all(10),
           child: Icon(
             isFavorite ? Icons.favorite : Icons.favorite_border,
             size: 20,
@@ -734,7 +736,7 @@ class _FavoriteIconButton extends StatelessWidget {
               ),
             ],
           ),
-        ),
+        )),
       ),
     );
   }
@@ -807,7 +809,8 @@ class _InfoOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      // The right inset keeps text clear of the favorite button.
+      padding: const EdgeInsets.fromLTRB(8, 6, 36, 6),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,

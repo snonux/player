@@ -99,7 +99,11 @@ class _MusicPresencePanelState extends ConsumerState<MusicPresencePanel> {
       _presence.addListener(_changed);
     }
     return ExpansionTile(
+        leading: const Icon(Icons.headphones_outlined),
         title: const Text('Listeners'),
+        subtitle: Text(_presence.sharing
+            ? 'Sharing my listening'
+            : 'See who is listening · sharing off'),
         onExpansionChanged: _presence.setOpen,
         children: [
           SwitchListTile(
