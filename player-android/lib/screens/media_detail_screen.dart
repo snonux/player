@@ -494,6 +494,15 @@ class _MediaDetailContent extends StatelessWidget {
               child: _PlayButton(type: media.type, onPlay: onPlay),
             ),
 
+          if (media.type == 'audio') ...[
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child:
+                  MusicRelatedSection(kind: 'song', entityKey: '${media.id}'),
+            ),
+          ],
+
           const SizedBox(height: 24),
         ],
       ),
@@ -546,8 +555,6 @@ class _MediaDetailContent extends StatelessWidget {
               client: client,
             ),
 
-            if (media.type == 'audio')
-              MusicRelatedSection(kind: 'song', entityKey: '${media.id}'),
             const SizedBox(height: 24),
           ],
         ),
