@@ -52,6 +52,10 @@ def tap_visible(pattern):
         if node and 0 <= node['b'][1] < node['b'][3] <= height and node['b'][2] > node['b'][0]:
             adrv.tap_node(node)
             return
+    node = adrv.reveal(pattern)
+    if node:
+        adrv.tap_node(node)
+        return
     raise AssertionError((pattern, app_ui.labels()))
 
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -19,9 +21,14 @@ final noteSubjectResolverProvider =
 /// The player's "Note in TurboNotes" button: shown for audiobooks and
 /// podcast episodes, it opens `Book-And-Podcast-Notes/TITLE.md` in
 /// TurboNotes, which creates the note on first use.
+///
+/// With [asMenuItem] it is a row of a player's [OverflowMenuButton] instead,
+/// hidden the same way until the note subject is known.
 class TurboNotesButton extends ConsumerStatefulWidget {
-  const TurboNotesButton({super.key, required this.request});
+  const TurboNotesButton(
+      {super.key, required this.request, this.asMenuItem = false});
   final PlaybackRequest request;
+  final bool asMenuItem;
 
   @override
   ConsumerState<TurboNotesButton> createState() => _TurboNotesButtonState();
@@ -62,10 +69,15 @@ class _TurboNotesButtonState extends ConsumerState<TurboNotesButton> {
     }
   }
 
-  Future<void> _open(NoteSubject subject) async {
-    final messenger = ScaffoldMessenger.of(context);
+  Future<void> _open(NoteSubject subject) => _launch(
+      ref.read(turboNotesLauncherProvider),
+      ScaffoldMessenger.of(context),
+      subject);
+
+  static Future<void> _launch(TurboNotesLauncher launcher,
+      ScaffoldMessengerState messenger, NoteSubject subject) async {
     try {
-      await ref.read(turboNotesLauncherProvider).open(subject);
+      await launcher.open(subject);
     } on TurboNotesMissingException {
       messenger.showSnackBar(const SnackBar(
           content: Text('Install TurboNotes to keep notes on '
@@ -80,6 +92,21 @@ class _TurboNotesButtonState extends ConsumerState<TurboNotesButton> {
   Widget build(BuildContext context) {
     final subject = _subject;
     if (subject == null) return const SizedBox.shrink();
+    if (widget.asMenuItem) {
+      return ListTile(
+        key: const Key('turbonotes_button'),
+        leading: const Icon(Icons.edit_note),
+        title: Text(subject.podcast
+            ? 'Episode note in TurboNotes'
+            : 'Book note in TurboNotes'),
+        onTap: () {
+          final messenger = ScaffoldMessenger.of(context);
+          final launcher = ref.read(turboNotesLauncherProvider);
+          Navigator.of(context).pop();
+          unawaited(_launch(launcher, messenger, subject));
+        },
+      );
+    }
     return IconButton(
       key: const Key('turbonotes_button'),
       tooltip: subject.podcast

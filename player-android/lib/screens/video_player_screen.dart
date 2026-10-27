@@ -25,6 +25,8 @@ import '../utils/playback_errors.dart';
 import '../widgets/cast_controls.dart';
 import '../widgets/playback_loading_view.dart';
 import '../widgets/personal_media_actions.dart';
+import '../widgets/overflow_menu.dart';
+import '../services/personal_media_store.dart';
 import 'cast_screen_mixin.dart';
 import 'playback_preparation_mixin.dart';
 
@@ -935,6 +937,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     });
   }
 
+  final _personalBinding = PlaybackPersonalBinding();
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
@@ -946,18 +950,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       backgroundColor: Colors.black,
       appBar: AppBar(
         actions: [
-          if (_activeRequest case final ServerPlaybackRequest request
-              when !widget.isPublicShare && !casting)
-            PlaybackDetailsButton(mediaId: request.mediaId),
           buildCastButton(
             ready: !_isLoading && _error == null && _videoController != null,
           ),
-          if (_activeRequest != null &&
-              !_isLoading &&
-              _error == null &&
-              !casting &&
-              !widget.isPublicShare)
-            _buildPersonalActions(),
+          OverflowMenuButton(items: (_) => _menuItems(casting)),
         ],
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
@@ -971,7 +967,27 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     );
   }
 
-  Widget _buildPersonalActions() {
+  /// Secondary actions; the video keeps the screen to itself.
+  List<Widget> _menuItems(bool casting) {
+    final request = _activeRequest;
+    final personal = request != null &&
+        !_isLoading &&
+        _error == null &&
+        !casting &&
+        !widget.isPublicShare;
+    final store = personal ? _personalBinding.storeFor(ref, request) : null;
+    return [
+      if (request is ServerPlaybackRequest && !widget.isPublicShare && !casting)
+        OverflowMenuItem(
+            key: const Key('playback_details_button'),
+            icon: Icons.description_outlined,
+            label: 'Details',
+            onSelected: () => openPlaybackDetails(context, request.mediaId)),
+      if (store != null) ..._personalMenuItems(store),
+    ];
+  }
+
+  List<Widget> _personalMenuItems(PersonalMediaStore store) {
     final request = _activeRequest!;
     final lease = _sessionLease;
     final controller = _videoController;
@@ -988,20 +1004,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       }
     }
 
-    return PlaybackPersonalActions(
-        request: request,
+    return personalMediaMenuItems(context, store: store, title: request.title,
         position: () {
-          check();
-          return controller!.value.position;
-        },
-        duration: () {
-          check();
-          return controller!.value.duration;
-        },
-        onSeek: (position) async {
-          check();
-          await controller!.seekTo(position);
-        });
+      check();
+      return controller!.value.position;
+    }, duration: () {
+      check();
+      return controller!.value.duration;
+    }, onSeek: (position) async {
+      check();
+      await controller!.seekTo(position);
+    });
   }
 
   /// Selects the appropriate body widget based on current state.

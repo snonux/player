@@ -8,6 +8,7 @@ import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../widgets/authenticated_network_image.dart';
+import '../widgets/overflow_menu.dart';
 import '../widgets/thumbnail_zoom.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
@@ -268,7 +269,10 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   /// Builds the app bar with the set name (or a default label).
   AppBar _buildAppBar() {
     return AppBar(
-      actions: const [MusicQueueButton()],
+      actions: [
+        const MusicQueueButton(),
+        OverflowMenuButton(items: (_) => const [PreviewSizeMenuItems()]),
+      ],
       title: Text(widget.setName ?? 'Set ${widget.setId}'),
     );
   }

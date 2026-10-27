@@ -176,7 +176,7 @@ def find_visible(pattern):
         node = adrv.find(pattern)
         if node and node['b'][3] > node['b'][1]:
             return node
-    return None
+    return adrv.reveal(pattern)
 
 
 def open_track(set_name, folder, file_name):
@@ -184,7 +184,7 @@ def open_track(set_name, folder, file_name):
     if not app_ui.go_home():
         return False
     adrv.tap(f'^{re.escape(set_name)}$'); time.sleep(3)
-    if adrv.find('^Browse folders$'):
+    if adrv.find('^Filters and sort$'):
         adrv.tap('^Browse folders$'); time.sleep(2)
     for part in folder.split('/') if folder else []:
         node = app_ui.find_scrolling('^' + re.escape(part) + '$')
@@ -431,9 +431,9 @@ def step_back_and_progress(run):
     trail = []
     # What identifies each level, measured on 0.8.2: the track detail (Play
     # Audio), the album's track list, the set's folder list (another album
-    # folder), the set's flat grid (Browse folders toggle), the Library.
+    # folder), the set's flat grid (Filters and sort button), the Library.
     for expected in (r'^Play Audio$', '^' + re.escape(track['title']) + r' / ', r'^Gain Check$',
-                     r'^Browse folders$', r'^Library$'):
+                     r'^Filters and sort$', r'^Library$'):
         back(); time.sleep(1)
         seen = any(re.search(expected, label) for label in labels())
         trail.append({'expected': expected, 'seen': seen, 'foreground': app_ui.foreground()})
@@ -499,7 +499,7 @@ def step_server_restart(run):
     run.record('server restart: a session opened before the restart is still valid', status == 200,
                f'HTTP {status}')
     adrv.tap('^Music$'); time.sleep(3)
-    grid = adrv.wait('^Browse folders$', timeout=20) is not None
+    grid = adrv.wait('^Filters and sort$', timeout=20) is not None
     run.record('server restart: the running app keeps working without a new sign-in',
                grid and not adrv.find('^Welcome back$'), artifacts=[run.shot('after-server-restart')])
 

@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:player_android/services/audio_visuals.dart';
 import 'package:player_android/widgets/audio_visuals.dart';
+import 'package:player_android/widgets/overflow_menu.dart';
 
 class _Player extends AudioPlayer {
   final sessions = StreamController<int?>.broadcast();
@@ -111,9 +112,10 @@ void main() {
   }
 
   Future<void> choose(WidgetTester tester, AudioVisualMode mode) async {
-    await tester.tap(find.byKey(const Key('audio_visual_mode')));
+    final state = tester.state<AudioVisualsState>(find.byType(AudioVisuals));
+    final choosing = state.choose(mode);
     await flush(tester);
-    await tester.tap(find.text(mode.label).last);
+    await choosing;
     await flush(tester);
   }
 
@@ -128,11 +130,7 @@ void main() {
     service.framesController.add(frame);
     await flush(tester);
     expect(find.byKey(const Key('audio_visual_canvas')), findsOneWidget);
-    expect(
-        tester
-            .widget<DropdownButton<AudioVisualMode>>(
-                find.byKey(const Key('audio_visual_mode')))
-            .value,
+    expect(tester.state<AudioVisualsState>(find.byType(AudioVisuals)).mode,
         AudioVisualMode.orbit);
   });
 
@@ -215,11 +213,14 @@ void main() {
     SharedPreferences.setMockInitialValues({'player-audio-visual': 'bars'});
     await mount(tester, title: 'Audiobooks/chapter.mp3');
     expect(service.sessions, isEmpty);
-    expect(find.text('Audiobook · visuals off'), findsOneWidget);
+    expect(
+        tester.state<AudioVisualsState>(find.byType(AudioVisuals)).offersModes,
+        isFalse);
     await tester.pumpWidget(const SizedBox());
     await mount(tester, reducedMotion: true);
     expect(service.sessions, isEmpty);
-    expect(find.text('Off'), findsOneWidget);
+    expect(tester.state<AudioVisualsState>(find.byType(AudioVisuals)).mode,
+        AudioVisualMode.off);
   });
 
   testWidgets('native failure returns to artwork without affecting playback',
@@ -232,5 +233,55 @@ void main() {
     expect(find.textContaining('Playback continues'), findsOneWidget);
     expect(player.playing, isTrue);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('menu row picks the mode for music and is absent for audiobooks',
+      (tester) async {
+    for (final title in ['Song.mp3', 'Audiobooks/chapter.mp3']) {
+      SharedPreferences.setMockInitialValues({});
+      if (!created) {
+        player = _Player();
+        service = _Visuals();
+        created = true;
+      }
+      final visuals = GlobalKey<AudioVisualsState>();
+      await tester.pumpWidget(MaterialApp(
+          home: Builder(
+              builder: (context) => Scaffold(
+                  appBar: AppBar(actions: [
+                    OverflowMenuButton(
+                        items: (_) => [
+                              AudioVisualsMenuItem(
+                                  visuals: visuals, playerContext: context)
+                            ]),
+                  ]),
+                  body: AudioVisuals(
+                      key: visuals,
+                      player: player,
+                      title: title,
+                      service: service,
+                      artwork: const Text('Cover artwork'))))));
+      await flush(tester);
+      expect(find.text('Music visuals'), findsNothing,
+          reason: 'the mode picker is not on the player screen');
+      await tester.tap(find.byTooltip('More options'));
+      await flush(tester);
+      if (title.startsWith('Audiobooks')) {
+        expect(find.byKey(const Key('audio_visual_mode')), findsNothing);
+        continue;
+      }
+      expect(find.text('Off'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('audio_visual_mode')));
+      await flush(tester);
+      await tester.tap(find.byKey(const Key('audio_visual_mode_bars')));
+      await flush(tester);
+      expect(visuals.currentState!.mode, AudioVisualMode.bars);
+      expect(
+          (await SharedPreferences.getInstance())
+              .getString('player-audio-visual'),
+          'bars');
+      await tester.pumpWidget(const SizedBox());
+      await flush(tester);
+    }
   });
 }

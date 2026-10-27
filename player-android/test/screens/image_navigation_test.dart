@@ -192,6 +192,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(client.media.favorite, isTrue);
 
+    await tester.tap(find.byTooltip('More options'));
+    await _pumpFrames(tester);
     await tester.tap(find.byKey(const Key('playback_details_button')));
     await _pumpFrames(tester);
     expect(find.byType(MediaDetailScreen), findsOneWidget);
@@ -244,16 +246,21 @@ void main() {
                 home: ImageViewerScreen(mediaId: id, isPublicShare: public))));
     await show('9');
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Notes'), findsOneWidget);
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+    expect(find.text('Notes'), findsOneWidget);
+    expect(find.byKey(const Key('playback_details_button')), findsOneWidget);
+    Navigator.of(tester.element(find.text('Notes'))).pop();
+    await tester.pumpAndSettle();
     await show('10');
     await tester.pumpAndSettle();
     expect(client.mediaIds.where((id) => id == 10), isNotEmpty);
     await show('shared', public: true);
     await tester.pumpAndSettle();
     final calls = client.mediaIds.length;
-    expect(find.byTooltip('Notes'), findsNothing);
+    expect(find.byTooltip('More options'), findsNothing,
+        reason: 'public shares have no account actions');
     expect(find.byTooltip('Add to favorites'), findsNothing);
-    expect(find.byKey(const Key('playback_details_button')), findsNothing);
     await tester.pump();
     expect(client.mediaIds.length, calls);
   });

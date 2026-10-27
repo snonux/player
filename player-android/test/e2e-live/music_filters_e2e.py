@@ -139,9 +139,8 @@ def names_from_nodes(run, nodes):
 
 def swipe_grid(up):
     nodes = adrv.nodes()
-    toolbar = [n for n in nodes if adrv.label(n) in
-               ('Previews', 'Smaller previews', 'Larger previews')]
-    assert toolbar, 'Grid preview toolbar is not visible'
+    toolbar = [n for n in nodes if adrv.label(n) in ('Filters and sort', 'Clear')]
+    assert toolbar, 'Grid search bar is not visible'
     top = max(n['b'][3] for n in toolbar) + 16
     bottom = max(n['b'][3] for n in nodes) - 160
     width = max(n['b'][2] for n in nodes)

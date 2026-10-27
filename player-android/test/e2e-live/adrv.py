@@ -107,8 +107,37 @@ def tap_node(n):
     x, y = (n["b"][0] + n["b"][2]) // 2, (n["b"][1] + n["b"][3]) // 2
     adb("shell", "input", "tap", str(x), str(y))
 
+MENU = r"^(More options|Open navigation menu)$"
+
+def reveal(pat, cls=None, nth=0):
+    """Secondary actions live in the app's overflow menu or navigation drawer.
+
+    Returns the node with the menu left open, or None after closing it again.
+    """
+    menu = find(MENU)
+    if re.search(pat, "More options") or not menu:
+        return None
+    tap_node(menu)
+    time.sleep(1)
+    for swipe in range(4):
+        n = find(pat, cls, nth)
+        if n: return n
+        if swipe < 3:
+            adb("shell", "input", "swipe", "540", "1700", "540", "900", "300")
+            time.sleep(0.8)
+    adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    time.sleep(0.6)
+    return None
+
 def tap(pat, cls=None, nth=0, timeout=15):
     end = time.time() + timeout
+    direct = time.time() + min(timeout, 4)
+    while time.time() < direct:
+        n = find(pat, cls, nth)
+        if n: tap_node(n); return True
+        time.sleep(0.7)
+    n = reveal(pat, cls, nth)
+    if n: tap_node(n); return True
     while time.time() < end:
         n = find(pat, cls, nth)
         if n: tap_node(n); return True

@@ -5,10 +5,9 @@
 //   2. Text input does NOT fire immediately (debounce delay is respected).
 //   3. Typing quickly cancels the previous timer (only last value fires).
 //   4. Clearing the search text passes null as the query.
-//   5. Selecting a type chip updates the filter type.
-//   6. Tapping the "All" chip clears the type filter.
-//   7. Toggling the favourites button flips favoritesOnly.
-//   8. Picking a sort option updates sortBy in the callback.
+//   5. Only the search field shows until something filters the list.
+//   6. The filter sheet result (type, sort) is applied; favourites persist.
+//   7. The summary names active filters; Clear keeps the sort order.
 //   9. Initial filter state is reflected in the UI on first render.
 //  10. didUpdateWidget: external filter change updates the bar's UI.
 //
@@ -194,149 +193,67 @@ void main() {
   // Type filter chips
   // --------------------------------------------------------------------------
 
-  group('type filter chips', () {
-    testWidgets('tapping Video chip sets type to "video"', (tester) async {
-      MediaFilter? emitted;
-      await _pumpBar(tester, onChanged: (f) => emitted = f);
+  group('filters button and summary', () {
+    Future<void> pumpWithSheet(WidgetTester tester,
+        {required MediaFilter initial,
+        required void Function(MediaFilter) onChanged,
+        required Future<MediaFilter?> Function(MediaFilter) sheet}) async {
+      await tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: SearchFilterBar(
+        initialFilter: initial,
+        scopeLabel: 'Selected sets: Music',
+        onFiltersChanged: onChanged,
+        onOpenFilters: sheet,
+      ))));
+    }
 
-      await tester.tap(find.byKey(const Key('type_chip_video')));
-      await tester.pumpAndSettle();
-
-      expect(emitted, isNotNull);
-      expect(emitted!.type, equals('video'));
-    });
-
-    testWidgets('tapping Audio chip sets type to "audio"', (tester) async {
-      MediaFilter? emitted;
-      await _pumpBar(tester, onChanged: (f) => emitted = f);
-
-      await tester.tap(find.byKey(const Key('type_chip_audio')));
-      await tester.pumpAndSettle();
-
-      expect(emitted!.type, equals('audio'));
-    });
-
-    testWidgets('tapping Image chip sets type to "image"', (tester) async {
-      MediaFilter? emitted;
-      await _pumpBar(tester, onChanged: (f) => emitted = f);
-
-      await tester.tap(find.byKey(const Key('type_chip_image')));
-      await tester.pumpAndSettle();
-
-      expect(emitted!.type, equals('image'));
-    });
-
-    testWidgets('tapping All chip clears the type filter', (tester) async {
-      MediaFilter? emitted;
-      await _pumpBar(
-        tester,
-        initialFilter: MediaFilter(type: 'video'),
-        onChanged: (f) => emitted = f,
-      );
-
-      await tester.tap(find.byKey(const Key('type_chip_all')));
-      await tester.pumpAndSettle();
-
-      expect(emitted!.type, isNull);
-    });
-
-    testWidgets('all four type chips are rendered', (tester) async {
-      await _pumpBar(tester, onChanged: (_) {});
-
-      expect(find.byKey(const Key('type_chip_all')), findsOneWidget);
-      expect(find.byKey(const Key('type_chip_video')), findsOneWidget);
-      expect(find.byKey(const Key('type_chip_audio')), findsOneWidget);
-      expect(find.byKey(const Key('type_chip_image')), findsOneWidget);
-    });
-  });
-
-  // --------------------------------------------------------------------------
-  // Favourites toggle
-  // --------------------------------------------------------------------------
-
-  group('favourites filter', () {
-    testWidgets('has no own toggle; the app bar heart owns it', (tester) async {
-      await _pumpBar(tester, onChanged: (_) {});
+    testWidgets('only the search field shows while nothing is filtered',
+        (tester) async {
+      await pumpWithSheet(tester,
+          initial: const MediaFilter.empty(),
+          onChanged: (_) {},
+          sheet: (_) async => null);
+      expect(find.byKey(const Key('search_input')), findsOneWidget);
+      expect(find.byKey(const Key('media_filters_button')), findsOneWidget);
+      expect(find.byKey(const Key('media_filter_summary')), findsNothing);
+      expect(find.byKey(const Key('media_filter_clear')), findsNothing);
+      expect(find.byType(ChoiceChip), findsNothing);
       expect(find.byKey(const Key('favorites_toggle')), findsNothing);
-      expect(find.byIcon(Icons.star_border), findsNothing);
     });
 
-    testWidgets('keeps favoritesOnly when another filter changes',
+    testWidgets('the sheet result applies type and sort and keeps favourites',
         (tester) async {
       MediaFilter? emitted;
-      await _pumpBar(
-        tester,
-        initialFilter: MediaFilter(favoritesOnly: true),
-        onChanged: (f) => emitted = f,
-      );
-
-      await tester.tap(find.text('Video'));
+      await pumpWithSheet(tester,
+          initial: MediaFilter(favoritesOnly: true),
+          onChanged: (f) => emitted = f,
+          sheet: (filter) async =>
+              filter.copyWith(type: 'video', sortBy: 'name'));
+      await tester.tap(find.byKey(const Key('media_filters_button')));
       await tester.pumpAndSettle();
-
       expect(emitted!.type, 'video');
+      expect(emitted!.sortBy, 'name');
       expect(emitted!.favoritesOnly, isTrue);
-    });
-  });
-
-  // --------------------------------------------------------------------------
-  // Sort dropdown
-  // --------------------------------------------------------------------------
-
-  group('sort dropdown', () {
-    testWidgets('selecting Name sort emits sortBy = "name"', (tester) async {
-      MediaFilter? emitted;
-      await _pumpBar(tester, onChanged: (f) => emitted = f);
-
-      // Open the popup menu.
-      await tester.tap(find.byKey(const Key('sort_dropdown')));
-      await tester.pumpAndSettle();
-
-      // Tap the Name option.
-      await tester.tap(find.byKey(const Key('sort_option_name')));
-      await tester.pumpAndSettle();
-
-      expect(emitted!.sortBy, equals('name'));
+      expect(find.text('Video · Favourites · Sort: Name'), findsOneWidget);
     });
 
-    testWidgets('selecting Date sort emits sortBy = "date"', (tester) async {
-      MediaFilter? emitted;
-      await _pumpBar(tester, onChanged: (f) => emitted = f);
-
-      await tester.tap(find.byKey(const Key('sort_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('sort_option_date')));
-      await tester.pumpAndSettle();
-
-      expect(emitted!.sortBy, equals('date'));
-    });
-
-    testWidgets('selecting Random sort emits sortBy = "random"',
+    testWidgets('summary names scope and advanced filters; Clear keeps sort',
         (tester) async {
       MediaFilter? emitted;
-      await _pumpBar(tester, onChanged: (f) => emitted = f);
-
-      await tester.tap(find.byKey(const Key('sort_dropdown')));
+      await pumpWithSheet(tester,
+          initial: MediaFilter(
+              setIds: [3], type: 'audio', tags: ['keep'], sortBy: 'date'),
+          onChanged: (f) => emitted = f,
+          sheet: (_) async => null);
+      expect(
+          find.text('Selected sets: Music · Audio · Sort: Date · Tags: keep'),
+          findsOneWidget);
+      await tester.tap(find.byKey(const Key('media_filter_clear')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('sort_option_random')));
-      await tester.pumpAndSettle();
-
-      expect(emitted!.sortBy, equals('random'));
-    });
-
-    testWidgets('selecting Default clears sortBy to null', (tester) async {
-      MediaFilter? emitted;
-      await _pumpBar(
-        tester,
-        initialFilter: MediaFilter(sortBy: 'name'),
-        onChanged: (f) => emitted = f,
-      );
-
-      await tester.tap(find.byKey(const Key('sort_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('sort_option_default')));
-      await tester.pumpAndSettle();
-
-      expect(emitted!.sortBy, isNull);
+      expect(emitted, MediaFilter(sortBy: 'date'));
+      expect(find.text('Sort: Date'), findsOneWidget);
+      expect(find.byKey(const Key('media_filter_clear')), findsNothing);
     });
   });
 
@@ -367,7 +284,7 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('external filter update', () {
-    testWidgets('an external favourites change is kept by later chip changes',
+    testWidgets('an external favourites change is kept by later searches',
         (tester) async {
       MediaFilter? emitted;
       final key = await _pumpControlledBar(
@@ -377,13 +294,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // The app bar heart changes the filter from outside the bar.
+      // The app bar menu changes the filter from outside the bar.
       key.currentState!.pushFilter(MediaFilter(favoritesOnly: true));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Audio'));
-      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('search_input')), 'jazz');
+      await tester.pump(const Duration(milliseconds: 500));
 
-      expect(emitted!.type, 'audio');
+      expect(emitted!.query, 'jazz');
       expect(emitted!.favoritesOnly, isTrue);
     });
 
@@ -434,11 +351,11 @@ void main() {
       },
     ))));
     await tester.enterText(find.byKey(const Key('search_input')), 'late');
-    await tester.tap(find.text('Clear filters'));
+    await tester.tap(find.byKey(const Key('media_filter_clear')));
     await tester.pump(const Duration(seconds: 1));
     expect(emitted, [MediaFilter(sortBy: 'date')]);
     await tester.enterText(find.byKey(const Key('search_input')), 'latest');
-    await tester.tap(find.text('Filters'));
+    await tester.tap(find.byKey(const Key('media_filters_button')));
     await tester.pump();
     expect(opened!.query, 'latest');
     expect(opened!.sortBy, 'date');

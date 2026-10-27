@@ -3,6 +3,24 @@ import 'package:flutter/material.dart';
 import '../api/player_api_client.dart';
 import '../models/models.dart';
 
+/// Sort orders offered for file-library media, mapped to server values.
+const List<({String label, String? value})> mediaSortOptions = [
+  (label: 'Default', value: null),
+  (label: 'Name', value: 'name'),
+  (label: 'Date', value: 'date'),
+  (label: 'Duration', value: 'duration'),
+  (label: 'Play count', value: 'play_count'),
+  (label: 'Random', value: 'random'),
+];
+
+/// Media types offered as filters; `null` means all types.
+const List<({String label, String? value})> mediaTypeOptions = [
+  (label: 'All', value: null),
+  (label: 'Video', value: 'video'),
+  (label: 'Audio', value: 'audio'),
+  (label: 'Image', value: 'image'),
+];
+
 /// Edits existing file-library filters as a draft. Dismissal never applies it.
 class MediaFilterSheet extends StatefulWidget {
   const MediaFilterSheet({
@@ -227,6 +245,33 @@ class _MediaFilterSheetState extends State<MediaFilterSheet> {
                               onPressed: _loadOptions,
                               child: const Text('Retry filter options')),
                         ],
+                        Text('Type',
+                            style: Theme.of(context).textTheme.titleMedium),
+                        Wrap(spacing: 8, children: [
+                          for (final option in mediaTypeOptions)
+                            ChoiceChip(
+                              key: Key('type_chip_${option.value ?? 'all'}'),
+                              label: Text(option.label),
+                              selected: _draft.type == option.value,
+                              onSelected: (_) => setState(() =>
+                                  _draft = _draft.copyWith(type: option.value)),
+                            ),
+                        ]),
+                        const SizedBox(height: 12),
+                        Text('Sort',
+                            style: Theme.of(context).textTheme.titleMedium),
+                        Wrap(spacing: 8, children: [
+                          for (final option in mediaSortOptions)
+                            ChoiceChip(
+                              key: Key(
+                                  'sort_option_${option.value ?? 'default'}'),
+                              label: Text(option.label),
+                              selected: _draft.sortBy == option.value,
+                              onSelected: (_) => setState(() => _draft =
+                                  _draft.copyWith(sortBy: option.value)),
+                            ),
+                        ]),
+                        const SizedBox(height: 12),
                         Text('Sets',
                             style: Theme.of(context).textTheme.titleMedium),
                         const Text('No selection includes all visible sets.'),

@@ -34,6 +34,25 @@ String globalSyncMessage(GlobalSyncState state, int nowMs) {
   return parts.join(' · ');
 }
 
+/// True when the footer has something to report beyond "Synced"; a healthy
+/// sync stays out of the way and Sync now lives in the library menu.
+bool globalSyncNeedsAttention(GlobalSyncState state, int nowMs) =>
+    state.configured &&
+    (state.active ||
+        state.errorKind != null ||
+        state.neverSynced ||
+        state.staleAt(nowMs) ||
+        state.pending > 0);
+
+/// Label for the manual sync action in the footer and the library menu.
+String globalSyncActionLabel(GlobalSyncState state, int nowMs) => state.active
+    ? 'Syncing…'
+    : state.errorKind == 'auth'
+        ? 'Sign in required'
+        : state.errorKind != null || state.staleAt(nowMs)
+            ? 'Retry'
+            : 'Sync now';
+
 /// Pure presentation, also used by focused widget checks.
 class GlobalSyncStatus extends StatelessWidget {
   const GlobalSyncStatus(
@@ -46,7 +65,9 @@ class GlobalSyncStatus extends StatelessWidget {
   final VoidCallback onSync;
   @override
   Widget build(BuildContext context) {
-    if (!state.configured) return const SizedBox.shrink();
+    if (!globalSyncNeedsAttention(state, nowMs)) {
+      return const SizedBox.shrink();
+    }
     return Material(
       color: Theme.of(context).colorScheme.surface,
       child: SafeArea(
@@ -60,15 +81,29 @@ class GlobalSyncStatus extends StatelessWidget {
               TextButton(
                   onPressed:
                       state.active || state.errorKind == 'auth' ? null : onSync,
-                  child: Text(state.active
-                      ? 'Syncing…'
-                      : state.errorKind == 'auth'
-                          ? 'Sign in required'
-                          : state.errorKind != null || state.staleAt(nowMs)
-                              ? 'Retry'
-                              : 'Sync now')),
+                  child: Text(globalSyncActionLabel(state, nowMs))),
             ]),
           )),
+    );
+  }
+}
+
+/// Library menu row: shows the sync status and runs a manual sync.
+class GlobalSyncMenuTile extends ConsumerWidget {
+  const GlobalSyncMenuTile({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sync = ref.watch(globalSyncCoordinatorProvider);
+    final state = sync.state;
+    if (!state.configured) return const SizedBox.shrink();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return ListTile(
+      key: const Key('global_sync_menu_tile'),
+      leading: const Icon(Icons.sync),
+      title: Text(globalSyncActionLabel(state, now)),
+      subtitle: Text(globalSyncMessage(state, now)),
+      enabled: !state.active && state.errorKind != 'auth',
+      onTap: () => unawaited(sync.syncNow()),
     );
   }
 }

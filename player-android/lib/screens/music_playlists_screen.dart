@@ -2,6 +2,7 @@ import '../api/playlist_rules_api.dart';
 import 'music_playlist_rules_screen.dart';
 import '../l10n/music_localizations.dart';
 import '../api/music_artwork_api.dart';
+import '../widgets/overflow_menu.dart';
 import '../widgets/music_artwork_section.dart';
 import '../widgets/music_favorite_button.dart';
 import '../providers/current_user_provider.dart';
@@ -41,14 +42,26 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
       kind: kind,
       entity: entity,
       onChanged: () => setState(() {}));
-  Widget _favoritesFilter() => IconButton(
-      tooltip: _favoritesOnly
-          ? context.tr('Show all playlists')
-          : context.tr('Favorites only'),
-      isSelected: _favoritesOnly,
-      icon: const Icon(Icons.favorite_border),
-      selectedIcon: const Icon(Icons.favorite),
-      onPressed: () => setState(() => _favoritesOnly = !_favoritesOnly));
+  List<Widget> _menuItems() => [
+        OverflowMenuItem(
+            key: const Key('music_favorites_only'),
+            icon: _favoritesOnly ? Icons.favorite : Icons.favorite_border,
+            label: _favoritesOnly
+                ? context.tr('Show all playlists')
+                : context.tr('Favorites only'),
+            selected: _favoritesOnly,
+            onSelected: () => setState(() => _favoritesOnly = !_favoritesOnly)),
+        OverflowMenuItem(
+            key: const Key('playlist_import_m3u'),
+            icon: Icons.playlist_add,
+            label: context.tr('Import M3U…'),
+            onSelected: _import),
+        OverflowMenuItem(
+            key: const Key('playlist_create_smart'),
+            icon: Icons.rule,
+            label: context.tr('Create smart playlist'),
+            onSelected: () => _edit(null, true)),
+      ];
 
   List<Map<String, dynamic>> _list = [];
   Map<String, dynamic>? _playlist;
@@ -191,7 +204,6 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
               ? context.tr('Music · Playlists')
               : _playlist?['name'] as String? ?? context.tr('Playlist')),
           actions: [
-            if (widget.playlistId == null) _favoritesFilter(),
             if (widget.playlistId != null &&
                 _playlist != null &&
                 !_loading &&
@@ -215,11 +227,13 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                             value: 'membership',
                             child: Text(context.tr('Containing playlists…')))
                       ]),
-            if (widget.playlistId == null)
+            if (widget.playlistId == null) ...[
               IconButton(
                   tooltip: context.tr('Create playlist'),
                   icon: const Icon(Icons.add),
                   onPressed: () => _edit()),
+              OverflowMenuButton(items: (_) => _menuItems()),
+            ],
           ]),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -253,23 +267,6 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
       keyName: 'playlist_id',
       nameName: 'name',
       onRefresh: _load,
-      header: Padding(
-          padding: const EdgeInsets.all(16),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            FilledButton.icon(
-                onPressed: () => _edit(),
-                icon: const Icon(Icons.add),
-                label: Text(context.tr('Create playlist'))),
-            OutlinedButton.icon(
-                onPressed: _import,
-                icon: const Icon(Icons.playlist_add),
-                label: Text(context.tr('Import M3U…'))),
-            OutlinedButton.icon(
-                onPressed: () => _edit(null, true),
-                icon: const Icon(Icons.rule),
-                label: Text(context.tr('Create smart playlist'))),
-          ])),
       itemBuilder: (p, checkbox, toggle) => ListTile(
           leading: checkbox ?? _cover(p, 56),
           title: Text(p['name'] as String,

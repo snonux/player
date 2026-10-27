@@ -9,6 +9,7 @@ import '../widgets/music_related_section.dart';
 import '../widgets/music_listening_details.dart';
 import '../widgets/music_rating_button.dart';
 import '../widgets/music_rating_filter.dart';
+import '../widgets/overflow_menu.dart';
 import '../widgets/music_favorite_button.dart';
 import '../widgets/music_layout_panel.dart';
 import '../widgets/music_filter_sheet.dart';
@@ -52,13 +53,6 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
       kind: kind,
       entity: entity,
       onChanged: () => setState(() {}));
-  Widget _ratingFilter() => MusicRatingFilter(
-      rated: _ratedOnly,
-      highest: _highestRated,
-      onChanged: (rated, highest) => setState(() {
-            _ratedOnly = rated;
-            _highestRated = highest;
-          }));
   Widget _personal(String kind, Map<String, dynamic> entity) => Row(
       mainAxisSize: MainAxisSize.min,
       children: [_heart(kind, entity), _rating(kind, entity)]);
@@ -69,14 +63,31 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
       kind: kind,
       entity: entity,
       onChanged: () => setState(() {}));
-  Widget _favoritesFilter() => IconButton(
-      tooltip: _favoritesOnly
-          ? context.tr('Show all albums')
-          : context.tr('Favorites only'),
-      isSelected: _favoritesOnly,
-      icon: const Icon(Icons.favorite_border),
-      selectedIcon: const Icon(Icons.favorite),
-      onPressed: () => setState(() => _favoritesOnly = !_favoritesOnly));
+  List<Widget> _menuItems() => [
+        OverflowMenuItem(
+            key: const Key('music_favorites_only'),
+            icon: _favoritesOnly ? Icons.favorite : Icons.favorite_border,
+            label: _favoritesOnly
+                ? context.tr('Show all albums')
+                : context.tr('Favorites only'),
+            selected: _favoritesOnly,
+            onSelected: () => setState(() => _favoritesOnly = !_favoritesOnly)),
+        ...musicRatingMenuItems(context,
+            rated: _ratedOnly,
+            highest: _highestRated,
+            onChanged: (rated, highest) => setState(() {
+                  _ratedOnly = rated;
+                  _highestRated = highest;
+                })),
+        if (widget.artistKey == null && !_discover)
+          OverflowMenuItem(
+              icon: Icons.explore_outlined,
+              label: context.tr('Discover albums'),
+              onSelected: () => setState(() {
+                    _discover = true;
+                    _collection = null;
+                  })),
+      ];
 
   List<Map<String, dynamic>>? _albums;
   Map<String, dynamic>? _album;
@@ -233,17 +244,15 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
                   ? MusicFilterBar(onChanged: _filtersChanged)
                   : null,
               actions: [
-                if (widget.albumKey == null) ...[
-                  _favoritesFilter(),
-                  _ratingFilter()
-                ],
                 if (widget.albumKey != null &&
                     _album != null &&
                     !_loading &&
                     _error == null)
                   _personal('album', _album!),
                 const MusicSearchButton(),
-                const MusicQueueButton()
+                const MusicQueueButton(),
+                if (widget.albumKey == null)
+                  OverflowMenuButton(items: (_) => _menuItems()),
               ],
               title: Text(widget.albumKey != null
                   ? (_album?['title'] as String? ?? context.tr('Album'))
@@ -498,22 +507,13 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
     return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Wrap(children: [
-            TextButton.icon(
+          if (_collection != null)
+            TextButton(
                 onPressed: () => setState(() {
-                      _discover = true;
                       _collection = null;
+                      _collectionOrder = [];
                     }),
-                icon: const Icon(Icons.explore_outlined),
-                label: Text(context.tr('Discover albums'))),
-            if (_collection != null)
-              TextButton(
-                  onPressed: () => setState(() {
-                        _collection = null;
-                        _collectionOrder = [];
-                      }),
-                  child: Text(context.tr('View all albums'))),
-          ]),
+                child: Text(context.tr('View all albums'))),
           if (_collection != null) ...[
             Text(albumCollections[_collection]![1]),
             MusicCollectionActions(

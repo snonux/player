@@ -37,6 +37,20 @@ import audio_trace
 from podcast_fixture import load, podcast_media
 from fixture_server import Client
 
+
+FOOTER = re.compile(r'^(Syncing…|Retry|Sync now|Sign in required)$')
+
+
+def wait_footer_clear(timeout=20):
+    """The sync footer is hidden once everything is synced and fresh."""
+    end = time.time() + timeout
+    while time.time() < end:
+        if not any(FOOTER.search(adrv.label(node)) for node in adrv.nodes()):
+            return True
+        time.sleep(1)
+    return False
+
+
 PKG = app_ui.PKG
 
 
@@ -458,7 +472,7 @@ class Run:
         return str(path)
 
     def touch(self, pattern, cls=None):
-        node = adrv.wait(pattern, timeout=15, cls=cls)
+        node = adrv.wait(pattern, timeout=15, cls=cls) or adrv.reveal(pattern, cls)
         if not node:
             raise AssertionError('Missing labeled native control: ' + pattern)
         # AppBar titles reuse action labels (e.g. Sign In); prefer a clickable hit.
@@ -820,14 +834,14 @@ class Run:
     def associate(self):
         self.login()
         # Fresh sign-in offers consent once; retries after a prior PASS still need
-        # durable association + Synced proof without re-prompting.
+        # durable association + clear sync footer proof without re-prompting.
         if adrv.wait(r"^Sync this device's podcasts with ", timeout=12):
             self.shot('explicit-consent')
             self.touch('^Sync$')
         if adrv.find(r'^(Sync now|Retry)$'):
             self.touch(r'^(Sync now|Retry)$')
         # Footer semantics may merge; require durable full success below.
-        adrv.wait(r'Synced', timeout=60)
+        wait_footer_clear(timeout=60)
         self.no_server_audio()
         snapshot = self.snapshot('associated')
         local, account = self.saved(snapshot, 'local'), self.saved(snapshot)
@@ -873,7 +887,7 @@ class Run:
         self.login()
         if adrv.find(r'^(Sync now|Retry)$'):
             self.touch(r'^(Sync now|Retry)$')
-            adrv.wait(r'Synced', timeout=60)
+            wait_footer_clear(timeout=60)
         self.episodes(combined=False, filter_name='Completed' if completed else 'Uncompleted')
         if not self.episode_visible():
             raise AssertionError('Expected synchronized episode missing from matching filter')
@@ -1062,7 +1076,7 @@ class Run:
             if not adrv.wait('pending', timeout=20):
                 raise AssertionError('Queued ordinary progress was not visible after process restart')
         self.touch('^Retry$')
-        if not adrv.wait('^Synced$', timeout=30):
+        if not wait_footer_clear(timeout=30):
             raise AssertionError('Global Retry did not include queued ordinary progress')
         with sqlite3.connect(Path(self.state['database']).as_uri() + '?mode=ro', uri=True) as db:
             progress = db.execute('SELECT position_seconds FROM playback_progress WHERE user_id=? AND media_id=?',
@@ -1099,7 +1113,7 @@ class Run:
             self.record('native other-account sync feedback is quiet and subscriptions are isolated',
                         status=adrv.label(status))
         self.touch(r'^(Sync now|Retry)$')
-        if not adrv.wait('^Synced$', timeout=30):
+        if not wait_footer_clear(timeout=30):
             raise AssertionError('Other account did not reach full success after reconnection')
         self.switch_account('admin')
         self.podcasts()
@@ -1417,7 +1431,7 @@ class Run:
             # trigger an automatic sync and replace Retry before the tap.
             proxy.fail_podcasts = False
             self.touch(r'^(Retry|Sync now)$')
-            if not adrv.wait('^Synced$', timeout=30):
+            if not wait_footer_clear(timeout=30):
                 raise AssertionError('Reconnected global retry did not deliver native tombstone')
             if not any(item.get('status') == 200 and item['path'].endswith('/podcasts/sync')
                        for item in proxy.trace):
@@ -1433,7 +1447,7 @@ class Run:
     def observe_unsubscribed(self):
         self.podcasts()
         self.touch('^Sync now$')
-        if not adrv.wait('^Synced$', timeout=30):
+        if not wait_footer_clear(timeout=30):
             raise AssertionError('Subscription tombstone pull did not fully sync')
         if adrv.find(feed_label_pattern('Acceptance Alpha')):
             raise AssertionError('Stale native client resurrected unsubscribed feed')
@@ -1473,7 +1487,7 @@ class Run:
     def feedback(self):
         self.episodes(filter_name='All')
         self.touch('^Sync now$')
-        if not adrv.wait('^Synced$'):
+        if not wait_footer_clear():
             raise AssertionError('Clock check requires actual prior full success')
         mapping = f'tcp:{self.state["port"]}'
         original = next((line.split()[-1] for line in checked_adb('reverse', '--list').splitlines()
@@ -1494,7 +1508,7 @@ class Run:
         finally:
             checked_adb('reverse', mapping, original)
         self.touch('^Retry$')
-        if not adrv.wait('^Synced$'):
+        if not wait_footer_clear():
             raise AssertionError('Actual full success did not clear stale/unavailable footer')
         self.record('native full retry clears stale feedback after restoring real clock')
 

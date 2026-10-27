@@ -97,6 +97,9 @@ class Run:
                      0 <= n['b'][1] < n['b'][3] <= height and n['b'][2] > n['b'][0]]
             if found:
                 return found[0]
+        node = adrv.reveal(pattern, cls)
+        if node:
+            return node
         raise AssertionError((pattern, [adrv.label(n) for n in nodes if adrv.label(n)]))
 
     def touch(self, pattern, cls=None):

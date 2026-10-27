@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/audio_visuals.dart';
+import 'overflow_menu.dart';
 
 /// Samples only while this player is visible, ready and playing. Native
 /// capture never owns playback, so permissions/effect failures cannot mute it.
@@ -23,10 +24,12 @@ class AudioVisuals extends StatefulWidget {
   final AudioVisualsService service;
 
   @override
-  State<AudioVisuals> createState() => _AudioVisualsState();
+  State<AudioVisuals> createState() => AudioVisualsState();
 }
 
-class _AudioVisualsState extends State<AudioVisuals>
+/// Public so a player menu can show and change the mode through a
+/// [GlobalKey]; see [AudioVisualsMenuItem].
+class AudioVisualsState extends State<AudioVisuals>
     with WidgetsBindingObserver {
   static const _preferenceKey = 'player-audio-visual';
   AudioVisualMode _mode = AudioVisualMode.off;
@@ -47,6 +50,11 @@ class _AudioVisualsState extends State<AudioVisuals>
   String? _message;
 
   bool get _book => isAudiobook(widget.title);
+
+  /// Audiobooks never show visuals, so they offer no mode choice.
+  bool get offersModes => !_book;
+  AudioVisualMode get mode => _mode;
+  bool get choosing => _choosing;
 
   @override
   void initState() {
@@ -150,7 +158,7 @@ class _AudioVisualsState extends State<AudioVisuals>
     });
   }
 
-  Future<void> _choose(AudioVisualMode? mode) async {
+  Future<void> choose(AudioVisualMode? mode) async {
     if (mode == null) return;
     ++_selection;
     setState(() {
@@ -210,32 +218,61 @@ class _AudioVisualsState extends State<AudioVisuals>
         ))
       else
         widget.artwork,
-      const SizedBox(height: 12),
-      if (_book)
-        const Text('Audiobook · visuals off',
-            style: TextStyle(color: Colors.white70))
-      else ...[
-        const Text('Music visuals', style: TextStyle(color: Colors.white70)),
-        DropdownButton<AudioVisualMode>(
-          key: const Key('audio_visual_mode'),
-          value: _mode,
-          dropdownColor: Colors.grey[900],
-          style: const TextStyle(color: Colors.white),
-          isExpanded: true,
-          items: AudioVisualMode.values
-              .map((mode) =>
-                  DropdownMenuItem(value: mode, child: Text(mode.label)))
-              .toList(),
-          onChanged: _choosing ? null : _choose,
-        ),
-        if (_mode != AudioVisualMode.off && !_permission && _message == null)
-          TextButton(
-              onPressed: _choosing ? null : () => _choose(_mode),
-              child: const Text('Enable music visuals')),
-        if (_message != null)
-          Text(_message!, style: const TextStyle(color: Colors.white70)),
-      ],
+      if (!_book &&
+          _mode != AudioVisualMode.off &&
+          !_permission &&
+          _message == null)
+        TextButton(
+            onPressed: _choosing ? null : () => choose(_mode),
+            child: const Text('Enable music visuals')),
+      if (!_book && _message != null)
+        Text(_message!, style: const TextStyle(color: Colors.white70)),
     ]);
+  }
+}
+
+/// Player menu row for the music visuals mode; hidden for audiobooks.
+/// [playerContext] opens the mode list, since the menu closes first.
+class AudioVisualsMenuItem extends StatelessWidget {
+  const AudioVisualsMenuItem(
+      {super.key, required this.visuals, required this.playerContext});
+  final GlobalKey<AudioVisualsState> visuals;
+  final BuildContext playerContext;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = visuals.currentState;
+    if (state == null || !state.offersModes) return const SizedBox.shrink();
+    return OverflowMenuItem(
+      key: const Key('audio_visual_mode'),
+      icon: Icons.graphic_eq,
+      label: 'Music visuals',
+      subtitle: state.mode.label,
+      onSelected: state.choosing
+          ? null
+          : () async {
+              final mode = await showModalBottomSheet<AudioVisualMode>(
+                context: playerContext,
+                showDragHandle: true,
+                builder: (sheet) => SafeArea(
+                  child: SingleChildScrollView(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      for (final mode in AudioVisualMode.values)
+                        ListTile(
+                          key: Key('audio_visual_mode_${mode.name}'),
+                          title: Text(mode.label),
+                          trailing: mode == state.mode
+                              ? const Icon(Icons.check)
+                              : null,
+                          onTap: () => Navigator.pop(sheet, mode),
+                        ),
+                    ]),
+                  ),
+                ),
+              );
+              if (mode != null && state.mounted) await state.choose(mode);
+            },
+    );
   }
 }
 

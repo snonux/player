@@ -63,7 +63,7 @@ class KeyboardDismissalTest(unittest.TestCase):
 class GridSwipeTest(unittest.TestCase):
     def test_both_swipe_directions_stay_below_the_actual_toolbar(self):
         nodes = [{'text': '', 'desc': '', 'b': [0, 0, 1080, 2220]},
-                 {'text': 'Previews', 'desc': '', 'b': [500, 810, 700, 900]}]
+                 {'text': '', 'desc': 'Filters and sort', 'b': [500, 810, 700, 900]}]
         with patch.object(runner.adrv, 'nodes', return_value=nodes), \
                 patch.object(runner.adrv, 'adb') as adb, patch.object(runner.time, 'sleep'):
             for up in (True, False):
@@ -75,7 +75,7 @@ class GridSwipeTest(unittest.TestCase):
 
     def test_unknown_or_occluded_grid_never_uses_fixed_screen_coordinates(self):
         for nodes in ([{'text': '', 'desc': '', 'b': [0, 0, 1080, 2220]}],
-                      [{'text': 'Previews', 'desc': '', 'b': [0, 800, 1080, 900]}]):
+                      [{'text': '', 'desc': 'Filters and sort', 'b': [0, 800, 1080, 900]}]):
             with patch.object(runner.adrv, 'nodes', return_value=nodes), \
                     patch.object(runner.adrv, 'adb') as adb:
                 with self.assertRaises(AssertionError):

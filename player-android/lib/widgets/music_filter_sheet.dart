@@ -35,7 +35,7 @@ class MusicFilterBar extends ConsumerStatefulWidget
   const MusicFilterBar({super.key, required this.onChanged});
   final ValueChanged<Map<String, String>> onChanged;
   @override
-  Size get preferredSize => const Size.fromHeight(100);
+  Size get preferredSize => const Size.fromHeight(48);
   @override
   ConsumerState<MusicFilterBar> createState() => _MusicFilterBarState();
 }
@@ -97,14 +97,15 @@ class _MusicFilterBarState extends ConsumerState<MusicFilterBar> {
     ref.watch(playerBaseUrlProvider);
     ref.watch(authStateProvider);
     if (_key != _scope) Future.microtask(_restore);
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      TextButton.icon(
-          onPressed: _open,
-          icon: const Icon(Icons.filter_list),
-          label: Text('Filters (${_filter.length})')),
-      SingleChildScrollView(
+    return SizedBox(
+      height: 48,
+      child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(children: [
+            TextButton.icon(
+                onPressed: _open,
+                icon: const Icon(Icons.filter_list),
+                label: Text('Filters (${_filter.length})')),
             for (final entry in _filter.entries)
               Padding(
                   padding: const EdgeInsets.only(left: 8),
@@ -118,7 +119,7 @@ class _MusicFilterBarState extends ConsumerState<MusicFilterBar> {
                   onPressed: () => _apply({}),
                   child: Text(context.tr('Clear filters'))),
           ])),
-    ]);
+    );
   }
 }
 

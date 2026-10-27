@@ -248,6 +248,14 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+        find.byKey(const Key('home_settings_button')), 200,
+        scrollable: find.descendant(
+            of: find.byType(Drawer), matching: find.byType(Scrollable)));
+    await tester.ensureVisible(find.byKey(const Key('home_settings_button')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('home_settings_button')));
     await tester.pumpAndSettle();
     expect(find.byType(SettingsScreen), findsOneWidget);

@@ -67,18 +67,3 @@ Future<void> openMediaPlaybackById(
 void openPlaybackDetails(BuildContext context, int mediaId) =>
     context.push(AppRoutes.mediaDetailPath(mediaId),
         extra: const {'fromPlayback': true});
-
-/// App-bar action that opens [openPlaybackDetails] for [mediaId].
-class PlaybackDetailsButton extends StatelessWidget {
-  const PlaybackDetailsButton({super.key, required this.mediaId});
-
-  final int mediaId;
-
-  @override
-  Widget build(BuildContext context) => IconButton(
-        key: const Key('playback_details_button'),
-        tooltip: 'Details',
-        icon: const Icon(Icons.description_outlined),
-        onPressed: () => openPlaybackDetails(context, mediaId),
-      );
-}

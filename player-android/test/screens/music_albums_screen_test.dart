@@ -167,7 +167,8 @@ void main() {
               home: const MusicAlbumsScreen())));
       await tester.pumpAndSettle();
       expect(find.textContaining('matching albums'), findsNothing);
-      expect(find.text(table ? 'View: Table' : 'View: Grid'), findsOneWidget);
+      expect(
+          find.byTooltip(table ? 'View: Table' : 'View: Grid'), findsOneWidget);
       void apply() => tester
           .widget<MusicFilterBar>(find.byType(MusicFilterBar))
           .onChanged({'genre': 'Ambient'});

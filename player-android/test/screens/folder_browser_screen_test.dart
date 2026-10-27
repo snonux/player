@@ -244,8 +244,7 @@ GoRouter _buildRouter(
         builder: (context, state) {
           final setId = int.tryParse(state.pathParameters['setId']!) ?? 0;
           final p = state.uri.queryParameters['path'];
-          final name =
-              state.extra is String ? state.extra as String : setName;
+          final name = state.extra is String ? state.extra as String : setName;
           return FolderBrowserScreen(setId: setId, path: p, setName: name);
         },
       ),
@@ -317,7 +316,9 @@ void main() {
     expect(tester.getSize(thumb).width, closeTo(79.2, 0.01));
     expect(tester.getSize(thumb).height, closeTo(79.2, 0.01));
     expect(tester.takeException(), isNull);
-    await tester.tap(find.text('165%'));
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('preview_size_reset')));
     await tester.pumpAndSettle();
     expect(tester.getSize(cover).width, 48);
     client.browseResult = Map<String, dynamic>.from(_kFolderABrowseResult);
@@ -585,8 +586,7 @@ void main() {
     testWidgets('shows empty-state view when browseSet returns no content',
         (tester) async {
       final fakeClient = _FakeApiClient()
-        ..browseResult =
-            Map<String, dynamic>.from(_kEmptyBrowseResult);
+        ..browseResult = Map<String, dynamic>.from(_kEmptyBrowseResult);
 
       await _pumpScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -679,7 +679,8 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('pull-to-refresh', () {
-    testWidgets('pull-to-refresh calls browseSet a second time', (tester) async {
+    testWidgets('pull-to-refresh calls browseSet a second time',
+        (tester) async {
       final fakeClient = _FakeApiClient()
         ..browseResult = Map<String, dynamic>.from(_kRootBrowseResult);
 

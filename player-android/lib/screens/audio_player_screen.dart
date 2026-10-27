@@ -47,6 +47,8 @@ import '../widgets/cast_controls.dart';
 import '../widgets/sleep_timer_control.dart';
 import '../widgets/playback_loading_view.dart';
 import '../widgets/personal_media_actions.dart';
+import '../widgets/overflow_menu.dart';
+import '../services/personal_media_store.dart';
 import 'cast_screen_mixin.dart';
 import 'playback_preparation_mixin.dart';
 
@@ -1061,6 +1063,19 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     setState(() => _playbackSpeed = speed);
   }
 
+  final _personalBinding = PlaybackPersonalBinding();
+  String? _visualsIdentity;
+  var _visualsKey = GlobalKey<AudioVisualsState>();
+
+  /// A fresh visuals state per item, reachable from the menu.
+  GlobalKey<AudioVisualsState> _visualsKeyFor(String identity) {
+    if (_visualsIdentity != identity) {
+      _visualsIdentity = identity;
+      _visualsKey = GlobalKey<AudioVisualsState>();
+    }
+    return _visualsKey;
+  }
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
@@ -1079,29 +1094,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         appBar: AppBar(
           actions: [
             if (!widget.isPublicShare && !casting) const MusicQueueButton(),
-            if (_activeRequest is ServerPlaybackRequest &&
-                !_isLoading &&
-                _error == null)
-              IconButton(
-                  tooltip: context.tr('Info'),
-                  icon: const Icon(Icons.info_outline),
-                  onPressed: _showMusicInfo),
-            if (_activeRequest case final ServerPlaybackRequest request
-                when !widget.isPublicShare && !casting)
-              PlaybackDetailsButton(mediaId: request.mediaId),
             buildCastButton(ready: !_isLoading && _error == null),
-            if (_activeRequest != null &&
-                !_isLoading &&
-                _error == null &&
-                !casting &&
-                !widget.isPublicShare)
-              _buildPersonalActions(),
-            if (_activeRequest != null &&
-                !_isLoading &&
-                _error == null &&
-                !casting &&
-                !widget.isPublicShare)
-              TurboNotesButton(request: _activeRequest!),
+            OverflowMenuButton(items: (_) => _menuItems(casting)),
           ],
           backgroundColor: Colors.black,
           foregroundColor: Colors.white,
@@ -1120,6 +1114,69 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         ]),
       ),
     );
+  }
+
+  /// Secondary actions; the screen itself keeps only playback essentials.
+  List<Widget> _menuItems(bool casting) {
+    final request = _activeRequest;
+    final handler = ref.read(audioHandlerProvider);
+    final ready = request != null && !_isLoading && _error == null;
+    final personal = ready && !casting && !widget.isPublicShare;
+    final store = personal ? _personalBinding.storeFor(ref, request) : null;
+    return [
+      if (request is ServerPlaybackRequest && !widget.isPublicShare && !casting)
+        OverflowMenuItem(
+            key: const Key('playback_details_button'),
+            icon: Icons.description_outlined,
+            label: 'Details',
+            onSelected: () => openPlaybackDetails(context, request.mediaId)),
+      if (request is ServerPlaybackRequest && ready)
+        OverflowMenuItem(
+            key: const Key('playback_info_item'),
+            icon: Icons.info_outline,
+            label: context.tr('Info'),
+            onSelected: _showMusicInfo),
+      if (store != null) ..._personalMenuItems(store),
+      if (personal) TurboNotesButton(request: request, asMenuItem: true),
+      SleepTimerMenuItem(timer: handler.sleepTimer, playerContext: context),
+      if (ready && !casting) ...[
+        OverflowMenuItem(
+            key: const Key('audio_player_speed_selector'),
+            icon: Icons.speed,
+            label: 'Playback speed',
+            subtitle: '${_playbackSpeed}x',
+            onSelected: _showSpeedSheet),
+        AudioVisualsMenuItem(visuals: _visualsKey, playerContext: context),
+        StreamBuilder<void>(
+            stream: handler.queueChanges,
+            builder: (context, _) => SwitchListTile.adaptive(
+                key: const Key('gapless_toggle'),
+                secondary: const Icon(Icons.merge_type),
+                title: const Text('Gapless music queue'),
+                subtitle: Text('${handler.gaplessStatus}\n'
+                    'Prepares the next song in the native decoder. '
+                    'Applies when you next open a Music queue song. '
+                    'Spoken audio, resume items and remote playback '
+                    'use normal advance.'),
+                isThreeLine: true,
+                value: handler.gaplessEnabled,
+                onChanged: handler.setGaplessEnabled)),
+        OverflowMenuItem(
+            icon: Icons.volume_up,
+            label: 'Loudness',
+            onSelected: () => showLoudnessSheet(context, handler.loudness)),
+        OverflowMenuItem(
+            icon: Icons.equalizer,
+            label: 'Equalizer',
+            onSelected: () => showEqualizerSheet(context, handler.equalizer)),
+        if (request.kind == PlaybackSourceKind.server)
+          OverflowMenuItem(
+              icon: Icons.tune,
+              label: 'Quality',
+              onSelected: () =>
+                  showStreamQualitySheet(context, ref.read(apiClientProvider))),
+      ],
+    ];
   }
 
   void _showMusicInfo() {
@@ -1153,7 +1210,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
             load: () => client.getMedia(request.mediaId), isCurrent: current));
   }
 
-  Widget _buildPersonalActions() {
+  List<Widget> _personalMenuItems(PersonalMediaStore store) {
     final request = _activeRequest!;
     final lease = _sessionLease;
     final generation = _activeSourceGeneration;
@@ -1171,20 +1228,17 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       }
     }
 
-    return PlaybackPersonalActions(
-        request: request,
+    return personalMediaMenuItems(context, store: store, title: request.title,
         position: () {
-          check();
-          return handler.player.position;
-        },
-        duration: () {
-          check();
-          return handler.player.duration;
-        },
-        onSeek: (position) async {
-          check();
-          await handler.seekForSession(position, generation!);
-        });
+      check();
+      return handler.player.position;
+    }, duration: () {
+      check();
+      return handler.player.duration;
+    }, onSeek: (position) async {
+      check();
+      await handler.seekForSession(position, generation!);
+    });
   }
 
   /// Selects the appropriate body widget based on current state.
@@ -1263,7 +1317,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 AudioVisuals(
-                  key: ValueKey('visuals:${_activeRequest!.identity}'),
+                  key: _visualsKeyFor(_activeRequest!.identity),
                   player: handler.player,
                   title: _activeRequest!.visualContext,
                   artwork: AudioCoverArt(request: _activeRequest!),
@@ -1312,63 +1366,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                                   style:
                                       const TextStyle(color: Colors.white70))));
                     }),
-                const SizedBox(height: 8),
-                if (handler.musicState != null)
-                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    IconButton(
-                        onPressed: () => _skip(-_kSkipDuration),
-                        tooltip: 'Skip back 15 seconds',
-                        constraints:
-                            const BoxConstraints(minWidth: 48, minHeight: 48),
-                        icon:
-                            const Icon(Icons.fast_rewind, color: Colors.white)),
-                    IconButton(
-                        onPressed: () => _skip(_kSkipDuration),
-                        tooltip: 'Skip forward 15 seconds',
-                        constraints:
-                            const BoxConstraints(minWidth: 48, minHeight: 48),
-                        icon: const Icon(Icons.fast_forward,
-                            color: Colors.white)),
-                  ]),
-                _buildSpeedSelector(),
-                StreamBuilder<void>(
-                    stream: handler.queueChanges,
-                    builder: (context, _) => Column(children: [
-                          SwitchListTile.adaptive(
-                              title: const Text('Gapless music queue',
-                                  style: TextStyle(color: Colors.white)),
-                              subtitle: Text(handler.gaplessStatus,
-                                  style:
-                                      const TextStyle(color: Colors.white70)),
-                              value: handler.gaplessEnabled,
-                              onChanged: handler.setGaplessEnabled),
-                          const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 16),
-                              child: Text(
-                                  'Prepares the next song in the native decoder. '
-                                  'Applies when you next open a Music queue song. '
-                                  'Spoken audio, resume items and remote playback '
-                                  'use normal advance.',
-                                  style: TextStyle(color: Colors.white70))),
-                        ])),
-                TextButton.icon(
-                  onPressed: () => showLoudnessSheet(context, handler.loudness),
-                  icon: const Icon(Icons.volume_up),
-                  label: const Text('Loudness'),
-                ),
-                TextButton.icon(
-                  onPressed: () =>
-                      showEqualizerSheet(context, handler.equalizer),
-                  icon: const Icon(Icons.equalizer),
-                  label: const Text('Equalizer'),
-                ),
-                if (_activeRequest?.kind == PlaybackSourceKind.server)
-                  TextButton.icon(
-                    onPressed: () => showStreamQualitySheet(
-                        context, ref.read(apiClientProvider)),
-                    icon: const Icon(Icons.tune),
-                    label: const Text('Quality'),
-                  ),
                 if (_activeRequest is ServerPlaybackRequest ||
                     _activeRequest is PublicSharePlaybackRequest ||
                     _activeRequest is OfflinePlaybackRequest)
@@ -1541,6 +1538,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            if (music)
+              IconButton(
+                  onPressed: () => _skip(-_kSkipDuration),
+                  tooltip: 'Skip back 15 seconds',
+                  constraints:
+                      const BoxConstraints(minWidth: 48, minHeight: 48),
+                  icon: const Icon(Icons.fast_rewind, color: Colors.white)),
             // Skip back 15 s
             IconButton(
               key: const Key('audio_player_skip_back'),
@@ -1552,7 +1556,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               tooltip:
                   music ? context.tr('Previous track') : 'Skip back 15 seconds',
             ),
-            const SizedBox(width: 16),
+            SizedBox(width: music ? 4 : 16),
             // Play / Pause — delegate to handler so the notification updates.
             IconButton(
               key: const Key('audio_player_play_pause'),
@@ -1579,7 +1583,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               },
               tooltip: isPlaying ? context.tr('Pause') : context.tr('Play'),
             ),
-            const SizedBox(width: 16),
+            SizedBox(width: music ? 4 : 16),
             // Skip forward 15 s
             IconButton(
               key: const Key('audio_player_skip_forward'),
@@ -1594,43 +1598,44 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               tooltip:
                   music ? context.tr('Next track') : 'Skip forward 15 seconds',
             ),
+            if (music)
+              IconButton(
+                  onPressed: () => _skip(_kSkipDuration),
+                  tooltip: 'Skip forward 15 seconds',
+                  constraints:
+                      const BoxConstraints(minWidth: 48, minHeight: 48),
+                  icon: const Icon(Icons.fast_forward, color: Colors.white)),
           ],
         );
       },
     );
   }
 
-  /// Speed selector wraps into more rows at narrow widths or larger text.
-  ///
-  /// The active speed is highlighted; inactive speeds are white70 so the
-  /// selection is clear at a glance.
-  Widget _buildSpeedSelector() {
-    return Wrap(
-      key: const Key('audio_player_speed_selector'),
-      alignment: WrapAlignment.center,
-      spacing: 4,
-      runSpacing: 4,
-      children: _kSpeedOptions.map((speed) {
-        final isSelected = _playbackSpeed == speed;
-        return TextButton(
-          key: Key(
-              'audio_player_speed_${speed.toString().replaceAll('.', '_')}'),
-          onPressed: () => _setSpeed(speed),
-          style: TextButton.styleFrom(
-            minimumSize: const Size(56, 48),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  /// Speed choices, opened from the menu. The active speed is highlighted.
+  void _showSpeedSheet() => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheet) => SafeArea(
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const ListTile(title: Text('Playback speed')),
+              for (final speed in _kSpeedOptions)
+                ListTile(
+                  key: Key(
+                      'audio_player_speed_${speed.toString().replaceAll('.', '_')}'),
+                  title: Text('${speed}x'),
+                  selected: _playbackSpeed == speed,
+                  trailing:
+                      _playbackSpeed == speed ? const Icon(Icons.check) : null,
+                  onTap: () {
+                    Navigator.pop(sheet);
+                    _setSpeed(speed);
+                  },
+                ),
+            ]),
           ),
-          child: Text(
-            '${speed}x',
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.white54,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
+        ),
+      );
 
   // ---------------------------------------------------------------------------
   // Formatting helpers

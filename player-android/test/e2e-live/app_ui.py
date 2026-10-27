@@ -76,7 +76,7 @@ def ensure_grid(set_name):
     """Navigate back until the given set's grid is on screen."""
     for _ in range(5):
         current = labels()
-        if set_name in current and "Browse folders" in current: return True
+        if set_name in current and "Filters and sort" in current: return True
         if "Library" in current and "Open navigation menu" in current:
             adrv.tap(f"^{set_name}$"); time.sleep(3); continue
         if not foreground(): go_home(); continue

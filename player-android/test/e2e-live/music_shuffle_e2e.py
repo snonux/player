@@ -75,6 +75,8 @@ def fresh_nodes():
 
 def touch(pattern, name=None):
     candidates = [n for n in adrv.nodes() if n['click'] and re.search(pattern, adrv.label(n))]
+    if not candidates and adrv.reveal(pattern):
+        candidates = [n for n in adrv.nodes() if n['click'] and re.search(pattern, adrv.label(n))]
     assert candidates, (pattern, app_ui.labels())
     node = min(candidates, key=lambda n: (n['b'][2]-n['b'][0])*(n['b'][3]-n['b'][1]))
     stable = next((n for n in adrv.nodes() if n['click'] and n['b'] == node['b']

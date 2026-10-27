@@ -52,9 +52,27 @@ Future<void> _open(
   await tester.pumpAndSettle();
 }
 
+/// Scrolls the lazily built sheet list until [finder] is on screen.
+Future<void> _reveal(WidgetTester tester, Finder finder) async {
+  final list = find
+      .descendant(
+          of: find.byType(MediaFilterSheet), matching: find.byType(Scrollable))
+      .first;
+  tester.state<ScrollableState>(list).position.jumpTo(0);
+  await tester.pump();
+  await tester.scrollUntilVisible(finder, 100, scrollable: list);
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _tapOption(WidgetTester tester, String text) async {
+  await _reveal(tester, find.text(text));
+  await tester.tap(find.text(text));
+}
+
 Future<void> _field(WidgetTester tester, int index, String text) async {
   final field = find.byKey(Key('media_filter_bound_$index'));
-  await tester.ensureVisible(field);
+  await _reveal(tester, field);
   await tester.enterText(field, text);
 }
 
@@ -63,16 +81,15 @@ void main() {
       (tester) async {
     MediaFilter? result;
     await _open(tester, _Client(), (value) => result = value);
-    await tester.tap(find.text('Set 2'));
+    await _tapOption(tester, 'Set 2');
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(result, isNull);
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Set 2'));
-    await tester.ensureVisible(find.text('keep'));
-    await tester.tap(find.text('keep'));
-    await tester.tap(find.text('calm'));
+    await _tapOption(tester, 'Set 2');
+    await _tapOption(tester, 'keep');
+    await _tapOption(tester, 'calm');
     for (final entry in [(0, '0'), (1, '1.5'), (2, '0'), (3, '2')]) {
       await _field(tester, entry.$1, entry.$2);
     }
@@ -121,12 +138,14 @@ void main() {
     MediaFilter? result;
     await _open(tester, client, (value) => result = value,
         filter: MediaFilter(tags: ['missing'], minDuration: 0));
-    expect(find.text('Retry filter options'), findsOneWidget);
+    await _reveal(tester, find.text('Retry filter options'));
+    await _reveal(tester, find.text('missing'));
     expect(find.text('missing'), findsOneWidget);
     client.fail = false;
+    await _reveal(tester, find.text('Retry filter options'));
     await tester.tap(find.text('Retry filter options'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Set 1'));
+    await _tapOption(tester, 'Set 1');
     await tester.tap(find.text('Apply'));
     await tester.pumpAndSettle();
     expect(result!.setIds, isEmpty);
@@ -151,5 +170,24 @@ void main() {
     await tester.tap(find.text('Apply'));
     await tester.pumpAndSettle();
     expect(result, MediaFilter(sortBy: 'duration'));
+  });
+  testWidgets('type and sort are chosen in the sheet and apply together',
+      (tester) async {
+    MediaFilter? result;
+    await _open(tester, _Client(), (value) => result = value,
+        filter: MediaFilter(sortBy: 'name', favoritesOnly: true));
+    expect(
+        tester
+            .widget<ChoiceChip>(find.byKey(const Key('sort_option_name')))
+            .selected,
+        isTrue);
+    await tester.tap(find.byKey(const Key('type_chip_audio')));
+    await tester.tap(find.byKey(const Key('sort_option_random')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+    expect(result!.type, 'audio');
+    expect(result!.sortBy, 'random');
+    expect(result!.favoritesOnly, isTrue);
   });
 }

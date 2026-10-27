@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/thumbnail_size_provider.dart';
+import 'overflow_menu.dart';
 
 /// Fits previews to the available width; phones retain two columns at 100%.
 int thumbnailColumns(double width, double scale) =>
@@ -67,41 +68,9 @@ class _ThumbnailZoomState extends ConsumerState<ThumbnailZoom> {
         ref.watch(thumbnailSizeProvider).valueOrNull ??
         defaultThumbnailSize;
     final scale = thumbnailScales[index];
-    return Column(
+    return Stack(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Wrap(
-              alignment: WrapAlignment.end,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                const Text('Previews'),
-                IconButton(
-                  tooltip: 'Smaller previews',
-                  onPressed:
-                      index == 0 ? null : () => unawaited(_save(index - 1)),
-                  icon: const Icon(Icons.remove),
-                ),
-                TextButton(
-                  onPressed: () => unawaited(_save(defaultThumbnailSize)),
-                  child: Text('${(scale * 100).round()}%',
-                      semanticsLabel:
-                          'Preview size ${(scale * 100).round()} percent. Reset to 100 percent'),
-                ),
-                IconButton(
-                  tooltip: 'Larger previews',
-                  onPressed: index == thumbnailScales.length - 1
-                      ? null
-                      : () => unawaited(_save(index + 1)),
-                  icon: const Icon(Icons.add),
-                ),
-              ],
-            ),
-          ),
-        ),
-        Expanded(
+        Positioned.fill(
           child: RawGestureDetector(
             key: const Key('library_preview_gestures'),
             gestures: {
@@ -117,8 +86,67 @@ class _ThumbnailZoomState extends ConsumerState<ThumbnailZoom> {
             child: widget.builder(context, scale),
           ),
         ),
+        if (_pinchIndex != null)
+          Positioned(
+            top: 8,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Center(
+                child: Chip(
+                  key: const Key('preview_size_badge'),
+                  label: Text('${(scale * 100).round()}%'),
+                ),
+              ),
+            ),
+          ),
       ],
     );
+  }
+}
+
+/// Preview size rows for a screen's [OverflowMenuButton]; pinching the grid
+/// with two fingers changes the size too.
+class PreviewSizeMenuItems extends ConsumerWidget {
+  const PreviewSizeMenuItems({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final index =
+        ref.watch(thumbnailSizeProvider).valueOrNull ?? defaultThumbnailSize;
+    final percent = '${(thumbnailScales[index] * 100).round()}%';
+    // The menu closes before an item runs, so capture what it needs now.
+    final messenger = ScaffoldMessenger.of(context);
+    final sizes = ref.read(thumbnailSizeProvider.notifier);
+    void save(int size) => unawaited(sizes.setSize(size).catchError((Object _) {
+          messenger.showSnackBar(const SnackBar(
+            content:
+                Text('Could not save preview size. It applies this session.'),
+          ));
+        }));
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      OverflowMenuItem(
+        key: const Key('preview_size_larger'),
+        icon: Icons.zoom_in,
+        label: 'Larger previews',
+        subtitle: 'Now $percent',
+        onSelected:
+            index == thumbnailScales.length - 1 ? null : () => save(index + 1),
+      ),
+      OverflowMenuItem(
+        key: const Key('preview_size_smaller'),
+        icon: Icons.zoom_out,
+        label: 'Smaller previews',
+        onSelected: index == 0 ? null : () => save(index - 1),
+      ),
+      if (index != defaultThumbnailSize)
+        OverflowMenuItem(
+          key: const Key('preview_size_reset'),
+          icon: Icons.restart_alt,
+          label: 'Reset previews to 100%',
+          onSelected: () => save(defaultThumbnailSize),
+        ),
+    ]);
   }
 }
 

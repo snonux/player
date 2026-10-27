@@ -24,6 +24,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:player_android/widgets/media_filter_sheet.dart';
 import 'package:go_router/go_router.dart';
 import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/api/player_api_client.dart';
@@ -470,11 +471,9 @@ void main() {
     await tester.pumpAndSettle();
     final initial = tester.getSize(find.byKey(const Key('media_card_1'))).width;
     await pinchPreviews(tester, 2);
-    expect(find.text('165%'), findsOneWidget);
     expect(tester.getSize(find.byKey(const Key('media_card_1'))).width,
         greaterThan(initial));
     await pinchPreviews(tester, 0.2);
-    expect(find.text('65%'), findsOneWidget);
     expect(tester.getSize(find.byKey(const Key('media_card_1'))).width,
         lessThan(initial));
     final scroll = tester.state<ScrollableState>(find.descendant(
@@ -484,7 +483,6 @@ void main() {
         find.byKey(const Key('media_grid')), const Offset(0, -220));
     await tester.pumpAndSettle();
     expect(scroll.position.pixels, greaterThan(0));
-    expect(find.text('65%'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
   // --------------------------------------------------------------------------
@@ -605,8 +603,7 @@ void main() {
       final client = _FakeApiClient()..mediaResult = [_kVideo];
       await _pumpScreen(tester, client);
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Browse folders'));
-      await tester.pumpAndSettle();
+      await _menu(tester, const Key('media_grid_folders'));
       expect(find.text('Folders 10 Movies'), findsOneWidget);
       await tester.tap(find.byTooltip('Back'));
       await tester.pumpAndSettle();
@@ -663,8 +660,7 @@ void main() {
 
       await _pumpScreen(tester, fakeClient);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('media_grid_favorites_filter')));
-      await tester.pumpAndSettle();
+      await _menu(tester, const Key('media_grid_favorites_filter'));
 
       expect(find.text('Nothing matches these filters'), findsOneWidget);
       expect(find.text('Pull down to refresh.'), findsNothing);
@@ -938,10 +934,12 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('favourites filter shortcut', () {
-    testWidgets('app bar shows a heart icon button', (tester) async {
+    testWidgets('app bar menu offers Favourites only', (tester) async {
       final fakeClient = _FakeApiClient()..mediaResult = [_kVideo];
 
       await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('More options'));
       await tester.pumpAndSettle();
 
       expect(
@@ -964,8 +962,7 @@ void main() {
       expect(fakeClient.lastFavoritesOnlyFlag, isNull);
 
       // Tap the heart in the app bar.
-      await tester.tap(find.byKey(const Key('media_grid_favorites_filter')));
-      await tester.pumpAndSettle();
+      await _menu(tester, const Key('media_grid_favorites_filter'));
 
       // listMedia must have been called with favorites = true.
       expect(fakeClient.lastFavoritesOnlyFlag, isTrue);
@@ -979,16 +976,14 @@ void main() {
       await _pumpScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      final shortcut = find.byKey(const Key('media_grid_favorites_filter'));
+      const shortcut = Key('media_grid_favorites_filter');
 
       // First tap — enable.
-      await tester.tap(shortcut);
-      await tester.pumpAndSettle();
+      await _menu(tester, shortcut);
       expect(fakeClient.lastFavoritesOnlyFlag, isTrue);
 
       // Second tap — disable.
-      await tester.tap(shortcut);
-      await tester.pumpAndSettle();
+      await _menu(tester, shortcut);
       // favorites=false means the flag is passed as null (no filter applied).
       expect(fakeClient.lastFavoritesOnlyFlag, isNull);
     });
@@ -1155,10 +1150,20 @@ void main() {
     await _pumpScreen(tester, client);
     await tester.pumpAndSettle();
     expect(client.requests.last['setId'], 10);
-    await tester.tap(find.text('Filters'));
+    await tester.tap(find.byKey(const Key('media_filters_button')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Other'));
-    await tester.tap(find.text('keep'));
+    final sheetList = find
+        .descendant(
+            of: find.byType(MediaFilterSheet),
+            matching: find.byType(Scrollable))
+        .first;
+    for (final option in ['Other', 'keep']) {
+      await tester.scrollUntilVisible(find.text(option), 100,
+          scrollable: sheetList);
+      await tester.ensureVisible(find.text(option));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(option));
+    }
     for (final index in [0, 2]) {
       final field = find.byKey(Key('media_filter_bound_$index'));
       await tester.ensureVisible(field);
@@ -1189,11 +1194,19 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(client.listMediaCallCount, greaterThan(before));
-    expect(find.text('Selected sets: Movies, Other'), findsOneWidget);
-    await tester.tap(find.text('Clear filters'));
+    expect(find.textContaining('Selected sets: Movies, Other'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('media_filter_clear')));
     await tester.pumpAndSettle();
     expect(client.requests.last['setId'], 10);
     expect(client.requests.last['setIds'], isNull);
     expect(client.requests.last['tags'], isEmpty);
   });
+}
+
+/// Runs a row of the grid's "More options" menu.
+Future<void> _menu(WidgetTester tester, Key item) async {
+  await tester.tap(find.byTooltip('More options'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(item));
+  await tester.pumpAndSettle();
 }

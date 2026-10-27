@@ -199,15 +199,16 @@ class _MusicLayoutPanelState extends ConsumerState<MusicLayoutPanel> {
     }
     return Column(children: [
       Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Wrap(
-              spacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                if (widget.fixedOrder)
-                  Text(context.tr('Collection order'))
-                else
-                  DropdownButton<String>(
+          padding: const EdgeInsets.only(left: 16, right: 4),
+          child: Row(children: [
+            if (widget.fixedOrder)
+              Expanded(child: Text(context.tr('Collection order')))
+            else
+              Expanded(
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                      isDense: true,
+                      isExpanded: true,
                       value: layout.sort,
                       hint: Text(context.tr('Sort by')),
                       items: {
@@ -218,40 +219,37 @@ class _MusicLayoutPanelState extends ConsumerState<MusicLayoutPanel> {
                           .map((e) => DropdownMenuItem(
                               value: e.key,
                               child: Text(
-                                  '${context.tr('Sort')}: ${context.tr(e.value)}')))
+                                  '${context.tr('Sort')}: ${context.tr(e.value)}',
+                                  overflow: TextOverflow.ellipsis)))
                           .toList(),
                       onChanged: (value) {
                         if (value != null) _update(() => layout.sort = value);
                       }),
-                if (!widget.fixedOrder)
-                  TextButton.icon(
-                      style:
-                          TextButton.styleFrom(minimumSize: const Size(48, 48)),
-                      onPressed: () =>
-                          _update(() => layout.descending = !layout.descending),
-                      icon: Icon(layout.descending
-                          ? Icons.arrow_downward
-                          : Icons.arrow_upward),
-                      label: Text(layout.descending
-                          ? context.tr('Descending')
-                          : context.tr('Ascending'))),
-                if (widget.kind == 'albums')
-                  TextButton.icon(
-                      style:
-                          TextButton.styleFrom(minimumSize: const Size(48, 48)),
-                      onPressed: () =>
-                          _update(() => layout.table = !layout.table),
-                      icon: Icon(
-                          layout.table ? Icons.view_module : Icons.table_rows),
-                      label: Text(layout.table
-                          ? context.tr('View: Table')
-                          : context.tr('View: Grid'))),
-                TextButton(
-                    style:
-                        TextButton.styleFrom(minimumSize: const Size(48, 48)),
-                    onPressed: _columns,
-                    child: Text(context.tr('Columns'))),
-              ])),
+                ),
+              ),
+            if (!widget.fixedOrder)
+              IconButton(
+                  tooltip: layout.descending
+                      ? context.tr('Descending')
+                      : context.tr('Ascending'),
+                  onPressed: () =>
+                      _update(() => layout.descending = !layout.descending),
+                  icon: Icon(layout.descending
+                      ? Icons.arrow_downward
+                      : Icons.arrow_upward)),
+            if (widget.kind == 'albums')
+              IconButton(
+                  tooltip: layout.table
+                      ? context.tr('View: Table')
+                      : context.tr('View: Grid'),
+                  onPressed: () => _update(() => layout.table = !layout.table),
+                  icon: Icon(
+                      layout.table ? Icons.table_rows : Icons.view_module)),
+            IconButton(
+                tooltip: context.tr('Columns'),
+                onPressed: _columns,
+                icon: const Icon(Icons.view_column_outlined)),
+          ])),
       Expanded(child: widget.builder(layout)),
     ]);
   }

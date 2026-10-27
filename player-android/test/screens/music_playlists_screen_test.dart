@@ -195,7 +195,7 @@ void main() {
     final api = _Client()..fail = true;
     await mount(t, api);
     expect(find.textContaining('No playlists yet.'), findsOneWidget);
-    await t.tap(find.text('Create playlist'));
+    await t.tap(find.byTooltip('Create playlist'));
     await t.pumpAndSettle();
     await t.enterText(find.byType(TextFormField).first, ' ');
     await t.tap(find.widgetWithText(FilledButton, 'Create playlist').last);

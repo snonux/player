@@ -6,6 +6,7 @@ import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/personal_media_provider.dart';
 import '../services/personal_media_store.dart';
+import '../widgets/overflow_menu.dart';
 import '../widgets/personal_media_actions.dart';
 import '../widgets/authenticated_network_image.dart';
 import '../widgets/public_network_image.dart';
@@ -80,12 +81,24 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
     final fallbackTitle = widget.isPublicShare ? 'Shared Image' : 'Image';
     return Scaffold(
       appBar: AppBar(title: Text(widget.mediaTitle ?? fallbackTitle), actions: [
-        if (!widget.isPublicShare && int.tryParse(widget.mediaId) != null)
-          PlaybackDetailsButton(mediaId: int.parse(widget.mediaId)),
-        if (_personalStore != null)
-          PersonalMediaActions(
-              store: _personalStore!,
-              title: widget.mediaTitle ?? fallbackTitle),
+        if (_personalStore != null) FavoriteButton(store: _personalStore!),
+        if (!widget.isPublicShare)
+          OverflowMenuButton(
+            items: (_) => [
+              if (int.tryParse(widget.mediaId) case final id?)
+                OverflowMenuItem(
+                    key: const Key('playback_details_button'),
+                    icon: Icons.description_outlined,
+                    label: 'Details',
+                    onSelected: () => openPlaybackDetails(context, id)),
+              if (_personalStore case final store?)
+                OverflowMenuItem(
+                    icon: Icons.notes_outlined,
+                    label: 'Notes',
+                    onSelected: () => openPersonalNotes(
+                        context, store, widget.mediaTitle ?? fallbackTitle)),
+            ],
+          ),
       ]),
       backgroundColor: Colors.black,
       body: widget.isPublicShare ? _publicImage() : _libraryImage(),

@@ -1,4 +1,5 @@
 import '../l10n/music_localizations.dart';
+import '../widgets/overflow_menu.dart';
 import '../widgets/music_artwork_section.dart';
 import '../widgets/music_top_songs_section.dart';
 import '../widgets/music_related_section.dart';
@@ -51,13 +52,6 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
       kind: kind,
       entity: entity,
       onChanged: () => setState(() {}));
-  Widget _ratingFilter() => MusicRatingFilter(
-      rated: _ratedOnly,
-      highest: _highestRated,
-      onChanged: (rated, highest) => setState(() {
-            _ratedOnly = rated;
-            _highestRated = highest;
-          }));
   Widget _personal(String kind, Map<String, dynamic> entity) => Row(
       mainAxisSize: MainAxisSize.min,
       children: [_heart(kind, entity), _rating(kind, entity)]);
@@ -68,14 +62,23 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
       kind: kind,
       entity: entity,
       onChanged: () => setState(() {}));
-  Widget _favoritesFilter() => IconButton(
-      tooltip: _favoritesOnly
-          ? context.tr('Show all artists')
-          : context.tr('Favorites only'),
-      isSelected: _favoritesOnly,
-      icon: const Icon(Icons.favorite_border),
-      selectedIcon: const Icon(Icons.favorite),
-      onPressed: () => setState(() => _favoritesOnly = !_favoritesOnly));
+  List<Widget> _menuItems() => [
+        OverflowMenuItem(
+            key: const Key('music_favorites_only'),
+            icon: _favoritesOnly ? Icons.favorite : Icons.favorite_border,
+            label: _favoritesOnly
+                ? context.tr('Show all artists')
+                : context.tr('Favorites only'),
+            selected: _favoritesOnly,
+            onSelected: () => setState(() => _favoritesOnly = !_favoritesOnly)),
+        ...musicRatingMenuItems(context,
+            rated: _ratedOnly,
+            highest: _highestRated,
+            onChanged: (rated, highest) => setState(() {
+                  _ratedOnly = rated;
+                  _highestRated = highest;
+                })),
+      ];
 
   String _role = 'artists';
   bool _loading = true;
@@ -184,17 +187,15 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
               ? context.tr('Music · Artists')
               : _artist?['name'] as String? ?? context.tr('Artist')),
           actions: [
-            if (widget.artistKey == null) ...[
-              _favoritesFilter(),
-              _ratingFilter()
-            ],
             if (widget.artistKey != null &&
                 _artist != null &&
                 !_loading &&
                 _error == null)
               _personal('artist', _artist!),
             const MusicSearchButton(),
-            const MusicQueueButton()
+            const MusicQueueButton(),
+            if (widget.artistKey == null)
+              OverflowMenuButton(items: (_) => _menuItems()),
           ]),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

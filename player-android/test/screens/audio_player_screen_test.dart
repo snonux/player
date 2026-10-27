@@ -589,6 +589,14 @@ const _kTranscoding = PlaybackProbe(
 );
 const _kReady = PlaybackProbe(statusCode: 200);
 
+/// Opens the player's "More options" menu (secondary actions live there).
+Future<void> _openMenu(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('More options'));
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
 Future<void> _flushPlaybackStartup(WidgetTester tester) async {
   for (var i = 0; i < 4; i++) {
     await tester.pump();
@@ -639,8 +647,18 @@ void main() {
       await tester.pump();
       await tester.pump();
 
+      await _openMenu(tester);
+      await tester.tap(find.byKey(const Key('sleep_timer_menu_item')));
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.tap(find.text('5 minutes'));
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
       final buttonFinder = find.ancestor(
-          of: find.text('Sleep timer'), matching: find.byType(TextButton));
+          of: find.textContaining('remaining'),
+          matching: find.byType(TextButton));
       expect(buttonFinder, findsOneWidget);
       final buttonContext = tester.element(buttonFinder);
       final button = tester.widget<TextButton>(buttonFinder);
@@ -655,6 +673,8 @@ void main() {
           Theme.of(tester.element(find.byType(AudioPlayerScreen))).brightness,
           Brightness.light,
           reason: 'the player does not change the app theme');
+      await tester.tap(find.text('Cancel timer'));
+      await tester.pump();
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }
@@ -1232,13 +1252,62 @@ void main() {
     await tester
         .ensureVisible(find.byKey(const Key('audio_player_play_pause')));
     await tester.tap(find.byKey(const Key('audio_player_play_pause')));
-    await tester.ensureVisible(find.byKey(const Key('audio_player_speed_1_5')));
+    await _openMenu(tester);
+    await tester.tap(find.byKey(const Key('audio_player_speed_selector')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('audio_player_speed_1_5')));
     await tester.pump();
     expect(handler.playCalls, 1);
     expect(player.isPlaying, isFalse);
     expect(player.selectedSpeed, 1);
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('player shows only essentials; secondary actions are in the menu',
+      (tester) async {
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    await _pumpScreen(tester, _FakeApiClient(), handlerOverride: handler);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('audio_player_view')), findsOneWidget);
+    for (final tooltip in ['Bookmarks', 'Notes', 'Info', 'Details']) {
+      expect(find.byTooltip(tooltip), findsNothing, reason: tooltip);
+    }
+    for (final text in [
+      'Gapless music queue',
+      'Loudness',
+      'Equalizer',
+      'Quality',
+      'Sleep timer',
+      'Music visuals',
+    ]) {
+      expect(find.text(text), findsNothing, reason: text);
+    }
+    expect(find.byKey(const Key('audio_player_speed_1_0')), findsNothing);
+    expect(find.byKey(const Key('audio_player_play_pause')), findsOneWidget);
+    expect(find.byKey(const Key('audio_player_seek_bar')), findsOneWidget);
+
+    await _openMenu(tester);
+    for (final key in [
+      'playback_details_button',
+      'playback_info_item',
+      'playback_bookmarks_item',
+      'playback_notes_item',
+      'sleep_timer_menu_item',
+      'audio_player_speed_selector',
+      'gapless_toggle',
+    ]) {
+      await tester.ensureVisible(find.byKey(Key(key)));
+      expect(find.byKey(Key(key)), findsOneWidget, reason: key);
+    }
+    for (final text in ['Loudness', 'Equalizer', 'Quality']) {
+      await tester.ensureVisible(find.text(text));
+      expect(find.text(text), findsOneWidget, reason: text);
+    }
+    expect(tester.takeException(), isNull);
+    await handler.endProgress();
+    await player.playingChanges.close();
   });
 
   testWidgets('open bookmark sheet stays bound to its original audio session',
@@ -1260,7 +1329,8 @@ void main() {
     await tester.pump();
     await tester.pump();
     player.elapsed = const Duration(seconds: 25);
-    await tester.tap(find.byTooltip('Bookmarks'));
+    await _openMenu(tester);
+    await tester.tap(find.byKey(const Key('playback_bookmarks_item')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('bookmark_label')), 'Original');
     await tester.tap(find.text('Save current position'));
@@ -1339,6 +1409,12 @@ void main() {
       await tester.tap(finder);
     }
 
+    Future<void> menu(Key item) async {
+      await tap(find.byTooltip('More options'));
+      await waitFor(() => find.byKey(item).evaluate().isNotEmpty);
+      await tap(find.byKey(item));
+    }
+
     addTearDown(() async {
       await complete(handler.stop);
       await complete(database.close);
@@ -1353,9 +1429,10 @@ void main() {
             localMediaId: item!.id,
             sourceUri: Uri.parse(item.uri),
             title: item.title));
-    await waitFor(() => find.byTooltip('Bookmarks').evaluate().isNotEmpty);
+    await waitFor(() =>
+        find.byKey(const Key('audio_player_play_pause')).evaluate().isNotEmpty);
     player.elapsed = const Duration(milliseconds: 32500);
-    await tap(find.byTooltip('Bookmarks'));
+    await menu(const Key('playback_bookmarks_item'));
     await tester.pump(const Duration(milliseconds: 500));
     await waitFor(
         () => find.text('No saved positions yet.').evaluate().isNotEmpty);
@@ -1375,7 +1452,7 @@ void main() {
     await tap(find.text('SAF chapter'));
     await waitFor(() => player.elapsed == const Duration(milliseconds: 32500));
     await tester.pump(const Duration(milliseconds: 500));
-    await tap(find.byTooltip('Notes'));
+    await menu(const Key('playback_notes_item'));
     await tester.pump(const Duration(milliseconds: 500));
     await waitFor(
         () => find.byKey(const Key('notes_text_field')).evaluate().isNotEmpty);
@@ -1384,7 +1461,7 @@ void main() {
     await tester.binding.handlePopRoute();
     await waitFor(() => find.byType(NotesEditorScreen).evaluate().isEmpty);
     await tester.pump(const Duration(milliseconds: 500));
-    await tap(find.byTooltip('Bookmarks'));
+    await menu(const Key('playback_bookmarks_item'));
     await tester.pump(const Duration(milliseconds: 500));
     await waitFor(
         () => find.byTooltip('Delete bookmark').evaluate().isNotEmpty);
@@ -1594,8 +1671,9 @@ void main() {
       await tester.pump();
       expect(find.byKey(const Key('audio_player_view')), findsOneWidget);
 
-      final selector =
-          tester.getRect(find.byKey(const Key('audio_player_speed_selector')));
+      await _openMenu(tester);
+      await tester.tap(find.byKey(const Key('audio_player_speed_selector')));
+      await tester.pumpAndSettle();
       for (final key in [
         'audio_player_speed_0_5',
         'audio_player_speed_1_0',
@@ -1603,16 +1681,14 @@ void main() {
         'audio_player_speed_1_5',
         'audio_player_speed_2_0',
       ]) {
+        await tester.ensureVisible(find.byKey(Key(key)));
         final rect = tester.getRect(find.byKey(Key(key)));
-        expect(rect.width, greaterThanOrEqualTo(48));
         expect(rect.height, greaterThanOrEqualTo(48));
-        expect(rect.left, greaterThanOrEqualTo(selector.left));
-        expect(rect.right, lessThanOrEqualTo(selector.right));
+        expect(rect.left, greaterThanOrEqualTo(0));
+        expect(rect.right, lessThanOrEqualTo(width));
       }
       expect(tester.takeException(), isNull);
 
-      await tester
-          .ensureVisible(find.byKey(const Key('audio_player_speed_2_0')));
       await tester.tap(find.byKey(const Key('audio_player_speed_2_0')));
       await tester.pump();
       expect(player.selectedSpeed, 2.0);

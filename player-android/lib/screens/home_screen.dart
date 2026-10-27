@@ -15,6 +15,7 @@ import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../library_navigation.dart';
 import '../widgets/authenticated_network_image.dart';
+import '../widgets/global_sync_status.dart';
 import '../widgets/network_svg_image.dart';
 import '../widgets/server_switch_button.dart';
 import '../widgets/thumbnail_zoom.dart';
@@ -237,6 +238,9 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
                   section.route == destination.$3 &&
                   hiddenMusicSections.contains(section))))
                 ListTile(
+                  key: destination.$3 == AppRoutes.settings
+                      ? const Key('home_settings_button')
+                      : null,
                   leading: Icon(destination.$1),
                   title: Text(destination.$2),
                   onTap: () {
@@ -244,6 +248,9 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
                     context.push(destination.$3);
                   },
                 ),
+              const Divider(),
+              const GlobalSyncMenuTile(),
+              const PreviewSizeMenuItems(),
             ],
           ),
         ),
@@ -265,17 +272,7 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
   AppBar _buildAppBar(BuildContext context) {
     return AppBar(
       title: Text(context.tr('Library')),
-      actions: [
-        const MusicQueueButton(),
-        const ServerSwitchButton(),
-        IconButton(
-          key: const Key('home_settings_button'),
-          icon: const Icon(Icons.settings_outlined),
-          tooltip: context.tr('Settings'),
-          // Navigate to the settings screen when the icon is tapped.
-          onPressed: () => context.push(AppRoutes.settings),
-        ),
-      ],
+      actions: const [MusicQueueButton(), ServerSwitchButton()],
     );
   }
 

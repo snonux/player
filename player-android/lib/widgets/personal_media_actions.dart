@@ -8,6 +8,7 @@ import '../models/media_bookmark.dart';
 import '../screens/notes_editor_screen.dart';
 import '../services/personal_media_store.dart';
 import '../utils/duration_formatter.dart';
+import 'overflow_menu.dart';
 
 /// Keeps the account binding for the life of this playback route, including
 /// rebuilds caused by playback or an account being locked in the background.
@@ -54,6 +55,55 @@ class _PlaybackPersonalActionsState
           duration: widget.duration,
           onSeek: widget.onSeek);
 }
+
+/// Binds the personal-data store the first time a playback request is shown
+/// and keeps it for that request, like [PlaybackPersonalActions] does for its
+/// own lifetime, so menu rows built later still use the original account.
+class PlaybackPersonalBinding {
+  String? _identity;
+  PersonalMediaStore? _store;
+
+  PersonalMediaStore? storeFor(WidgetRef ref, PlaybackRequest request) {
+    if (_identity != request.identity) {
+      _identity = request.identity;
+      _store = playbackPersonalStore(ref, request);
+    }
+    return _store;
+  }
+}
+
+/// Bookmarks and Notes rows for a player's [OverflowMenuButton]. [context]
+/// is the player's, since the menu closes before an action runs.
+List<Widget> personalMediaMenuItems(
+  BuildContext context, {
+  required PersonalMediaStore store,
+  required String title,
+  required Duration Function() position,
+  required Duration? Function() duration,
+  required Future<void> Function(Duration) onSeek,
+}) =>
+    [
+      OverflowMenuItem(
+        key: const Key('playback_bookmarks_item'),
+        icon: Icons.bookmarks_outlined,
+        label: 'Bookmarks',
+        onSelected: () => showModalBottomSheet<void>(
+            context: context,
+            isScrollControlled: true,
+            useSafeArea: true,
+            builder: (_) => BookmarkSheet(
+                store: store,
+                position: position,
+                duration: duration,
+                onSeek: onSeek)),
+      ),
+      OverflowMenuItem(
+        key: const Key('playback_notes_item'),
+        icon: Icons.notes_outlined,
+        label: 'Notes',
+        onSelected: () => openPersonalNotes(context, store, title),
+      ),
+    ];
 
 /// Visible playback actions shared by device, downloaded and server media.
 class PersonalMediaActions extends StatelessWidget {

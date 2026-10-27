@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/turbonotes_link.dart';
+import 'package:player_android/widgets/overflow_menu.dart';
 import 'package:player_android/widgets/turbonotes_button.dart';
 
 class _Launcher extends TurboNotesLauncher {
@@ -60,5 +61,39 @@ void main() {
     await tester.tap(find.byKey(const Key('turbonotes_button')));
     await tester.pumpAndSettle();
     expect(find.textContaining('Install TurboNotes'), findsOneWidget);
+  });
+
+  testWidgets('as a menu row it closes the menu, then opens the note',
+      (tester) async {
+    for (final installed in [true, false]) {
+      launcher.installed = installed;
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          turboNotesLauncherProvider.overrideWithValue(launcher),
+          noteSubjectResolverProvider.overrideWithValue(
+              (request, client) async =>
+                  const NoteSubject(title: 'Dune', podcast: false)),
+        ],
+        child: MaterialApp(
+            home: Scaffold(
+                appBar: AppBar(actions: [
+          OverflowMenuButton(
+              items: (_) =>
+                  [TurboNotesButton(request: _request, asMenuItem: true)]),
+        ]))),
+      ));
+      await tester.tap(find.byTooltip('More options'));
+      await tester.pumpAndSettle();
+      expect(find.text('Book note in TurboNotes'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('turbonotes_button')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('overflow_menu_sheet')), findsNothing);
+      if (installed) {
+        expect(
+            launcher.opened.single.notePath, 'Book-And-Podcast-Notes/Dune.md');
+      } else {
+        expect(find.textContaining('Install TurboNotes'), findsOneWidget);
+      }
+    }
   });
 }

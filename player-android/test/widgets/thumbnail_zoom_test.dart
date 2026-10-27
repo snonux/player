@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/providers/thumbnail_size_provider.dart';
+import 'package:player_android/widgets/overflow_menu.dart';
 import 'package:player_android/widgets/thumbnail_zoom.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -78,28 +79,30 @@ void main() {
     expect(taps, 1);
     expect(longPresses, 1);
 
-    await pinchPreviews(tester, 3);
+    final area =
+        tester.getRect(find.byKey(const Key('library_preview_gestures')));
+    final first = await tester.createGesture(pointer: 51);
+    final second = await tester.createGesture(pointer: 52);
+    await first.down(area.center - const Offset(60, 0));
+    await second.down(area.center + const Offset(60, 0));
+    await tester.pump();
+    await first.moveTo(area.center - const Offset(180, 0));
+    await second.moveTo(area.center + const Offset(180, 0));
+    await tester.pump();
+    expect(find.byKey(const Key('preview_size_badge')), findsOneWidget);
     expect(find.text('165%'), findsOneWidget);
+    await first.up();
+    await second.up();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('preview_size_badge')), findsNothing,
+        reason: 'the size badge shows only while pinching');
     expect(container.read(thumbnailSizeProvider).requireValue, 4);
     await pinchPreviews(tester, 0.1);
-    expect(find.text('65%'), findsOneWidget);
     expect(container.read(thumbnailSizeProvider).requireValue, 0);
     expect(taps, 1, reason: 'A pinch must not activate either touched card');
     expect(longPresses, 1);
-    expect(
-        tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.remove)).onPressed,
-        isNull);
-    await tester.tap(find.text('65%'));
-    await tester.pumpAndSettle();
-    expect(find.text('100%'), findsOneWidget);
-    for (var i = 0; i < 5; i++) {
-      await tester.tap(find.byTooltip('Larger previews'), warnIfMissed: false);
-      await tester.pumpAndSettle();
-    }
-    expect(find.text('165%'), findsOneWidget);
-    expect(
-        tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.add)).onPressed,
-        isNull);
+    await pinchPreviews(tester, 3);
+    expect(taps, 1);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getInt('library_thumbnail_size'), 4);
     expect(tester.takeException(), isNull);
@@ -133,37 +136,77 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, -200));
     await tester.pumpAndSettle();
     expect(taps, 1);
-    expect(find.text('100%'), findsOneWidget);
+    expect(find.byKey(const Key('preview_size_badge')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets(
-      'preview controls remain usable with large text on a narrow phone',
+      'menu preview sizes step, stop at the ends and reset, with large text on a narrow phone',
       (tester) async {
     tester.view.physicalSize = const Size(320, 640);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(ProviderScope(
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await container.read(thumbnailSizeProvider.future);
+    await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
         child: MaterialApp(
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context)
-            .copyWith(textScaler: const TextScaler.linear(2)),
-        child: child!,
-      ),
-      home: Scaffold(
-          body: ThumbnailZoom(
-              builder: (_, scale) =>
-                  ListView(children: const [Text('Library')]))),
-    )));
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+          home: Scaffold(
+              appBar: AppBar(actions: [
+                OverflowMenuButton(
+                    items: (_) => const [PreviewSizeMenuItems()]),
+              ]),
+              body: ThumbnailZoom(
+                  builder: (_, scale) =>
+                      ListView(children: const [Text('Library')]))),
+        )));
     await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    await tester.tap(find.byTooltip('Larger previews'));
+    expect(find.text('Previews'), findsNothing,
+        reason: 'preview size lives in the menu, not above the grid');
+    Future<void> choose(Key item) async {
+      await tester.tap(find.byTooltip('More options'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(item));
+      await tester.pumpAndSettle();
+    }
+
+    await choose(const Key('preview_size_larger'));
+    expect(container.read(thumbnailSizeProvider).requireValue, 3);
+    await choose(const Key('preview_size_larger'));
+    expect(container.read(thumbnailSizeProvider).requireValue, 4);
+    await tester.tap(find.byTooltip('More options'));
     await tester.pumpAndSettle();
-    expect(find.text('130%'), findsOneWidget);
-    await tester.tap(find.text('130%'));
+    expect(find.text('Now 165%'), findsOneWidget);
+    expect(
+        tester
+            .widget<ListTile>(find.descendant(
+                of: find.byKey(const Key('preview_size_larger')),
+                matching: find.byType(ListTile)))
+            .enabled,
+        isFalse);
+    await tester.tap(find.byKey(const Key('preview_size_reset')));
     await tester.pumpAndSettle();
-    expect(find.text('100%'), findsOneWidget);
+    expect(container.read(thumbnailSizeProvider).requireValue,
+        defaultThumbnailSize);
+    await choose(const Key('preview_size_smaller'));
+    await choose(const Key('preview_size_smaller'));
+    expect(container.read(thumbnailSizeProvider).requireValue, 0);
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<ListTile>(find.descendant(
+                of: find.byKey(const Key('preview_size_smaller')),
+                matching: find.byType(ListTile)))
+            .enabled,
+        isFalse);
     expect(tester.takeException(), isNull);
   });
 }

@@ -216,9 +216,16 @@ void main() {
     final card = find.byKey(const Key('set_card_1'));
     final initial = tester.getSize(card).width;
     await pinchPreviews(tester, 2);
-    expect(find.text('165%'), findsOneWidget);
     expect(tester.getSize(card).width, greaterThan(initial));
-    await tester.tap(find.text('165%'));
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+    final reset = find.byKey(const Key('preview_size_reset'));
+    await tester.scrollUntilVisible(reset, 200,
+        scrollable: find.descendant(
+            of: find.byType(Drawer), matching: find.byType(Scrollable)));
+    await tester.ensureVisible(reset);
+    await tester.pumpAndSettle();
+    await tester.tap(reset);
     await tester.pumpAndSettle();
     expect(tester.getSize(card).width, initial);
     await tester.drag(find.byKey(const Key('sets_grid')), const Offset(0, 300));

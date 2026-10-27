@@ -12,6 +12,7 @@ import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
 import '../widgets/search_filter_bar.dart';
 import '../widgets/media_filter_sheet.dart';
+import '../widgets/overflow_menu.dart';
 import '../widgets/thumbnail_zoom.dart';
 import 'media_playback_navigation.dart';
 
@@ -403,28 +404,30 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
               : 'Selected sets'),
       actions: [
         const MusicQueueButton(),
-        IconButton(
-          key: const Key('media_grid_folders'),
-          tooltip: _filter.setIds == null
-              ? 'Browse folders'
-              : 'Browse folders in $_currentSetName',
-          icon: const Icon(Icons.folder_open),
-          onPressed: () => context.push(
-            AppRoutes.folderBrowserPath(widget.setId),
-            extra: widget.setName,
-          ),
-        ),
-        IconButton(
-          key: const Key('media_grid_favorites_filter'),
-          tooltip:
-              _filter.favoritesOnly ? 'Show all items' : 'Show favourites only',
-          icon: Icon(
-            _filter.favoritesOnly ? Icons.favorite : Icons.favorite_border,
-            color: _filter.favoritesOnly
-                ? Theme.of(context).colorScheme.error
-                : null,
-          ),
-          onPressed: _toggleFavoritesFilter,
+        OverflowMenuButton(
+          items: (_) => [
+            OverflowMenuItem(
+              key: const Key('media_grid_folders'),
+              icon: Icons.folder_open,
+              label: _filter.setIds == null
+                  ? 'Browse folders'
+                  : 'Browse folders in $_currentSetName',
+              onSelected: () => context.push(
+                AppRoutes.folderBrowserPath(widget.setId),
+                extra: widget.setName,
+              ),
+            ),
+            OverflowMenuItem(
+              key: const Key('media_grid_favorites_filter'),
+              icon: _filter.favoritesOnly
+                  ? Icons.favorite
+                  : Icons.favorite_border,
+              label: 'Favourites only',
+              selected: _filter.favoritesOnly,
+              onSelected: _toggleFavoritesFilter,
+            ),
+            const PreviewSizeMenuItems(),
+          ],
         ),
       ],
     );

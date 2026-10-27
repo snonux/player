@@ -13,10 +13,15 @@ class _VisibleSync extends GlobalSyncCoordinator {
   _VisibleSync()
       : super(PodcastSync(PodcastSyncStore(PodcastRepository())), () => null);
 
+  void Function()? onSyncNow;
+
   void show(GlobalSyncState next) {
     state = next;
     notifyListeners();
   }
+
+  @override
+  Future<void> syncNow({bool explicit = true}) async => onSyncNow?.call();
 }
 
 void main() {
@@ -40,7 +45,43 @@ void main() {
         scope: 'account:a',
         lastFullSuccessMs: DateTime.now().millisecondsSinceEpoch));
     await tester.pumpAndSettle();
+    expect(find.text('Synced'), findsNothing,
+        reason: 'a healthy sync leaves the footer hidden');
+    expect(find.text('Sync now'), findsNothing);
+    sync.show(const GlobalSyncState(
+        scope: 'account:a', lastFullSuccessMs: last, pending: 1));
+    await tester.pump();
+    expect(find.textContaining('1 pending'), findsOneWidget);
+  });
+  testWidgets('library menu row reports status and runs Sync now',
+      (tester) async {
+    final sync = _VisibleSync();
+    var runs = 0;
+    sync.onSyncNow = () => runs++;
+    await tester.pumpWidget(ProviderScope(
+        overrides: [
+          globalSyncCoordinatorProvider.overrideWith((ref) => sync),
+        ],
+        child: const MaterialApp(
+            home: Scaffold(body: Column(children: [GlobalSyncMenuTile()])))));
+    expect(find.byKey(const Key('global_sync_menu_tile')), findsNothing,
+        reason: 'standalone servers have nothing to sync');
+    sync.show(GlobalSyncState(
+        scope: 'account:a',
+        lastFullSuccessMs: DateTime.now().millisecondsSinceEpoch));
+    await tester.pump();
+    expect(find.text('Sync now'), findsOneWidget);
     expect(find.text('Synced'), findsOneWidget);
+    await tester.tap(find.text('Sync now'));
+    expect(runs, 1);
+    sync.show(const GlobalSyncState(scope: 'account:a', errorKind: 'auth'));
+    await tester.pump();
+    expect(find.text('Sign in required'), findsOneWidget);
+    expect(
+        tester
+            .widget<ListTile>(find.byKey(const Key('global_sync_menu_tile')))
+            .enabled,
+        isFalse);
   });
   test('standalone, never, negative age and exact 48-hour clock', () {
     expect(globalSyncMessage(const GlobalSyncState(), boundary), '');
@@ -88,5 +129,9 @@ void main() {
     expect(find.textContaining('unavailable'), findsNothing);
     await show(const GlobalSyncState());
     expect(find.byType(TextButton), findsNothing);
+    await show(const GlobalSyncState(
+        scope: 'account:a', lastFullSuccessMs: boundary - 1000));
+    expect(find.byType(TextButton), findsNothing,
+        reason: 'a fresh, healthy sync hides the footer');
   });
 }

@@ -317,7 +317,7 @@ class _CatalogState extends State<MusicCollectionCatalog> {
           // actions appear. Keep the collection list reachable by touch.
           if (!_selecting && widget.header != null) widget.header!,
           Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

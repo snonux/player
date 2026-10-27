@@ -1,5 +1,6 @@
 import '../l10n/music_localizations.dart';
 import 'package:flutter/material.dart';
+import 'overflow_menu.dart';
 
 /// Secondary rating filters keep hearts and metadata filters independent.
 class MusicRatingFilter extends StatelessWidget {
@@ -27,6 +28,26 @@ class MusicRatingFilter extends StatelessWidget {
                 child: const Text('Highest rated first')),
           ]);
 }
+
+/// The same rating filters as rows of a screen's [OverflowMenuButton].
+List<Widget> musicRatingMenuItems(BuildContext context,
+        {required bool rated,
+        required bool highest,
+        required void Function(bool rated, bool highest) onChanged}) =>
+    [
+      OverflowMenuItem(
+          key: const Key('music_rated_only'),
+          icon: Icons.star_half,
+          label: context.tr('Rated only'),
+          selected: rated,
+          onSelected: () => onChanged(!rated, highest)),
+      OverflowMenuItem(
+          key: const Key('music_highest_rated'),
+          icon: Icons.star,
+          label: 'Highest rated first',
+          selected: highest,
+          onSelected: () => onChanged(rated, !highest)),
+    ];
 
 List<Map<String, dynamic>> ratingFiltered(
     List<Map<String, dynamic>> items, bool rated, bool highest) {
