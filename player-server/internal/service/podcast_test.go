@@ -395,6 +395,21 @@ func TestPodcastService_SanitizeFilename(t *testing.T) {
 	}
 }
 
+func TestBuildEpisodePathUsesEnclosurePathExtension(t *testing.T) {
+	now := time.Date(2026, 10, 27, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct{ enclosure, want string }{
+		{"https://publisher.example/episode.wav?episode=alpha-001", ".wav"},
+		{"https://publisher.example/episode%2Eflac?sig=abc#player", ".flac"},
+		{"https://publisher.example/audio?episode=alpha-001", ".mp3"},
+	} {
+		episode := &model.PodcastEpisode{ID: 1, Title: "Episode", EpisodeURL: tc.enclosure}
+		got := buildEpisodePath(t.TempDir(), episode, now)
+		if ext := filepath.Ext(got); ext != tc.want {
+			t.Errorf("buildEpisodePath(%q) extension = %q, want %q", tc.enclosure, ext, tc.want)
+		}
+	}
+}
+
 func TestPodcastService_DownloadEpisode_NonAdmin(t *testing.T) {
 	ctx := context.Background()
 	svc, store := setupPodcastService(t)

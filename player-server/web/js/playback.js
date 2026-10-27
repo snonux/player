@@ -411,7 +411,9 @@ function bindMediaEvents(e, m) {
   m.addEventListener('pause', () => { if (!m.ended) { saveCurrentProgress(); playedSinceLoad = false; advancing = false; } updateUI(false); isPlaying = false; stopProgressTimer(); });
   m.addEventListener('playing', () => {
     if (m !== currentMediaElement()) return;
-    if (!m.paused) playedSinceLoad = true;
+    // The browser can emit play before loadstart. The latter clears the
+    // boundary guard, so restore it only once playback has actually started.
+    if (!m.paused) { playedSinceLoad = true; advancing = true; }
     clearPausedReturnHint();
     if (!isDetached() && !m.paused && !m.error) announceSong(currentMedia, () => !isDetached() && !m.paused && !m.error && m === currentMediaElement());
   });

@@ -8,7 +8,9 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -175,7 +177,13 @@ func buildEpisodePath(setPath string, episode *model.PodcastEpisode, now time.Ti
 		dateStr = episode.PublishedAt.Format("2006-01-02")
 	}
 
-	ext := filepath.Ext(episode.EpisodeURL)
+	// The enclosure's query identifies a publisher resource, not a filename
+	// suffix. Including it misclassifies audio copies as video and gives them
+	// application/octet-stream when the downloaded media is served back.
+	ext := ""
+	if enclosure, err := url.Parse(episode.EpisodeURL); err == nil {
+		ext = path.Ext(enclosure.Path)
+	}
 	if ext == "" {
 		ext = ".mp3"
 	}

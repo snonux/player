@@ -1,5 +1,9 @@
 # Web podcast lifecycle (3i3)
 
+Stage: **IMPLEMENTED, REVIEWED AND VERIFIED** on 2026-10-27. The
+implementation-stage notes below describe the earlier state; integrated
+results are at the end of this document.
+
 Proposal before source edits: expose stable episode registers on authenticated
 media detail after the existing access check. Reuse the web episode-state module
 for independent position/completion edits, account-scoped in-memory retries and
@@ -184,3 +188,33 @@ Exact R1 delta (11 paths; full frozen manifest above now has 27 paths):
 - `player-server/web/js/tests/cast.test.js`
 - `player-server/web/js/tests/playback-source.test.js`
 - `player-server/web/js/tests/podcast-detached.test.js`
+
+## Integrated acceptance and natural-end correction (2026-10-27)
+
+The retained 5i3 real-publisher fixture covers installed Chrome and Firefox
+shared-position audible resume, completion/uncompletion filters, explicit
+server-copy delete/redownload with preserved episode registers, failed sync
+and retry, account isolation, and late-response stability. Two installed
+Android clients exercised the shared state and their independent publisher
+copies. The browser resume stage allowed a manual completion fallback, so it
+did not prove web natural-end completion.
+
+A new focused `natural-end` stage used a fresh disposable publisher and server
+at `/home/paul/tmp/codex/player-3i3-podcast`. It exposed two defects:
+`buildEpisodePath` treated an enclosure URL's query as part of its extension,
+classifying `.wav?episode=...` audio as video; and Chrome delivered `play`
+before `loadstart`, clearing the natural-end guard before `playing`. The server
+now takes the extension from the parsed URL path. The player restores the
+guard on `playing`, while retaining the seek-to-end and paused-playback checks.
+
+The final focused stage passed in installed Chrome and Firefox: a fresh
+12-second publisher copy was imported as audio, played to the native HTML
+`ended` event, wrote the automatic completion register, disappeared from
+Uncompleted and appeared in Completed. The result files retain the full media
+event trace. `TestBuildEpisodePathUsesEnclosurePathExtension`, focused
+DownloadEpisode Go tests, the Node playback-source suite, and the required
+Go race/coverage suite passed. Existing copies created by older versions with
+query text in their filenames keep their recorded media type until replaced;
+the new naming applies to future downloads. Real Cast receiver and detached
+popup journeys were not part of the installed podcast acceptance run; bounded
+source and account-lease behavior passed the focused Node tests noted above.

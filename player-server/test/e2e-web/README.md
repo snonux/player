@@ -1211,6 +1211,24 @@ Native pairing/security/SSID/offline acceptance and retained evidence are in
 
 ## Podcast episode conflict acceptance
 
+For 3i3 automatic podcast completion, use a fresh marked podcast fixture
+attached to a disposable Player server running the current binary. Subscribe
+the two publisher feeds with the existing `catalog` stage, then run this
+focused stage serially in installed Chrome and Firefox:
+
+```sh
+PLAYER_PODCAST_FIXTURE=/absolute/podcast-fixture \
+PLAYER_PODCAST_STAGE=natural-end PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx --no-install playwright test -c playwright.podcasts.config.ts \
+  --project=chrome --workers=1
+# Repeat with --project=firefox on the same fixture.
+```
+
+It imports a fresh short enclosure, plays to the actual HTML `ended` event,
+checks automatic completion and both list filters, and writes the event trace
+under the fixture's external `evidence/` directory. The earlier `resume` stage
+allows manual fallback and therefore does not verify automatic completion.
+
 Against the marked, isolated podcast fixture, run after the Alpha catalog is
 subscribed and the publisher and Player server are running:
 

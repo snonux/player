@@ -2,7 +2,7 @@
  * each browser, native B finish, completed in both browsers, uncomplete once,
  * observe-uncompleted on all clients, cleanup and boundaries.
  *
- * PLAYER_PODCAST_STAGE=catalog|resume|completed|uncomplete|observe-uncompleted|cleanup|boundaries|auth-visual|account-switch|episode-conflict
+ * PLAYER_PODCAST_STAGE=catalog|resume|natural-end|completed|uncomplete|observe-uncompleted|cleanup|boundaries|auth-visual|account-switch|episode-conflict
  * PLAYER_PODCAST_FIXTURE=/marked/path npx playwright test -c playwright.podcasts.config.ts --project=chrome
  * No API edits supply listening/completion proof. GETs are read-only oracles;
  * download, playback, completion, retry and cleanup use actual visible controls.
@@ -15,7 +15,7 @@ import { installAudioTap } from './helpers/audio-tap';
 
 const directory = process.env.PLAYER_PODCAST_FIXTURE!;
 const stage = process.env.PLAYER_PODCAST_STAGE;
-const allowed = ['catalog', 'resume', 'completed', 'uncomplete', 'observe-uncompleted', 'cleanup', 'boundaries', 'feedback', 'unsubscribed', 'conflict', 'auth-visual', 'account-switch', 'episode-conflict'];
+const allowed = ['catalog', 'resume', 'natural-end', 'completed', 'uncomplete', 'observe-uncompleted', 'cleanup', 'boundaries', 'feedback', 'unsubscribed', 'conflict', 'auth-visual', 'account-switch', 'episode-conflict'];
 if (!allowed.includes(stage || '')) throw new Error('Select one explicit PLAYER_PODCAST_STAGE');
 const state = JSON.parse(readFileSync(join(directory, 'state.json'), 'utf8'));
 const auth = JSON.parse(readFileSync(join(directory, 'auth.json'), 'utf8'));
@@ -125,7 +125,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
     await fullSync(page);
     // Each browser flips completion during the boundary check; the second
     // browser must still find the same episode after the first one hides it.
-    await openEpisodes(page, stage === 'boundaries' ? 'All' : 'Uncompleted');
+    await openEpisodes(page, ['boundaries', 'natural-end'].includes(stage!) ? 'All' : 'Uncompleted');
     if (stage === 'unsubscribed') {
       expect((await catalogFeed(page)).subscribed).toBe(false);
       await expect(page.getByRole('button', { name: 'Podcast Acceptance Alpha', exact: true })).toHaveCount(0);
@@ -303,6 +303,51 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         }).catch(() => {});
         await otherContext.close().catch(() => {});
       }
+    } else if (stage === 'natural-end') {
+      // Earlier four-client runs allowed a manual fallback here. Use a fresh
+      // short episode and require the browser's actual ended event instead.
+      const existing = await rows(page);
+      const parity = info.project.name === 'chrome' ? 0 : 1;
+      const candidate = feed.episodes.slice(20, 90).find((item: any, index: number) => {
+        const row = existing.find((entry: any) => entry.feed_key === feed.key && entry.episode_key === item.key);
+        return index % 2 === parity && row && !row.completed && !row.position_seconds && !row.server_copy;
+      });
+      expect(candidate, 'fresh short publisher episode for natural-end check').toBeTruthy();
+      const card = page.locator('.episode-card').filter({ hasText: candidate.title });
+      await expect(card).toBeVisible();
+      await card.hover();
+      await actionByKeyboard(page, card.getByRole('button', { name: 'Download episode to server', exact: true }));
+      await expect.poll(async () => Boolean((await history(page, candidate.key)).server_copy?.media_id),
+        { timeout: 30_000 }).toBe(true);
+      await page.evaluate(() => {
+        (window as any).__podcastNativeEnded = false;
+        (window as any).__podcastNativeEvents = [];
+        const audio = document.querySelector('#media-audio') as HTMLAudioElement;
+        for (const name of ['loadstart', 'play', 'playing', 'seeking', 'seeked', 'timeupdate', 'pause', 'ended', 'error']) {
+          audio.addEventListener(name, () => {
+            (window as any).__podcastNativeEvents.push({ name, time: audio.currentTime,
+              paused: audio.paused, ended: audio.ended, duration: audio.duration });
+            if (name === 'ended') (window as any).__podcastNativeEnded = true;
+          });
+        }
+      });
+      await card.hover();
+      await card.getByRole('button', { name: 'Play episode', exact: true }).click();
+      await expect.poll(() => page.evaluate(() => (window as any).__podcastNativeEnded),
+        { timeout: 25_000 }).toBe(true);
+      await expect.poll(async () => (await history(page, candidate.key)).completed,
+        { timeout: 15_000 }).toBe(true);
+      const ended = await history(page, candidate.key);
+      expect(ended.position_seconds).toBeGreaterThanOrEqual(ended.duration_seconds - 1);
+      await page.getByRole('button', { name: 'Uncompleted', exact: true }).click();
+      await expect(card).toHaveCount(0);
+      await page.getByRole('button', { name: 'Completed', exact: true }).click();
+      await expect(card).toBeVisible();
+      record('actual HTML ended completes episode and updates both filters', {
+        episode_key: candidate.key, position_seconds: ended.position_seconds,
+        duration_seconds: ended.duration_seconds,
+        events: await page.evaluate(() => (window as any).__podcastNativeEvents),
+      });
     } else if (stage === 'resume') {
       const transferFile = join(directory, 'transfer-B.json');
       expect(existsSync(transferFile), 'native B must resume while no server media exists first').toBe(true);
@@ -570,7 +615,12 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       record('actual failed browser completion remains pending and global Retry delivers it');
     }
   } catch (error) {
-    records.push({ name: stage, result: 'fail', detail: String(error) });
+    records.push({ name: stage, result: 'fail', detail: String(error),
+      data: stage === 'natural-end' ? await page.evaluate(() => ({
+        events: (window as any).__podcastNativeEvents || [],
+        audio: (() => { const a = document.querySelector('#media-audio') as HTMLAudioElement;
+          return { time: a?.currentTime, paused: a?.paused, ended: a?.ended, duration: a?.duration }; })(),
+      })).catch(() => ({})) : {} });
     throw error;
   } finally {
     await page.screenshot({ path: join(output, 'final.png'), animations: 'disabled' }).catch(() => {});
