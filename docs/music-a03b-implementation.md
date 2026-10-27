@@ -1,6 +1,6 @@
 # Rich lyrics (A03b / 5k3)
 
-Implementation and bounded review complete; awaiting integrated verification.
+Implementation, bounded review and integrated platform acceptance complete.
 Prerequisites nj3/U01, oj3/V01 and vj3/A03a are accepted. This extends their
 existing line model, parsers and player surfaces; no new playback owner or API.
 
@@ -64,16 +64,14 @@ Bounded bytes/depth/node counts, safe local paths, YAML alias rejection and
 existing source priority are preserved. Invalid optional word timing falls back
 to complete text; invalid optional end is omitted.
 
-## Verification plan / gaps
+## Verification plan
 
-Focused parser, JS model/DOM and Flutter model/widget checks during implementation.
-Parent owns full Go race/coverage/static gates, full JS and Flutter suites, final
-server/APK builds and actual installed Chrome/Firefox/native acceptance. Integrated
-journeys must play synthetic multilingual overlapping-voice/word fixtures, compare
-word and cue intervals, forward/back seek and switch languages while paused and
-playing, then check simple timed/plain fallback, loaded offline, track replacement,
-focus/typing/Back, and light/dark/narrow/text-scale contrast and wrapping. No actual
-platform verification is claimed by focused checks.
+Focused parser, JS model/DOM and Flutter model/widget checks supported the
+implementation review. Integrated acceptance below plays synthetic multilingual
+overlapping-voice/word fixtures in Chrome, Firefox and the native app; it checks
+forward/back seek, language choice, line-only fallback, loaded offline lyrics,
+focus/touch/Back and light/dark/narrow presentation. Large native text wrapping
+is covered by the widget test rather than a separate device font-scale run.
 
 ## Focused implementation checks
 
@@ -94,9 +92,8 @@ During focused checks, the minimal JS DOM double lacked querySelector for the
 new language-focus restoration path; its boundary was added and the test rerun.
 An attempted compact-controls test path does not exist; no such result is claimed.
 The first scoped Dart analysis reported two missing braces; fixed, analysis clean.
-All actual Chrome/Firefox/native runtime/theme/narrow/reduced-motion checks and
-full suites/final builds remain explicitly deferred to integrated verification.
-No runtime, server, emulator state, version, release or generated build was changed.
+At this implementation stage, Chrome/Firefox/native runtime checks remained
+deferred. The integrated record below supersedes that stage.
 
 ## Bounded review and fixes
 
@@ -120,7 +117,7 @@ passes. Scoped Flutter analysis of the two changed native files is clean; all
 11 lyric model/widget tests pass. `git diff --check` passes. No full gates,
 server/APK builds, Chrome/Firefox/emulator acceptance or runtime changes. Parent
 completed narrow final R2 (2/2 review budget), which approved these fixes.
-Integrated verification and task acceptance remain pending.
+Integrated verification and task acceptance are recorded below.
 
 ### Parent-directed boundary confirmation after R2
 
@@ -136,5 +133,39 @@ outside-only documents use the existing unavailable response. Existing shorter
 child/no-parent/malformed optional-end fallback regressions remain green.
 
 Post-boundary focused Go lyric regex passes (0.037 seconds); service vet and
-`git diff --check` pass. Only parser/test and this note changed. No additional
-review round, full gate, build, runtime or acceptance result is claimed.
+`git diff --check` pass. Only parser/test and this note changed at that stage.
+No additional review round was used.
+
+## Integrated acceptance — 2026-10-27
+
+The owned disposable fixture at `127.0.0.1:18849` used server 0.8.2, build
+revision `8691244ad0d7b45f3403bd56981ee2e81e404f2d-dirty`. The same YAML
+word/voice/translation document was placed on a copied 523.25 Hz browser track
+and the base album's 440 Hz native track; an existing LRC track supplied the
+line-only fallback. The x86_64 release APK was 0.8.2+4022, SHA256
+`58d7048ed0ce2c1388141f111688eea6299b5ed10b7313b4de3dfa33a5661f56`.
+Only one API34 emulator ran at a time. Commands are in the two component E2E
+READMEs. Evidence and synthetic media stay outside git in
+`/home/paul/tmp/codex/player-a03b-evidence`.
+
+| Platform | Result | Evidence |
+| --- | --- | --- |
+| Installed Chrome 144.0.7559.132 | PASS: actual 523.25 Hz audio, two active voices, word emphasis at 1/2 seconds, French and untranslated Original, keyboard/pointer seek, narrow More language choice/focus, reduced motion, disconnected loaded seek, light/dark screenshots and LRC fallback. | `1793111691247-522648/chrome/evidence.jsonl` |
+| Installed Firefox 156.0 | PASS: the same journey, including the narrow native-select popover path. | `1793111693040-522649/firefox/evidence.jsonl` |
+| Native API34 x86_64 | PASS 10: touch overlap, 440 Hz audio and visually reviewed underlined current word, translated/fallback labels, forward/back seek, loaded text/language choice during real server-route loss, light/dark, line-only LRC and Back. | `native-1793111349265633258/android/evidence.jsonl` |
+
+The latest Chrome/Firefox narrow light/dark screenshots were visually reviewed:
+the Settings transition had completed, rows remained readable, and no horizontal
+overflow appeared. Native screenshots show the underlined “world” span and
+readable French and Original labels. The player uses its existing dark media
+surface under both Android system modes. Twelve focused Flutter model/widget
+tests, the JS lyric model/DOM test and `go test -p 1 ./... -race -cover`
+passed. The Go log is `/home/paul/tmp/codex/player-a03b-go-race-cover.log`.
+
+The browser offline check seeks within a loaded, buffered media source. The
+native disconnected check retains loaded lyric text and language selection;
+seeking an uncached streamed source during server loss leaves media buffering,
+so no offline stream-seek claim is made here. A03c separately covers durable
+offline lyric snapshots for downloaded audio. An external lyric provider and
+a large native device font-scale run are outside this focused A03b journey;
+the large-text widget test covers layout behavior.

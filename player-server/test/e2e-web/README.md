@@ -1,5 +1,23 @@
 # Player — Web UI Smoke Tests (Playwright)
 
+For A03b rich lyrics, add the fixture with
+`python3 player-android/integration_test/support/music_rich_lyrics_fixture.py
+/absolute/fixture` from the repo root. Then, from this directory, run each
+installed browser on the same disposable fixture:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/absolute/fixture PLAYER_A03B_ISOLATED=1 \
+PLAYER_A03B_EVIDENCE=/absolute/evidence PLAYER_E2E_PULSE_SINK=player_e2e_null \
+  npx --no-install playwright test -c playwright.music.config.ts \
+  tests/music-rich-lyrics.test.ts --project=chrome --workers=1
+# Repeat with --project=firefox.
+```
+
+The focused journey checks actual audio, two voices at one time, word changes,
+language choice and untranslated fallback, keyboard/pointer seek, loaded lyric
+seeking while disconnected, line-only compatibility, and narrow light/dark UI.
+Keep the fixture, media and evidence outside git.
+
 For M48 automatic offline music, start a fresh disposable `music_fixture.py up`
 server, then run the focused journey serially in installed Chrome and Firefox:
 

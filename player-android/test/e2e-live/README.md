@@ -1016,3 +1016,23 @@ restart, and captured offline playlist audio. It restores the clock and fixture
 reverse route. The locked scenario checks that a due OS job does not publish
 membership with no active Flutter engine and that reopening the app catches up.
 Keep its evidence and all media outside the repository.
+
+# A03b rich lyrics
+
+Add the rich lyric fixture with
+`python3 player-android/integration_test/support/music_rich_lyrics_fixture.py
+/absolute/fixture` from the repo root. Run one rooted API34 emulator with QEMU
+WAV output, an installed release APK and the fixture port reversed, then:
+
+```sh
+python3 -u player-android/test/e2e-live/music_rich_lyrics_e2e.py \
+  /absolute/fixture --emulator-wav /absolute/emulator-output.wav \
+  --evidence-dir /absolute/evidence --apk /absolute/app-x86_64-release.apk
+```
+
+The focused runner clears only Player app data, signs in, opens the base album's
+rich fixture, checks overlapping voice selection, actual word-timed audio,
+translated and original labels, forward/back seek, loaded lyrics with the
+fixture reverse route removed, light/dark presentation, line-only fallback and
+Back. It restores the reverse route and system night mode. Keep evidence and
+media outside the repository.
