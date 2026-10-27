@@ -77,8 +77,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- Generic MediaBrowser integration; no Google runtime dependency. -->
+        <!-- Android Auto (phone projection) discovers media via this name. -->
         <meta-data android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+        <!-- Android Automotive OS car.media requires this separate opt-in;
+             without it MediaSource skips the browse service as a
+             "non media template app". -->
+        <meta-data android:name="com.android.automotive"
             android:resource="@xml/automotive_app_desc" />
         <!-- Disable Impeller on the x86_64 emulator: its OpenGL ES driver
              does not support GL_EXT_shader_framebuffer_fetch, causing Impeller
@@ -104,6 +109,12 @@
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
+            <!-- AAOS car.media lists only MBS components with this flag (or
+                 launcher-less "legacy" media apps). Without it, MediaSource
+                 skips Player as a non media template app even when
+                 com.android.automotive application meta-data is present. -->
+            <meta-data android:name="androidx.car.app.launchable"
+                android:value="true" />
         </service>
         <receiver android:name=".PlaybackWidgetProvider" android:exported="false"
             android:label="@string/widget_name">

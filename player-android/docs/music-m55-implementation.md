@@ -124,11 +124,22 @@ to `adb forward tcp:5277` then exits because
 
 An Automotive x86_64 AVD (`Player_Automotive_API34`, system image
 `android-34-ext9;android-automotive;x86_64`) boots and runs
-`com.android.car.media` with Local Media Player browse tabs. Player’s
-`AutoBrowseService` is installed and registered. Completing Player account
-sign-in on the car’s 320×640 launcher UI did not succeed in this session
-(credentials form / keyboard dialogs are clipped), so Player never appeared as
-a selectable media source and browse/play/search were not exercised. Evidence:
-`/home/paul/tmp/codex/player-m55-evidence/`. Task stays pending until a usable
-Auto host path (signed-in Player + car media source, or non-stub phone DHU) is
-available. No Auto host browse/play proof is claimed.
+`com.android.car.media`. Phone DHU remains blocked by the gearhead stub; the
+Automotive host is the accepted Auto path for this task.
+
+AAOS `MediaSource` skipped Player until the browse service declared
+`androidx.car.app.launchable=true` (same opt-in as Local Media Player). The
+application also declares `com.android.automotive` → `automotive_app_desc`
+alongside the existing Android Auto `com.google.android.gms.car.application`
+entry. With those present, logcat shows `AutoBrowseService is opted in` and
+Player appears in Switch apps next to Bluetooth / Local / News / Radio.
+
+Sign-in on the car UI works after `wm size 1280x800` (physical 320×640 clips
+the form): choose the saved server URL button, enter credentials, move focus
+to the Sign In `Button` with TAB (do not KEYCODE_BACK — that leaves the app),
+then submit. Browse tabs Albums / Artists / Playlists / Queue / Search load
+fixture titles; album play opens Now Playing; `media_session` for
+`zone.foo.player_android` toggles PLAYING/PAUSED on MEDIA_PLAY_PAUSE; search
+`Aurora` returns matching tracks/artists. Evidence under
+`/home/paul/tmp/codex/player-m55-evidence/` (`m55-g-*` … `m55-j-*`,
+`m55-automotive-acceptance.txt`).
