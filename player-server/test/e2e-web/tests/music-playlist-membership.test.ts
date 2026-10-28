@@ -2,7 +2,7 @@
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, openPlaylistDetailMoreAction } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_M30_ISOLATED, 'Requires an isolated disposable M30 fixture');
 test.use({ serviceWorkers: 'block' });
@@ -80,8 +80,7 @@ test('M30 add/skip across two lists, readable membership and retry', async ({ pa
       expect(new Set(saved.entries.map((x: any) => x.entry_id)).size).toBe(2);
     }
 
-    await page.getByRole('button', { name: 'Playlist actions' }).click();
-    await modal(page).getByRole('button', { name: 'Containing playlists…' }).click();
+    await openPlaylistDetailMoreAction(page, 'membership');
     await expect(modal(page)).toContainText(`${prefix} A`);
     await expect(modal(page)).toContainText(`${prefix} B`);
     await expect(modal(page)).toContainText(`${prefix} shared viewer`);

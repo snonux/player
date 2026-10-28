@@ -946,6 +946,36 @@ body {
 .credit-link { white-space: normal; overflow-wrap: anywhere; text-align: left; }
 .music-song .credit-link { min-height: 2.75rem; padding: 0; font-size: .85rem; }
 
+/* Playlist catalog defaults to compact rows; Grid view restores square covers. */
+#media-grid.playlist-list.music-table .album-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.5rem;
+}
+#media-grid.playlist-list.music-table .album-cover,
+#media-grid.playlist-list.music-table .album-placeholder {
+  width: 3rem;
+  height: 3rem;
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+  font-size: 1.25rem;
+}
+#media-grid.playlist-list.music-table .card-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  flex: 1;
+  min-width: 0;
+  padding-block: 0.35rem;
+}
+#media-grid.playlist-list.music-table .card-body .title { flex: 2 1 10rem; }
+#media-grid.playlist-list.music-table .card-body > p { margin: 0; flex: 1 1 8rem; }
+#media-grid.playlist-list.music-table .playlist-list-meta { color: var(--text-secondary); font-size: 0.85rem; }
+.playlist-meta { margin-block: 0.5rem; max-width: 65ch; }
+.playlist-meta > summary { display: inline-flex; margin-bottom: 0.5rem; }
 .playlist-actions { display: flex; flex-wrap: wrap; gap: var(--gap); margin-block: var(--gap); }
 .offline-pin-modal .playlist-actions {
   position: sticky;

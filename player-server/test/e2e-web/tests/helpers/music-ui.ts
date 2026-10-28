@@ -188,3 +188,26 @@ export async function openCollectionMoreAction(page: Page, action: string | RegE
   await page.getByRole('menu', { name: 'More collection actions', exact: true }).getByRole('button', { name: action }).click();
   return more;
 }
+
+/** Open Create / smart / Import from the playlist list New hamburger (locale-stable data-* keys). */
+export async function openPlaylistNewAction(page: Page, action: 'create' | 'smart' | 'import' | string) {
+  await page.locator('#media-grid [data-new-menu]').click();
+  const key = action === 'Create playlist' || action === 'create' ? 'create'
+    : action === 'Create smart playlist' || action === 'smart' ? 'smart'
+    : action === 'Import M3U…' || action === 'import' ? 'import' : action;
+  await page.locator(`.shortcut-picker [data-${key}]`).click();
+}
+
+/** Open a playlist-detail secondary action via data-more keys (locale-stable). */
+export async function openPlaylistDetailMoreAction(page: Page, action: string) {
+  const more = page.locator('#media-grid [data-playlist-more]');
+  await more.click();
+  const key = ({
+    'Add music': 'add', 'Rules': 'rules', 'Refresh results': 'refresh', 'Edit playlist': 'edit',
+    'Export M3U8…': 'export', 'Containing playlists…': 'membership', 'Sync now': 'sync',
+    'Stop following…': 'detach', 'Delete playlist': 'delete', 'Shuffle': 'shuffle',
+    'Queue and offline…': 'collection',
+  } as Record<string, string>)[action] || action;
+  await page.locator(`.shortcut-picker [data-more="${key}"]`).click();
+  return more;
+}

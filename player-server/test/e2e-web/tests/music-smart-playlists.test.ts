@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, openPlaylistNewAction, openPlaylistDetailMoreAction } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_M33_ISOLATED, 'Requires isolated disposable M33 fixture');
 test.use({ serviceWorkers: 'block' });
@@ -15,7 +15,7 @@ const playlist = async (p: Page, id: string) => (await (await p.request.get(`/ap
 const ids = (p: any) => p.songs.map((song: any) => song.id);
 
 async function editRule(page: Page, field: string, operator: string, value: string, sort = 'title', limit = '2') {
-  await page.getByRole('button', { name: 'Rules', exact: true }).click();
+  await openPlaylistDetailMoreAction(page, 'rules');
   const form = rules(page);
   await expect(form).toBeVisible();
   const row = form.locator('[data-row="0"]');
@@ -27,6 +27,7 @@ async function editRule(page: Page, field: string, operator: string, value: stri
   await form.locator('[data-limit]').fill(limit);
   await form.getByRole('button', { name: 'Save rules' }).click();
   await expect(form).toBeHidden();
+  await detail(page).locator('details.playlist-meta').evaluate((el: HTMLDetailsElement) => { el.open = true; });
   await expect(detail(page).locator('[data-rule-summary]')).toBeVisible();
 }
 
@@ -44,8 +45,7 @@ test('M33 smart rules refresh with metadata, rating, favorite, plays and dates',
   await keyboardLogin(page, actor);
   await page.goto('/?music=playlists');
   const name = `M33 ${info.project.name} ${Date.now()}`;
-  await page.locator('#media-grid [data-smart]').focus();
-  await page.keyboard.press('Enter');
+  await openPlaylistNewAction(page, 'smart');
   await expect(page.locator(modal)).toHaveClass(/open/);
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill(name);
   await page.locator(`${modal} [name=visibility]`).selectOption('shared');
@@ -84,14 +84,14 @@ test('M33 smart rules refresh with metadata, rating, favorite, plays and dates',
   await editRule(page, 'rating', 'gte', '4');
   await expect(detail(page).locator('.media-row')).toHaveCount(0);
   expect((await page.request.put(`/api/v1/music/ratings/song/${target}`, { data: { rating: 5 } })).ok()).toBe(true);
-  await detail(page).locator('[data-refresh-rules]').click();
+  await openPlaylistDetailMoreAction(page, 'refresh');
   await expect(detail(page).locator('.media-row')).toHaveCount(1);
   expect(ids(await playlist(page, id))).toEqual([target]);
 
   await editRule(page, 'starred', 'is', 'true');
   await expect(detail(page).locator('.media-row')).toHaveCount(0);
   expect((await page.request.post(`/api/v1/media/${target}/favorite`)).ok()).toBe(true);
-  await detail(page).locator('[data-refresh-rules]').click();
+  await openPlaylistDetailMoreAction(page, 'refresh');
   await expect(detail(page).locator('.media-row')).toHaveCount(1);
   expect(ids(await playlist(page, id))).toEqual([target]);
 
@@ -102,7 +102,7 @@ test('M33 smart rules refresh with metadata, rating, favorite, plays and dates',
     { data: { music_plays: [{ id: event, observed_ms: Date.now(), accumulated_seconds: 60 }] } });
   expect(sync.ok()).toBe(true);
   expect((await sync.json()).accepted_music_plays).toContain(event);
-  await detail(page).locator('[data-refresh-rules]').click();
+  await openPlaylistDetailMoreAction(page, 'refresh');
   await expect(detail(page).locator('.media-row')).toHaveCount(1);
   expect(ids(await playlist(page, id))).toEqual([target]);
 
@@ -125,7 +125,7 @@ test('M33 smart rules refresh with metadata, rating, favorite, plays and dates',
     expect(foreign.song_count).toBe(0);
   } finally { await other.dispose(); }
 
-  await page.getByRole('button', { name: 'Rules', exact: true }).click();
+  await openPlaylistDetailMoreAction(page, 'rules');
   await expect(rules(page).locator('[data-enabled]')).toBeFocused();
   await rules(page).locator('[data-row="0"] [data-value]').fill('3');
   await context.setOffline(true);

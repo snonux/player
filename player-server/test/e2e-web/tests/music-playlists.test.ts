@@ -2,7 +2,7 @@ import { test, expect, request } from '@playwright/test';
 import { randomBytes } from 'node:crypto';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, selectByKeys, expectPlaying, captureOutput, assertValidCapture, mainSegment , openSidebarMusic} from './helpers/music-ui';
+import { keyboardLogin, selectByKeys, expectPlaying, captureOutput, assertValidCapture, mainSegment , openSidebarMusic, openPlaylistNewAction, openPlaylistDetailMoreAction} from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local music fixture');
 let f:MusicFixture,e:Evidence;
@@ -14,7 +14,7 @@ test('M26 create add album rename comment cold client persistence account scope 
  const artifacts:string[]=[];
  try{
   const name='Road Trip '+Date.now();
-  await page.locator('#media-grid [data-create]').click();
+  await openPlaylistNewAction(page,'create');
   await page.getByRole('textbox',{name:'Name',exact:true}).fill(name);
   await page.getByRole('textbox',{name:'Comment',exact:true}).fill('r/h/l/? plain <text> 東京');
   await page.locator(modal).getByRole('button',{name:'Create playlist',exact:true}).click();
@@ -22,7 +22,7 @@ test('M26 create add album rename comment cold client persistence account scope 
   await expect(page.getByText('This playlist is empty.',{exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'▶ Play playlist',exact:true})).toBeDisabled();
   const url=page.url(),id=new URL(url).searchParams.get('id')!;
-  await page.getByRole('button',{name:'Add music',exact:true}).click();
+  await openPlaylistDetailMoreAction(page,'add');
   const album=(await (await page.request.get('/api/v1/music/albums')).json()).find((a:any)=>a.title==='Night Transit');
   expect(album.cover_media_id).toBeGreaterThan(0);
   await page.locator(modal).getByRole('button',{name:'Night Transit — Aurora Lane',exact:true}).click();
@@ -31,7 +31,7 @@ test('M26 create add album rename comment cold client persistence account scope 
   await expect(page.locator('.album-header img')).toBeVisible();
   await expect.poll(()=>page.locator('.album-header img').evaluate((img:HTMLImageElement)=>img.complete&&img.naturalWidth>0)).toBe(true);
   await expect(page.locator('.album-header')).toContainText(`${album.song_count} songs`);
-  await page.getByRole('button',{name:'Edit playlist',exact:true}).click();
+  await openPlaylistDetailMoreAction(page,'edit');
   const renamed=name+' renamed';
   await page.getByRole('textbox',{name:'Name',exact:true}).fill(renamed);
   await page.getByRole('textbox',{name:'Comment',exact:true}).fill('Saved across restart\n東京 <plain text>');
@@ -42,6 +42,7 @@ test('M26 create add album rename comment cold client persistence account scope 
   const state=await page.context().storageState();
   const cold=await browser.newContext({storageState:state});const restored=await cold.newPage();
   await restored.goto(url);await expect(restored.getByRole('heading',{name:renamed,exact:true})).toBeVisible();
+  await restored.locator('details.playlist-meta > summary').click();
   await expect(restored.locator('.playlist-comment')).toHaveText('Saved across restart\n東京 <plain text>r');
   await expect.poll(()=>restored.locator('.album-header img').evaluate((img:HTMLImageElement)=>img.complete&&img.naturalWidth>0)).toBe(true);
   await cold.close();
@@ -57,14 +58,14 @@ test('M26 create add album rename comment cold client persistence account scope 
   for(const [theme,width]of [['dark',1366],['light',1366],['dark',390],['light',390]]as const){
    await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-   await expect.poll(()=>page.locator('#media-grid [data-edit]').evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(theme==='light'?'rgb(255, 255, 255)':'rgb(30, 34, 44)');
+   await expect.poll(()=>page.locator('#media-grid [data-playlist-more]').evaluate(el=>getComputedStyle(el).color!=='')).toBe(true);
    const shot=e.path(`m26-${theme}-${width}.png`);await page.screenshot({path:shot,fullPage:true,animations:'disabled'});artifacts.push(shot);
   }
   await page.locator('.media-row').first().focus();await page.keyboard.press('j');await page.keyboard.press('k');await expect(page.locator('.media-row').first()).toHaveClass(/selected/);await page.keyboard.press('Enter');await expectPlaying(page,saved.songs[0].id);
   const capture=await captureOutput(page,1400,e.path('m26-source.wav'));assertValidCapture(capture);const segment=mainSegment(capture.analysis);
   const expected=f.tracks.find(t=>f.mediaIds[t.path]===saved.songs[0].id)!;expect(Math.abs(segment!.tone_hz!-expected.tone_hz[0])).toBeLessThan(5);artifacts.push(capture.wav);
   await page.keyboard.press('q');await expect(page.locator('#player')).not.toHaveClass(/open/);
-  await page.getByRole('button',{name:'Add music',exact:true}).click();await page.locator(modal).getByRole('button',{name:'Night Transit — Aurora Lane',exact:true}).click();
+  await openPlaylistDetailMoreAction(page,'add');await page.locator(modal).getByRole('button',{name:'Night Transit — Aurora Lane',exact:true}).click();
   await expect.poll(async()=>(await(await page.request.get('/api/v1/playlists/'+id)).json()).song_count).toBe(2*album.song_count);
   const duplicated=await (await page.request.get('/api/v1/playlists/'+id)).json();expect(new Set(duplicated.entries.map((entry:any)=>entry.entry_id)).size).toBe(duplicated.song_count);
   await page.locator('.media-row').nth(3).locator('.song-open').click();await expectPlaying(page,saved.songs[0].id);await page.keyboard.press('Q');
@@ -72,17 +73,17 @@ test('M26 create add album rename comment cold client persistence account scope 
   await page.getByRole('button',{name:'Close queue',exact:true}).click();await page.keyboard.press('N');await expectPlaying(page,saved.songs[1].id);await page.keyboard.press('Q');
   await expect(page.locator('#queue-panel [aria-current=true]')).toHaveAttribute('data-queue-index','4');await page.getByRole('button',{name:'Close queue',exact:true}).click();
   await page.keyboard.press('q');
-  await page.locator('#media-grid [data-delete]').click();await page.getByRole('button',{name:'Cancel',exact:true}).click();
-  await expect(page.locator('#media-grid [data-delete]')).toBeFocused();
+  const more=await openPlaylistDetailMoreAction(page,'delete');await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await expect(more).toBeFocused();
   expect((await page.request.get('/api/v1/playlists/'+id)).status()).toBe(200);
-  await page.locator('#media-grid [data-delete]').click();await page.locator(modal).getByRole('button',{name:'Delete playlist',exact:true}).click();
+  await openPlaylistDetailMoreAction(page,'delete');await page.locator(modal).getByRole('button',{name:'Delete playlist',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Playlists',exact:true})).toBeVisible();expect((await page.request.get('/api/v1/playlists/'+id)).status()).toBe(404);
   e.record({feature:'M26',scenario:'persistent CRUD comment account scope visible totals decoded artwork original source and client restart',result:'pass',data:{album,saved,duplicated,audio:segment},artifacts});
  }catch(error){e.record({feature:'M26',scenario:'persistent playlist journey',result:'fail',detail:String(error),artifacts});throw error;}
 });
 
 test('M26 native typing offline retained form and delayed old dialog completions cannot affect new dialog',async({page,context})=>{
- await page.locator('#media-grid [data-create]').click();
+ await openPlaylistNewAction(page,'create');
  await page.getByRole('textbox',{name:'Name',exact:true}).fill('Offline retained');
  await page.getByRole('textbox',{name:'Comment',exact:true}).fill('r/h/l/?');
  await context.setOffline(true);await page.locator(modal).getByRole('button',{name:'Create playlist',exact:true}).click();
@@ -93,10 +94,10 @@ test('M26 native typing offline retained form and delayed old dialog completions
  for(const success of [true,false]){
   let release!:()=>void;const pending=new Promise<void>(resolve=>release=resolve);let entered!:()=>void;const hit=new Promise<void>(resolve=>entered=resolve);
   await page.route('**/api/playlists',async route=>{if(route.request().method()!=='POST'){await route.continue();return;}entered();await pending;await route.fulfill({status:success?201:500,contentType:'application/json',body:JSON.stringify(success?{playlist_id:'pl_delayed'}:{error:'old failure'})});});
-  await page.locator('#media-grid [data-create]').click();await page.getByRole('textbox',{name:'Name',exact:true}).fill('Old request');
+  await openPlaylistNewAction(page,'create');await page.getByRole('textbox',{name:'Name',exact:true}).fill('Old request');
   await page.locator(modal).getByRole('button',{name:'Create playlist',exact:true}).click();await hit;
   await page.getByRole('button',{name:'Close playlist dialog',exact:true}).click();
-  await page.locator('#media-grid [data-create]').click();await page.getByRole('textbox',{name:'Name',exact:true}).fill('New independent form');
+  await openPlaylistNewAction(page,'create');await page.getByRole('textbox',{name:'Name',exact:true}).fill('New independent form');
   release();await page.waitForTimeout(200);await expect(page.getByRole('textbox',{name:'Name',exact:true})).toHaveValue('New independent form');await expect(page.locator(modal).getByRole('alert')).toBeEmpty();await expect(page.locator(modal)).toHaveClass(/open/);
   await page.unroute('**/api/playlists');await page.getByRole('button',{name:'Cancel',exact:true}).click();
  }

@@ -2,7 +2,7 @@ import { expect, request, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
-import { keyboardLogin, openSidebarMusic } from './helpers/music-ui';
+import { keyboardLogin, openSidebarMusic, openPlaylistNewAction, openPlaylistDetailMoreAction } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local music fixture');
 let fixture: MusicFixture;
@@ -77,7 +77,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
     await expect(await heart(page, 'artist', artist.artist_key)).toHaveAttribute('aria-pressed', 'true');
 
     await catalog(page, 'Playlists');
-    await page.getByRole('button', { name: 'Create playlist', exact: true }).click();
+    await openPlaylistNewAction(page, 'create');
     const name = `M34 Favorites ${Date.now()}`;
     await page.getByRole('textbox', { name: 'Name', exact: true }).fill(name);
     await page.getByRole('textbox', { name: 'Name', exact: true }).press('r');
@@ -87,7 +87,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
     await expect(page.getByRole('heading', { name: name + 'r', exact: true })).toBeVisible();
     const playlistId = new URL(page.url()).searchParams.get('id')!;
     await expect(await heart(page, 'playlist', playlistId)).toHaveAttribute('aria-pressed', 'false');
-    await (await heart(page, 'playlist', playlistId)).click();
+    await openPlaylistDetailMoreAction(page, 'favorite');
     await expect(await heart(page, 'playlist', playlistId)).toHaveAttribute('aria-pressed', 'true');
     await page.keyboard.press('Backspace');
     await page.getByRole('checkbox', { name: 'Favorites only' }).check();

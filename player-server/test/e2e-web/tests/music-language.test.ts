@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
-import { audioState, assertValidCapture, captureOutput, expectPlaying, keyboardLogin, mainSegment, openFolder, openSidebarMusic, playCard } from './helpers/music-ui';
+import { audioState, assertValidCapture, captureOutput, expectPlaying, keyboardLogin, mainSegment, openFolder, openSidebarMusic, playCard, openPlaylistNewAction, openPlaylistDetailMoreAction } from './helpers/music-ui';
 import { installAudioTap } from './helpers/audio-tap';
 import { headerItem } from './helpers/header-menu';
 
@@ -28,7 +28,7 @@ test('M67: mounted playlist drafts, counts and storage/device fallback in instal
     await page.setViewportSize({ width: 390, height: 844 });
     await keyboardLogin(page, fixture.user);
     await openSidebarMusic(page, 'Playlists');
-    await page.locator('[data-create]').click();
+    await openPlaylistNewAction(page, 'create');
     const dialog = page.getByRole('dialog');
     await dialog.locator('[name=name]').fill(name);
     await page.keyboard.press('Tab');
@@ -74,12 +74,13 @@ test('M67: mounted playlist drafts, counts and storage/device fallback in instal
       await page.screenshot({ path: shot, animations: 'disabled' });
       shots.push(shot);
     }
-    await page.locator('[data-edit]').click();
+    await openPlaylistDetailMoreAction(page, 'edit');
     await dialog.locator('[name=comment]').fill(comment + ' edited');
     await settingsPage.locator('#language-select').selectOption('en');
     await expect(dialog.locator('h2')).toHaveText('Edit playlist');
     await expect(dialog.locator('[name=comment]')).toHaveValue(comment + ' edited');
     await dialog.locator('[type=submit]').click();
+    await page.locator('details.playlist-meta > summary').click();
     await expect(page.locator('.playlist-comment').first()).toHaveText(comment + ' edited');
     const saved = await (await page.request.get(`/api/v1/playlists/${id}`)).json();
     expect(saved.name).toBe(name);

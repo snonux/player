@@ -28,11 +28,13 @@ export async function renderPlaylists(grid, view, current, saved) {
  if (!active()) return;
  const count=document.getElementById('result-count');count.innerHTML=detail?`${ui('Music · Playlists')} · ${esc(p.name)}`:ui('Music · Playlists');
  grid.classList.toggle('music-detail',detail);
+ grid.classList.toggle('music-table',!detail && playlistListDensity()==='compact');
+ grid.classList.toggle('playlist-list',!detail);
  if(!detail){
-  grid.innerHTML=html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to Sets</button><h1>Playlists</h1><button class="btn btn-primary" data-create>Create playlist</button><button class="btn" data-smart>Create smart playlist</button><button class="btn" data-import>Import M3U…</button></div>`+(p.length?p.map(item=>html`<div class="media-card album-card" role="button" tabindex="0" data-playlist="${esc(item.playlist_id)}" aria-label="Open playlist ${esc(item.name)}">${cover(item)}<div class="card-body">${favoriteButton('playlist',item.playlist_id,item)}<div class="title" title="${esc(item.name)}">${esc(item.name)}</div><p>${totals(item)}</p><p>${accessLabel(item)}</p></div></div>`).join(''):html`<p class="grid-full">${view.favorites?'No favorite playlists. Show all playlists to favorite one.':'No playlists yet. Create a playlist to save music for later.'}</p>`);
-  grid.querySelector('[data-create]').onclick=()=>editPlaylist(null,active);
-  grid.querySelector('[data-import]').onclick=()=>importPlaylist(active);
-  grid.querySelector('[data-smart]').onclick=()=>editPlaylist(null,active,true);
+  const compact=playlistListDensity()==='compact';
+  grid.innerHTML=html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← Back to Sets</button><h1>Playlists</h1><button type="button" class="icon-btn" data-new-menu aria-label="New" aria-haspopup="menu" title="New">☰</button><button class="btn btn-ghost" data-density aria-pressed="${compact?'true':'false'}">${ui(compact?'Grid view':'Compact list')}</button></div>`+(p.length?p.map(item=>html`<div class="media-card album-card" role="button" tabindex="0" data-playlist="${esc(item.playlist_id)}" aria-label="Open playlist ${esc(item.name)}">${cover(item)}<div class="card-body">${favoriteButton('playlist',item.playlist_id,item)}<div class="title" title="${esc(item.name)}">${esc(item.name)}</div><p>${totals(item)}</p><p class="playlist-list-meta">${accessLabel(item)}</p></div></div>`).join(''):html`<p class="grid-full">${view.favorites?'No favorite playlists. Show all playlists to favorite one.':'No playlists yet. Create a playlist to save music for later.'}</p>`);
+  grid.querySelector('[data-new-menu]').onclick=event=>playlistNewMenu(event.currentTarget,active);
+  grid.querySelector('[data-density]').onclick=()=>{savePlaylistListDensity(compact?'grid':'compact');reload();};
   grid.querySelectorAll('[data-playlist]').forEach(card=>card.onclick=()=>open(card.dataset.playlist));
   bindCollectionCatalog(grid,p,'playlist','playlist_id','name',active);
  }else{
@@ -42,7 +44,20 @@ export async function renderPlaylists(grid, view, current, saved) {
  bindFavorites(grid,active);
  if(!detail)favoriteFilter(grid,view,reload);
  grid.querySelector('[data-back]').onclick=back;
- const target=(saved?.playlist ? grid.querySelector(`[data-playlist="${CSS.escape(saved.playlist)}"]`) : null)||grid.querySelector('[data-playlist],.media-row');if(target){selectByElement(target);focusSelectedCard();if(saved)window.scrollTo(0,saved.scroll);}else grid.querySelector(detail?'[data-add]:not([hidden]),[data-find]':'[data-create]')?.focus();
+ const target=(saved?.playlist ? grid.querySelector(`[data-playlist="${CSS.escape(saved.playlist)}"]`) : null)||grid.querySelector('[data-playlist],.media-row');if(target){selectByElement(target);focusSelectedCard();if(saved)window.scrollTo(0,saved.scroll);}else grid.querySelector(detail?'[data-add-songs]:not([hidden]),[data-find]':'[data-new-menu]')?.focus();
+}
+const playlistDensityKey='player.playlist-list-density.v1';
+function playlistListDensity(){try{return localStorage.getItem(playlistDensityKey)==='grid'?'grid':'compact';}catch{return 'compact';}}
+function savePlaylistListDensity(value){try{localStorage.setItem(playlistDensityKey,value);}catch{/* Preference is optional. */}}
+function playlistNewMenu(button,current){
+ const popover=document.createElement('div');
+ popover.className='shortcut-picker';popover.setAttribute('popover','auto');popover.setAttribute('role','menu');popover.setAttribute('aria-label',t('New playlist'));
+ popover.innerHTML=html`<button class="btn btn-ghost" data-create>Create playlist</button><button class="btn btn-ghost" data-smart>Create smart playlist</button><button class="btn btn-ghost" data-import>Import M3U…</button>`;
+ popover.querySelector('[data-create]').onclick=()=>{popover.hidePopover();editPlaylist(null,current);};
+ popover.querySelector('[data-smart]').onclick=()=>{popover.hidePopover();editPlaylist(null,current,true);};
+ popover.querySelector('[data-import]').onclick=()=>{popover.hidePopover();importPlaylist(current);};
+ popover.addEventListener('toggle',event=>{if(event.newState==='closed'){popover.remove();if(button.isConnected)button.focus();}});
+ document.body.append(popover);popover.showPopover();popover.querySelector('button').focus();
 }
 function dialog(title,content){
  const modal=document.getElementById('playlist-modal');
@@ -81,15 +96,15 @@ function matchesSong(song,query){return [mediaTitle(song),song.file_name,song.mu
 function renderPlaylistDetail(grid,initial,current){
  let p=initial, busy=false;
  let undo=null;
- grid.innerHTML=html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← ${ui('Back to playlists')}</button><div class="album-header"><div data-playlist-cover></div><div><h1>${esc(p.name)}</h1><p>${accessLabel(p)}</p><p class="playlist-comment">${esc(p.comment)}</p><p data-totals>${totals(p)}</p>${p.rules?html`<p class="playlist-comment" data-rule-summary="${esc(JSON.stringify(p.rules))}">${esc(playlistRulesSummary(p.rules))}</p><p>${ui('Your plays, favorites and ratings use your account. Shared smart playlists can show different songs to each viewer.')}</p><button class="btn" data-refresh-rules>Refresh results</button>`:''}${p.source?html`<div class="playlist-comment"><p>Following ${esc(p.source.path)} · ${p.source.base==='library'?'Library root':t('Playlist folder')} paths</p><p role="status">${p.source.status==='ready'?`${p.source.unavailable} unavailable · ${p.source.rejected} unsafe entries skipped`:"Source unavailable. Last imported songs retained."}</p>${p.owner_id===state.user?.id?html`<button class="btn" data-sync>Sync now</button>`:''}<button class="btn" data-detach>Stop following…</button><p>Stop following to add, remove or move songs.</p></div>`:''}<div class="playlist-actions">${favoriteButton('playlist',p.playlist_id,p)}${collectionButtons('Play playlist')}<button class="btn btn-ghost" data-playlist-actions aria-label="Playlist actions">Playlist actions ⋮</button><button class="btn" data-add>Add music</button><button class="btn" data-add-songs>Add songs</button><button class="btn" data-rules>Rules</button><button class="btn" data-edit>Edit playlist</button><button class="btn btn-ghost" data-delete>Delete playlist</button></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><button class="btn btn-ghost" data-clear>Clear</button><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
+ const meta=html`<details class="playlist-meta"><summary class="btn btn-ghost">Details</summary><p>${accessLabel(p)}</p>${p.comment?html`<p class="playlist-comment">${esc(p.comment)}</p>`:''}${p.rules?html`<p class="playlist-comment" data-rule-summary="${esc(JSON.stringify(p.rules))}">${esc(playlistRulesSummary(p.rules))}</p><p>${ui('Your plays, favorites and ratings use your account. Shared smart playlists can show different songs to each viewer.')}</p>`:''}${p.source?html`<div class="playlist-comment"><p>Following ${esc(p.source.path)} · ${p.source.base==='library'?'Library root':t('Playlist folder')} paths</p><p role="status">${p.source.status==='ready'?`${p.source.unavailable} unavailable · ${p.source.rejected} unsafe entries skipped`:"Source unavailable. Last imported songs retained."}</p><p>Stop following to add, remove or move songs.</p></div>`:''}</details>`;
+ grid.innerHTML=html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-back>← ${ui('Back to playlists')}</button><div class="album-header"><div data-playlist-cover></div><div><h1>${esc(p.name)}</h1><p data-totals>${totals(p)}</p>${meta}<div class="playlist-actions">${collectionButtons('Play playlist')}<button class="btn" data-add-songs>Add songs</button><button type="button" class="icon-btn" data-playlist-more aria-label="More" aria-haspopup="menu" title="More">☰</button><span hidden>${favoriteButton('playlist',p.playlist_id,p)}<button class="btn" data-add>Add music</button><button class="btn" data-rules>Rules</button><button class="btn" data-refresh-rules>Refresh results</button><button class="btn" data-edit>Edit playlist</button><button class="btn" data-export>Export M3U8…</button><button class="btn" data-membership>Containing playlists…</button><button class="btn" data-sync>Sync now</button><button class="btn" data-detach>Stop following…</button><button class="btn" data-delete>Delete playlist</button></span></div></div></div><label>Find songs<input type="search" data-find aria-label="Find playlist songs"></label><p role="status" data-count></p><p role="alert" data-song-error></p><div class="playlist-actions" data-undo hidden><span>Song removed from playlist.</span><button class="btn" data-restore>Undo</button></div></div><div class="grid-full" data-rows></div>`;
  mountMusicArtwork(grid.querySelector('[data-playlist-cover]'),'playlist',p.playlist_id,current,cover({...p,artwork_revision:''}));
  const rows=grid.querySelector('[data-rows]'),find=grid.querySelector('[data-find]');
  const draw=(focusID=null)=>{
   state.media=p.songs;
   const visible=p.songs.map((song,index)=>({song,index,entry:p.entries[index]})).filter(({song})=>matchesSong(song,find.value));
   grid.querySelector('[data-totals]').innerHTML=totals(p);
-
-  grid.querySelectorAll('[data-collection-play], [data-collection-menu]').forEach(button=>button.disabled=!p.songs.length);
+  grid.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu]').forEach(button=>button.disabled=!p.songs.length);
   grid.querySelector('[data-count]').innerHTML=ui('Showing {shown} of {count} songs', {shown: visible.length, count: p.songs.length});
   rows.innerHTML=visible.length?visible.map(({song,index,entry})=>html`<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" data-entry="${esc(entry.entry_id)}" aria-label="Play ${esc(mediaTitle(song))}"><span class="text-muted music-number">${index+1}</span><span class="music-song"><button class="btn btn-ghost song-open" title="${esc(mediaTitle(song))}">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${esc(song.music?.artist||t('Unknown artist'))} · ${esc(song.music?.album||'')}</span></span><span>${fmtDur(song.duration)}</span><span hidden>${(p.can_edit===false||p.source||p.rules?[]:[['up',t('Move up')],['down',t('Move down')],['remove','Remove from playlist']]).map(([action,label])=>html`<button data-action="playlist-${action}" ${busy||(action==='up'&&index===0)||(action==='down'&&index===p.songs.length-1)?'disabled':''}>${label}</button>`).join('')}</span><button class="btn btn-ghost" data-song-menu aria-label="Song actions for ${esc(mediaTitle(song))}">⋮</button></div>`).join(''):html`<p>${p.songs.length?'No matching songs. Clear the search to see all songs.':t(p.rules?'No songs match these rules.':'This playlist is empty.')}</p>`;
   rows.querySelectorAll('.media-row').forEach(row=>{
@@ -116,20 +131,76 @@ function renderPlaylistDetail(grid,initial,current){
    toast(action==='remove'?'Song removed from playlist.':'Song moved.','success');
   }
  };
- find.oninput=()=>draw();grid.querySelector('[data-clear]').onclick=()=>{find.value='';draw();find.focus();};
+ find.oninput=()=>draw();
  bindCollectionActions(grid.querySelector('[data-collection-actions]'),()=>[{kind:'playlist',key:p.playlist_id}],current,p.name);
+ // Collection Shuffle/More fold into the playlist More menu so the strip stays Back/Play/Add songs/Find/More.
+ grid.querySelector('[data-collection-shuffle]').hidden=true;
+ grid.querySelector('[data-collection-menu]').hidden=true;
  grid.querySelectorAll('[data-add],[data-add-songs],[data-rules],[data-edit],[data-delete]').forEach(button=>button.hidden=p.can_edit===false);
  if(p.rules){grid.querySelectorAll('[data-add],[data-add-songs]').forEach(b=>b.hidden=true);grid.querySelector('[data-refresh-rules]').onclick=reload;}
- if(p.source){grid.querySelector('[data-rules]').hidden=true;grid.querySelectorAll('[data-add],[data-add-songs]').forEach(b=>b.hidden=true);const sync=grid.querySelector('[data-sync]');if(sync)sync.onclick=()=>changeSource(p,false,current);grid.querySelector('[data-detach]').onclick=()=>changeSource(p,true,current);}
- grid.querySelector('[data-playlist-actions]').onclick=()=>playlistActions(p,current);
+ else grid.querySelector('[data-refresh-rules]').hidden=true;
+ if(p.source){grid.querySelector('[data-rules]').hidden=true;grid.querySelectorAll('[data-add],[data-add-songs]').forEach(b=>b.hidden=true);const sync=grid.querySelector('[data-sync]');if(sync){if(p.owner_id!==state.user?.id)sync.hidden=true;else sync.onclick=()=>changeSource(p,false,current);}grid.querySelector('[data-detach]').onclick=()=>changeSource(p,true,current);}
+ else {grid.querySelector('[data-sync]').hidden=true;grid.querySelector('[data-detach]').hidden=true;}
+ grid.querySelector('[data-playlist-more]').onclick=event=>playlistDetailMore(event.currentTarget,grid,()=>p,current);
  grid.querySelector('[data-add]').onclick=()=>addMusic(p,current);
  grid.querySelector('[data-add-songs]').onclick=()=>addSongs(p,current);
  grid.querySelector('[data-rules]').onclick=()=>editRules(p,current);
  grid.querySelector('[data-edit]').onclick=()=>editPlaylist(p,current);
+ grid.querySelector('[data-export]').onclick=()=>exportPlaylist(p,current);
+ grid.querySelector('[data-membership]').onclick=()=>showMembership(p,current);
  grid.querySelector('[data-delete]').onclick=()=>deletePlaylist(p,current);
  grid.querySelector('[data-restore]').onclick=async()=>{const saved=undo;if(!saved)return;if(await save({action:'add',media_ids:[saved.media],before_entry_id:saved.before},'restored')){undo=null;grid.querySelector('[data-undo]').hidden=true;toast('Song restored to playlist.','success');}};
  draw();
  if(pendingRulesID===p.playlist_id){pendingRulesID='';queueMicrotask(()=>{if(current())editRules(p,current,true);});}
+}
+function playlistDetailMore(button,grid,playlist,current){
+ const p=playlist();
+ const favorite=grid.querySelector('[data-entity-favorite]');
+ const collectionMenu=grid.querySelector('[data-collection-menu]');
+ const items=[
+  ['favorite',favorite?.getAttribute('aria-label')||t('Favorite playlist'),!favorite],
+  ['shuffle',t('Shuffle'),!p.songs.length],
+  ['collection',t('Queue and offline…'),!p.songs.length],
+  ['add',t('Add music'),grid.querySelector('[data-add]')?.hidden],
+  ['rules',t('Rules'),grid.querySelector('[data-rules]')?.hidden],
+  ['refresh',t('Refresh results'),grid.querySelector('[data-refresh-rules]')?.hidden],
+  ['edit',t('Edit playlist'),grid.querySelector('[data-edit]')?.hidden],
+  ['export',t('Export M3U8…'),false],
+  ['membership',t('Containing playlists…'),false],
+  ['sync',t('Sync now'),grid.querySelector('[data-sync]')?.hidden],
+  ['detach',t('Stop following…'),grid.querySelector('[data-detach]')?.hidden],
+  ['delete',t('Delete playlist'),grid.querySelector('[data-delete]')?.hidden],
+ ].filter(([, , hidden])=>!hidden);
+ const popover=document.createElement('div');
+ popover.className='shortcut-picker';popover.setAttribute('popover','auto');popover.setAttribute('role','menu');popover.setAttribute('aria-label',t('More playlist actions'));
+ popover.innerHTML=items.map(([action,label])=>html`<button class="btn btn-ghost" data-more="${action}">${esc(label)}</button>`).join('');
+ const run=action=>{
+  popover.hidePopover();
+  if(action==='favorite')favorite?.click();
+  else if(action==='shuffle')grid.querySelector('[data-collection-shuffle]')?.click();
+  else if(action==='collection'){
+   const restore=event=>{
+    if(event.target?.matches?.('.shortcut-picker') && event.newState==='closed'){
+     document.removeEventListener('toggle',restore,true);
+     queueMicrotask(()=>{if(button.isConnected)button.focus();});
+    }
+   };
+   document.addEventListener('toggle',restore,true);
+   collectionMenu?.click();
+  }
+  else if(action==='add')grid.querySelector('[data-add]')?.click();
+  else if(action==='rules')grid.querySelector('[data-rules]')?.click();
+  else if(action==='refresh')grid.querySelector('[data-refresh-rules]')?.click();
+  else if(action==='edit')grid.querySelector('[data-edit]')?.click();
+  else if(action==='export')grid.querySelector('[data-export]')?.click();
+  else if(action==='membership')grid.querySelector('[data-membership]')?.click();
+  else if(action==='sync')grid.querySelector('[data-sync]')?.click();
+  else if(action==='detach')grid.querySelector('[data-detach]')?.click();
+  else if(action==='delete')grid.querySelector('[data-delete]')?.click();
+ };
+ popover.querySelectorAll('[data-more]').forEach(item=>item.onclick=()=>run(item.dataset.more));
+ popover.addEventListener('toggle',event=>{if(event.newState==='closed'){popover.remove();if(button.isConnected)button.focus();}});
+ document.body.append(popover);popover.showPopover();popover.querySelector('button')?.focus();
 }
 function editRules(p,current,enable=Boolean(p.rules)){
  openPlaylistRules(p,{dialog,current,enable,save:API.playlistRules,saved:()=>{toast(t('Playlist rules saved.'),'success');reload();}});
@@ -159,11 +230,6 @@ async function addSongs(p,current){
  await load();
 }
 
-function playlistActions(p,current){
- const {modal,close}=dialog('Playlist actions',html`<button class="btn" data-export>Export M3U8…</button><button class="btn" data-membership>Containing playlists…</button>`);
- modal.querySelector('[data-membership]').onclick=()=>{close();showMembership(p,current);};
- modal.querySelector('[data-export]').onclick=()=>{close();exportPlaylist(p,current);};
-}
 function exportPlaylist(p,current){
  const filename=`playlist-${p.playlist_id}.m3u8`;
  const {modal,close,alive}=dialog('Export playlist',html`<p class="playlist-comment">${esc(p.name)}</p><p>UTF-8 M3U8 · <span class="playlist-comment">${esc(filename)}</span></p><p>Paths are relative to the server’s media root. Save this file beside the corresponding library folders in the other tool.</p><p>Only songs you can access with exportable paths are included; repeated songs keep their order. This file does not grant access to music.</p><p role="status" data-export-status></p><div class="playlist-actions"><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-download>Download M3U8</button></div>`);
