@@ -1,3 +1,5 @@
-Compact music, podcast, radio, admin and settings chrome behind More menus.
-Browser On this device files and standalone podcasts without signing in.
-Web Account API tokens, clearer admin sections, and quieter video fullscreen.
+Explore podcasts by search or popular charts, then subscribe and fetch episodes.
+Simpler Android menus for sharing, administration, notes and playlists.
+Queue feedback now disappears automatically; sync progress appears only for manual requests.
+The web library loads promptly while restoring a saved queue.
+Hide the playback lyrics control when no lyrics are available.
