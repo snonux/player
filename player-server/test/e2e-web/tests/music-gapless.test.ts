@@ -127,7 +127,7 @@ test('M21 seek, queue edit, speed and source fallback, themes and account scope'
     const pausedAt = await position(page);
     await page.waitForTimeout(300);
     expect(await position(page)).toBeCloseTo(pausedAt, 1);
-    await page.locator('#player [data-queue-toggle]').click();
+    await page.locator('.header-main [data-queue-toggle]').click();
     const list = page.locator('#queue-panel');
     await expect(list).toBeVisible();
     await openQueueRowMenuAction(page,1,/Move .+ down/);

@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { Evidence, loadFixture, SUPPORT_DIR, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, openSidebarMusic, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { minimizePlayer } from './helpers/player-options';
 
 test.skip(process.env.PLAYER_M40_ISOLATED !== '1', 'Requires an isolated disposable music fixture');
 test.use({ serviceWorkers: 'block' });
@@ -137,7 +138,7 @@ test('M40 artist Top songs empty, global fallback and personal rank play actual 
     assertValidCapture(second);
     expect(Math.abs((mainSegment(second.analysis)?.tone_hz || 0) - tones[1])).toBeLessThan(5);
     artifacts.push(second.wav);
-    if (await page.locator('#btn-minimize').isVisible()) await page.locator('#btn-minimize').click();
+    if (await page.locator('#player.open:not(.minimized)').count()) await minimizePlayer(page);
     await section.getByRole('button', { name: '▶ Play top songs', exact: true }).click();
     await expectPlaying(page, ids[0]);
     queue = await page.evaluate(async () => (await import('/js/queue.js' as string)).queueState());
@@ -148,7 +149,7 @@ test('M40 artist Top songs empty, global fallback and personal rank play actual 
     artifacts.push(first.wav);
     const globalShot = e.path('m40-global-source.png'); await page.screenshot({ path: globalShot, fullPage: true }); artifacts.push(globalShot);
 
-    if (await page.locator('#btn-minimize').isVisible()) await page.locator('#btn-minimize').click();
+    if (await page.locator('#player.open:not(.minimized)').count()) await minimizePlayer(page);
     await page.keyboard.press('Backspace');
     await expect(page.getByRole('heading', { name: 'Artists', exact: true })).toBeVisible();
     await openArtist(page, false);
@@ -162,7 +163,7 @@ test('M40 artist Top songs empty, global fallback and personal rank play actual 
     await expect(section).toContainText('your most-played credited songs');
     await expect(section.locator('li')).toHaveCount(2);
     await expect(section).not.toContainText(titles[1]);
-    if (await page.locator('#btn-minimize').isVisible()) await page.locator('#btn-minimize').click();
+    if (await page.locator('#player.open:not(.minimized)').count()) await minimizePlayer(page);
     await section.getByRole('button', { name: '▶ Play top songs', exact: true }).click();
     await expectPlaying(page, ids[2]);
     queue = await page.evaluate(async () => (await import('/js/queue.js' as string)).queueState());
@@ -172,7 +173,7 @@ test('M40 artist Top songs empty, global fallback and personal rank play actual 
     expect(Math.abs((mainSegment(own.analysis)?.tone_hz || 0) - tones[2])).toBeLessThan(5);
     artifacts.push(own.wav);
 
-    if (await page.locator('#btn-minimize').isVisible()) await page.locator('#btn-minimize').click();
+    if (await page.locator('#player.open:not(.minimized)').count()) await minimizePlayer(page);
     await page.setViewportSize({ width: 390, height: 844 });
     for (const theme of ['dark', 'light']) {
       if (await page.locator('html').getAttribute('data-theme') !== theme)

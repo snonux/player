@@ -189,8 +189,13 @@
   width: 100%;
 }
 .player .transport-controls { flex-wrap: wrap; }
+.player .transport-group {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
 
-.player-options[popover] {
+.player-options {
   position: fixed;
   inset: auto auto 1rem 1rem;
   margin: 0;
@@ -204,8 +209,10 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
+  z-index: 70;
 }
-.player-options:popover-open {
+.player-options:popover-open,
+.player-options:not([popover]):not([hidden]) {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.5rem;
@@ -226,14 +233,21 @@
 #bookmark-label { width: 100%; }
 #bookmarks-retry[hidden] { display: none; }
 .player .transport-controls .icon-btn {
-  flex: 0 0 var(--control-height);
-  width: var(--control-height);
-  height: var(--control-height);
+  flex: 0 0 2.75rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  min-width: 44px;
+  min-height: 44px;
+}
+.player .transport-controls .lyrics-toggle {
+  min-height: 44px;
 }
 .player .transport-controls .image-only {
-  flex-basis: 2.5rem;
-  width: 2.5rem;
-  height: 2.5rem;
+  flex-basis: 2.75rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  min-width: 44px;
+  min-height: 44px;
 }
 .player .transport-controls .volume-control { margin-left: auto; }
 .player.detached .transport-controls .icon-btn {

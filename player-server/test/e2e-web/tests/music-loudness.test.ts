@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { assertValidCapture, audioState, captureOutput, expectPlaying, keyboardLogin, mainSegment, openFolder, openSidebarMusic, playCard } from './helpers/music-ui';
+import { minimizePlayer } from './helpers/player-options';
 
 const FEATURE = 'M24 ReplayGain loudness';
 const GAIN_FOLDER = 'Gain Check';
@@ -89,7 +90,7 @@ async function level(page: Parameters<typeof captureOutput>[0], name: string, ar
 
 /** Keep the floating player from covering cards near the bottom of the grid. */
 async function playAnotherCard(page: Parameters<typeof playCard>[0], title: string, id: number) {
-  await page.locator('#btn-minimize').click();
+  await minimizePlayer(page);
   await playCard(page, title, id);
   await page.getByRole('button', { name: 'Restore player', exact: true }).click();
 }

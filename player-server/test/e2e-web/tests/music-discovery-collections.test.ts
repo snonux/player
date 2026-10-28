@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, openSidebarMusic, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { minimizePlayer } from './helpers/player-options';
 
 test.skip(process.env.PLAYER_M38_ISOLATED !== '1', 'Requires an isolated disposable music fixture');
 test.use({ serviceWorkers: 'block' });
@@ -175,7 +176,7 @@ test('M38 personal discovery collections expose complete ACL-scoped order, empty
     artifacts.push(audio.wav);
 
     // Existing Genre and Year/decade entry points retain their normal filters.
-    if (await page.locator('#btn-minimize').isVisible()) await page.locator('#btn-minimize').click();
+    if (await page.locator('#player.open:not(.minimized)').count()) await minimizePlayer(page);
     await page.getByLabel('Genre', { exact: true }).selectOption('Synthwave');
     await expect(page.getByRole('button', { name: 'Remove Genre: Synthwave' })).toBeVisible();
     await page.getByLabel('Year / decade').selectOption('2020-2029');

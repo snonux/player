@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { headerItem } from './helpers/header-menu';
+import { minimizePlayer } from './helpers/player-options';
 
 const webRoot = resolve(__dirname, '../../../web');
 
@@ -472,7 +473,7 @@ for (const width of [320, 1280]) {
       for (const id of ['btn-player-notes', 'btn-player-favorite', 'btn-bookmarks', 'btn-save-position', 'volume-slider']) await expect(panel.locator('#' + id)).toBeVisible();
       await page.getByRole('combobox', { name: 'Audio visualization' }).selectOption('wave');
       await expect(panel).toBeVisible();
-      await page.locator('#btn-minimize').click();
+      await minimizePlayer(page);
       await expect(player).toHaveClass(/minimized/);
       await page.locator('#btn-restore-player').click();
       await expect(panel).toBeVisible();
@@ -528,7 +529,7 @@ for (const width of [320, 1280]) {
       await page.keyboard.press('Escape');
     }
     await expect(player).not.toHaveClass(/is-fullscreen/);
-    await page.locator('#btn-minimize').click();
+    await minimizePlayer(page);
     await expect(player).toHaveClass(/minimized/);
     expect((await player.boundingBox())!.height).toBeLessThan(64);
     await page.getByRole('button', { name: 'Restore player', exact: true }).click();

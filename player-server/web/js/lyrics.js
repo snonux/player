@@ -104,6 +104,7 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
   onSeek = seconds => seekLyric(audio, seconds) }) {
   const stage = player?.querySelector('.stage');
   const controls = player?.querySelector('.controls');
+  const transport = player?.querySelector('.transport-controls');
   if (!audio || !stage || !controls) return null;
   const button = document.createElement('button');
   button.type = 'button';
@@ -116,7 +117,8 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
   panel.setAttribute('role', 'region');
   panel.setAttribute('aria-label', 'Lyrics');
   panel.tabIndex = 0;
-  controls.appendChild(button);
+  // Primary strip control when lyrics exist; compactControls leaves it there.
+  (transport || controls).appendChild(button);
   stage.appendChild(panel);
   const languageControl = document.createElement('label');
   languageControl.className = 'lyrics-language hidden';

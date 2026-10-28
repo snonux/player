@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState } from './helpers/music-ui';
+import { minimizePlayer } from './helpers/player-options';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable --session-artwork fixture and real MPRIS bus');
 let f:MusicFixture,e:Evidence;
@@ -144,7 +145,7 @@ test('M54 actual MPRIS artwork metadata and OS previous next play pause follow r
   for(const [theme,width] of [['dark',1366],['light',390]] as const) {
    await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
    await expect(page.locator('#player-music-identity')).toContainText('Aurora Lane · Night Transit');await page.screenshot({path:e.path(`m54-full-${theme}-${width}.png`)});
-   await page.locator('#btn-minimize').click();await expect(page.locator('#player-restore-title')).toContainText('Aurora Lane · Night Transit');await page.screenshot({path:e.path(`m54-mini-${theme}-${width}.png`)});
+   await minimizePlayer(page);await expect(page.locator('#player-restore-title')).toContainText('Aurora Lane · Night Transit');await page.screenshot({path:e.path(`m54-mini-${theme}-${width}.png`)});
    await page.getByRole('button',{name:'Restore player',exact:true}).click();
   }
   // Native typing and keyboard traversal remain separate from system actions.
@@ -161,7 +162,7 @@ test('M54 actual MPRIS artwork metadata and OS previous next play pause follow r
   }
   await page.screenshot({path:e.path('m54-untagged-no-art.png')});
   // q is the documented actual stop-and-close action. An OS default app icon/title is allowed; the old music identity must disappear.
-  await page.locator('#btn-minimize').focus();await page.keyboard.press('q');
+  await page.locator('#btn-play').focus();await page.keyboard.press('q');
   await expect.poll(async()=>(await audioState(page)).paused).toBe(true);
   await expect.poll(()=>exportedMetadata(owner)).not.toContain(JSON.stringify(c.title));
   proof.push({closedExport:exportedMetadata(owner)});
@@ -184,7 +185,7 @@ test('M54 detached OS owner, denied artwork and offline retry keep the current t
   proof.push(await osMetadata(owner,a,'m54-main-before-detach',[43,76,126]));
   const mainTrackId=trackId(property(owner,'Metadata'));expect(mainTrackId).not.toBe('');
   proof.push({mainBeforeDetach:await readiness(page,owner),mainTrackId});
-  const opened=context.waitForEvent('page');await page.locator('#btn-minimize').focus();await page.keyboard.press('d');
+  const opened=context.waitForEvent('page');await page.locator('#btn-play').focus();await page.keyboard.press('d');
   const popup=await opened;await popup.waitForLoadState('domcontentloaded');
   await expect.poll(()=>popup.locator('#player-music-identity').textContent()).toContain(a.title);
   expect(await page.evaluate(()=>navigator.mediaSession.metadata)).toBeNull();
@@ -230,7 +231,7 @@ test('M54 detached OS owner, denied artwork and offline retry keep the current t
    await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
    await expect(page.locator('#player-music-identity')).toContainText('A & B; C/D · Metadata Album');
    await page.screenshot({path:e.path(`m54-cover-full-${theme}-${width}.png`)});
-   await page.locator('#btn-minimize').click();await expect(page.locator('.player-mini-art')).toBeVisible();
+   await minimizePlayer(page);await expect(page.locator('.player-mini-art')).toBeVisible();
    expect(await page.locator('.player-mini-art').evaluate((image:HTMLImageElement)=>image.naturalWidth)).toBeGreaterThan(0);
    await page.screenshot({path:e.path(`m54-cover-mini-${theme}-${width}.png`)});await page.getByRole('button',{name:'Restore player',exact:true}).click();
   }

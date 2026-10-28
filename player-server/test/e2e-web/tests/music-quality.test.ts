@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { Evidence, loadFixture, track } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, openFolder, playCard, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { minimizePlayer } from './helpers/player-options';
 
 test('M50 actual quality responses, playback, next-open transition and seek', async ({ page, browser }, info) => {
   const f = loadFixture();
@@ -26,7 +27,7 @@ test('M50 actual quality responses, playback, next-open transition and seek', as
     await quality.selectOption(profile);
     expect(await page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentSrc)).toBe(before);
     // Reopen through the visible card: preferences deliberately apply next open.
-    await page.locator('#btn-minimize').click();
+    await minimizePlayer(page);
     await playCard(page, song.title, song.id);
     await page.getByRole('button', { name: 'Restore player', exact: true }).click();
     await expectPlaying(page, song.id);
@@ -100,7 +101,7 @@ test('M50 actual unavailable encoder fails visibly and Original recovers', async
   await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
   await panel.locator('select[aria-label="Stream quality"]').selectOption('original');
   await page.screenshot({ path: e.path('encoder-failure.png') });
-  await page.locator('#btn-minimize').click();
+  await minimizePlayer(page);
   await playCard(page, song.title, song.id);
   await page.getByRole('button', { name: 'Restore player', exact: true }).click();
   const out = await captureOutput(page, 1200, e.path('encoder-original-recovery.wav'));
@@ -122,7 +123,7 @@ test('M50 saved device default, themes, narrow controls and profile-list transpo
   await panel.locator('select[aria-label="Stream quality"]').selectOption('mp3192');
   await page.reload();
   await page.getByRole('button', { name: song.title, exact: true }).waitFor();
-  await page.locator('#btn-minimize').click();
+  await minimizePlayer(page);
   await playCard(page, song.title, song.id);
   await page.getByRole('button', { name: 'Restore player', exact: true }).click();
   await panel.locator('summary').click();

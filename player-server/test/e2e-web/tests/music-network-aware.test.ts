@@ -3,6 +3,7 @@ import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, openFolder, playCard, audioState, expectPlaying, captureOutput, assertValidCapture, mainSegment, openQueueMoreAction} from './helpers/music-ui';
+import { minimizePlayer } from './helpers/player-options';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires an isolated disposable music fixture');
 let fixture: MusicFixture;
@@ -55,7 +56,7 @@ async function openQuality(page: Page) {
 }
 
 async function reopenCard(page: Page, song: ReturnType<typeof track>) {
-  if (await page.locator('#btn-minimize').isVisible()) await page.locator('#btn-minimize').click();
+  if (await page.locator('#player.open:not(.minimized)').count()) await minimizePlayer(page);
   await playCard(page, song.title, song.id);
   const restore = page.getByRole('button', { name: 'Restore player', exact: true });
   if (await restore.isVisible()) await restore.click();
@@ -146,7 +147,7 @@ test('M52 Wi-Fi-only policy preserves current song, blocks cached/direct/convert
     if (new RegExp(`/api/media/(${second.id}|${third.id})/(stream|compat)`).test(request.url())) attempted.push(request.url());
   });
   async function attempt(song: ReturnType<typeof track>) {
-    if (await page.locator('#btn-minimize').isVisible()) await page.locator('#btn-minimize').click();
+    if (await page.locator('#player.open:not(.minimized)').count()) await minimizePlayer(page);
     const card = page.locator('.media-card').filter({ has: page.getByRole('button', { name: song.title, exact: true }) });
     await card.hover(); await card.getByRole('button', { name: 'Play', exact: true }).click();
     await expect(page.locator('#player-status')).toContainText('Library audio streaming waits for Wi-Fi.');

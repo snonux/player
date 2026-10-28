@@ -202,13 +202,14 @@
   <div id="player-music-identity" class="player-music-identity" hidden></div>
   <div class="controls">
     <div class="transport-controls">
-      <button id="btn-minimize" class="icon-btn" aria-label="Minimize player (Shift+C)">▾</button>
-      <button id="btn-play" class="icon-btn" aria-label="Play/Pause (Space/p)">▶</button>
-      <button id="btn-prev" class="icon-btn" aria-label="Previous">⏮</button>
-      <button id="btn-next" class="icon-btn" aria-label="Next">⏭</button>
+      <div class="transport-group" role="group" aria-label="Playback">
+        <button id="btn-prev" class="icon-btn" aria-label="Previous">⏮</button>
+        <button id="btn-play" class="icon-btn" aria-label="Play/Pause (Space/p)">▶</button>
+        <button id="btn-next" class="icon-btn" aria-label="Next">⏭</button>
+      </div>
+      <button id="btn-minimize" class="btn btn-sm" type="button" aria-label="Minimize player (Shift+C)">Minimize</button>
       <button id="btn-save-position" class="btn btn-sm hidden" type="button" aria-controls="bookmarks-modal">Save position</button>
       <button id="btn-bookmarks" class="btn btn-sm hidden" type="button" aria-controls="bookmarks-modal">Bookmarks</button>
-      <button class="btn btn-sm" data-queue-toggle title="Now Playing queue (Q)" data-i18n="Queue">Queue</button>
       <button id="btn-player-notes" class="btn btn-sm" type="button" aria-controls="notes-modal">Notes</button>
       <button id="btn-player-favorite" class="btn btn-sm" type="button" aria-label="Toggle favorite" data-i18n="Favorite">Favorite</button>
       <button id="btn-zoom-out" class="icon-btn image-only" aria-label="Zoom out">−</button>

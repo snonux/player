@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { minimizePlayer } from './helpers/player-options';
 
 test.skip(process.env.PLAYER_M45_ISOLATED !== '1', 'Requires an exclusively owned disposable fixture');
 test.use({ serviceWorkers: 'block' });
@@ -166,7 +167,7 @@ test('M45 complete streamed bytes, offline replay, eviction, prefetch, cancel, a
     await expect.poll(() => cachedHash(page, 0), { timeout: 60_000 }).toBe(expected.get(names[0]));
     proof.first_hash = await cachedHash(page, 0);
     await context.setOffline(true);
-    if (await page.locator('#btn-minimize').isVisible()) await page.locator('#btn-minimize').click();
+    if (await page.locator('#player.open:not(.minimized)').count()) await minimizePlayer(page);
     await play(page, 0);
     expect((await page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentSrc)).startsWith('blob:')).toBe(true);
     const sound = await captureOutput(page, 1400, evidence.path('offline-replay.wav'));
@@ -174,7 +175,7 @@ test('M45 complete streamed bytes, offline replay, eviction, prefetch, cancel, a
     expect(Math.abs(mainSegment(sound.analysis)!.tone_hz! - 440)).toBeLessThan(6);
     proof.offline_audio = mainSegment(sound.analysis); artifacts.push(sound.wav);
     await context.setOffline(false);
-    if (await page.locator('#btn-minimize').isVisible()) await page.locator('#btn-minimize').click();
+    if (await page.locator('#player.open:not(.minimized)').count()) await minimizePlayer(page);
     await play(page, 1);
     await expect.poll(() => cachedHash(page, 1), { timeout: 60_000 }).toBe(expected.get(names[1]));
     await expect.poll(() => rows(page)).toHaveLength(1);
@@ -217,7 +218,7 @@ test('M45 complete streamed bytes, offline replay, eviction, prefetch, cancel, a
     await panel.getByLabel('Playback buffering').selectOption('stream');
     await page.keyboard.press('Escape');
     mode = 'slow'; slowPath = `/api/media/${ids[0]}/stream`;
-    if (await page.locator('#btn-minimize').isVisible()) await page.locator('#btn-minimize').click();
+    if (await page.locator('#player.open:not(.minimized)').count()) await minimizePlayer(page);
     await first.hover();
     await first.getByRole('button', { name: 'Play', exact: true }).click();
     await settings(page);
