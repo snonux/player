@@ -1155,3 +1155,7 @@ body {
 /* Listening presence only concerns music, so it stays out of image and video views. */
 .main-content > .music-presence { display: none; }
 .main-content:has(#media-grid :is(.audio-card, .media-row, .album-card, [data-artist], [data-playlist])) > .music-presence { display: block; }
+
+.local-files-list { list-style: none; padding: 0; margin: 1rem 0; }
+.local-files-row { display: flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; }
+.local-files-row .btn-ghost { flex: 1 1 auto; text-align: left; min-height: 2.75rem; }

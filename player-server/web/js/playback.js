@@ -1,4 +1,4 @@
-import { offlineMusicMode } from './offline-context.js';
+import { offlineMusicMode, deviceLibraryMode } from './offline-context.js';
 import { libraryPresenceSnapshot } from './playback-presence.js';
 import { musicStreamingBlocked, MusicNetworkRestricted, networkPolicyMessage } from './network-policy.js';
 import { stopRenderer } from './renderer.js';
@@ -106,7 +106,7 @@ let gapless = null;
 
 function cancelLiveRequest() { liveRequest++; pendingLiveRequest = 0; }
 export function toggleDetach() {
-  if (!offlineMusicMode() && !currentMedia?.live_radio) toggleDetachedWindow();
+  if (!deviceLibraryMode() && !currentMedia?.live_radio) toggleDetachedWindow();
 }
 // A radio selection must release the existing owner before opening any decoder.
 export async function playLiveRadio(media, url, art = '') {
@@ -204,7 +204,7 @@ export function initPlayer(options = {}) {
       return next && (next.media?.is_podcast || next.media?.podcast_episode || state.sets.some(set => set.id === next.media?.set_id && set.is_podcast)) ? null : next;
     }, available: () => queueState().active && !isDetached() && !isCasting() && reportProgress,
     boundary: adoptGaplessBoundary, fallback: returnToStreaming });
- if (!offlineMusicMode()) initStreamQuality(e.player);
+ if (!deviceLibraryMode()) initStreamQuality(e.player);
   lyrics = initLyrics({ ...e, audio: audioTransport, getPosition: () => isCasting() ? castPosition() : audioTransport.currentTime, onSeek: seconds => {
     if (isCasting()) {
       const duration = castDuration() || effectiveDuration();
@@ -745,8 +745,8 @@ export function loadMediaDirect(media, streamUrl, thumbnailUrl, resumeFrom = 0, 
 // loadMedia shows a library item in the main window; the caller has already
 // set currentMedia.
 function loadMedia(media, resumeFrom = 0) {
-  reportProgress = !offlineMusicMode();
-  const thumbnailUrl = !offlineMusicMode() && media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '';
+  reportProgress = !deviceLibraryMode();
+  const thumbnailUrl = !deviceLibraryMode() && media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '';
   showMedia(media, { url: mediaPlaybackUrl(media), resumeFrom, library: true, userId: state.user?.id }, thumbnailUrl);
 }
 
@@ -869,7 +869,7 @@ function startSource(m, media, url, resumeFrom) {
       (media.podcast_lease != null && media.podcast_lease !== podcastSyncStatus().generation)) {
     failPlayback(media, 'Account changed. Select the episode again.'); return;
   }
-  if (offlineMusicMode() && !media.offlinePinURL) {
+  if (deviceLibraryMode() && !media.offlinePinURL) {
     failPlayback(media, 'Saved download unavailable. Reconnect to download it again.');
     return;
   }
@@ -878,7 +878,7 @@ function startSource(m, media, url, resumeFrom) {
   const tryGapless = m === els().audio && currentSource?.library && !media.offlinePinURL && gapless?.wants(media);
   const prepared = media.podcast_prepared;
   delete media.podcast_prepared;
-  const reconcile = !prepared && (currentSource?.library || currentSource?.authenticated) && podcastSyncStatus().account && !offlineMusicMode();
+  const reconcile = !prepared && (currentSource?.library || currentSource?.authenticated) && podcastSyncStatus().account && !deviceLibraryMode();
   if (!reconcile && !networkBlocked && !tryGapless && !useCache && !/\/compat(?:\?|$)/.test(url)) {
     attachSource(m, url, resumeFrom);
     return;

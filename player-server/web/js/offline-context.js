@@ -1,8 +1,14 @@
-// Explicit local-download mode is separate from authenticated server identity.
-// It is never persisted as an online user or used to construct credentials.
+// Explicit local-download / on-device modes are separate from authenticated server identity.
+// They are never persisted as an online user or used to construct credentials.
 let account = null;
 export function offlineMusicMode() {
  return new URLSearchParams(globalThis.location?.search || '').get('offline') === 'music';
+}
+export function localFilesMode() {
+ return new URLSearchParams(globalThis.location?.search || '').get('local') === 'files';
+}
+export function deviceLibraryMode() {
+ return offlineMusicMode() || localFilesMode();
 }
 export function offlineMusicAccount() { return offlineMusicMode() ? account : null; }
 export function selectOfflineMusicAccount(id) {

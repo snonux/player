@@ -1,4 +1,4 @@
-import { offlineMusicMode } from './offline-context.js';
+import { offlineMusicMode, deviceLibraryMode } from './offline-context.js';
 import { cachedMediaDetail } from './playback-cache.js';
 import { preparedQueuePlan } from './queue-prepared.js';
 import { SavedQueueSync, savedQueueRequest } from './queue-sync.js';
@@ -33,7 +33,7 @@ export async function shuffleQueue({ reshuffle = false, mode = null } = {}) {
   if (enabled && chosen === 'albums') {
     const edits = queueChanges, scope = storageKey;
     albumLoading = true; status = 'Loading album order…'; document.dispatchEvent(new Event('queue:changed'));
-    try { albums = offlineMusicMode() ? Object.fromEntries(entries.map((entry,order) => [entry.media.id, {album_key:JSON.stringify([entry.media.music?.album || entry.media.id, entry.media.music?.album_artist || entry.media.music?.artist || '']),order}])) : await API.queueAlbums([...new Set(entries.map(e => e.media.id))]); }
+    try { albums = deviceLibraryMode() ? Object.fromEntries(entries.map((entry,order) => [entry.media.id, {album_key:JSON.stringify([entry.media.music?.album || entry.media.id, entry.media.music?.album_artist || entry.media.music?.artist || '']),order}])) : await API.queueAlbums([...new Set(entries.map(e => e.media.id))]); }
     catch { if (scope === storageKey) { albumLoading = false; status = 'Could not shuffle albums. Check your connection and retry.'; document.dispatchEvent(new Event('queue:changed')); } return; }
     if (edits !== queueChanges || scope !== storageKey) { if (scope === storageKey) { albumLoading = false; document.dispatchEvent(new Event('queue:changed')); } return; }
     albumLoading = false;
@@ -201,7 +201,7 @@ export function queueState() {
     status: autoplayStatus || status,
     restored, restoreError,
     position: positionEntry === entries[index]?.id ? savedPosition : 0,
-    autoplay: { enabled: autoplay.enabled, loading: autoplay.loading, status: autoplayStatus, available: !offlineMusicMode() },
+    autoplay: { enabled: autoplay.enabled, loading: autoplay.loading, status: autoplayStatus, available: !deviceLibraryMode() },
   };
 }
 // Prepared playback is tied to queue occurrences, not media IDs (duplicates
@@ -260,7 +260,7 @@ export async function jumpQueue(at, automatic = false, preserveNext = false, res
   const operation = ++revision, intent = beginPlaybackIntent(), entry = entries[at];
   index = at; loading = true; status = 'Loading track…'; notify();
   let position = restored && positionEntry === entry.id ? savedPosition : 0;
-  if (!offlineMusicMode() && !restart && !(restored && positionEntry === entry.id) && entry.media.duration > 1200) {
+  if (!deviceLibraryMode() && !restart && !(restored && positionEntry === entry.id) && entry.media.duration > 1200) {
     try { const p = (await API.mediaDetail(entry.media.id))?.progress; position = p?.finished ? 0 : p?.position_seconds || 0; } catch {}
   }
   if (operation !== revision || !isPlaybackIntent(intent) || entries[index]?.id !== entry.id) return;
@@ -276,7 +276,7 @@ async function tryAutoplayRelated() {
   const pending = autoplay.resolve({
     seedId: seed.media.id,
     excluded: entries.map(entry => entry.media.id),
-    online: !offlineMusicMode() && (typeof navigator === 'undefined' || navigator.onLine !== false),
+    online: !deviceLibraryMode() && (typeof navigator === 'undefined' || navigator.onLine !== false),
     current: () => queueState().active && entries[index]?.id === occurrence,
     fetch: id => API.relatedMusic('song', String(id)),
   });
@@ -376,7 +376,7 @@ export function undoQueue(expected) {
 // Switching local snapshots drops Undo and all old-account occurrences. It does
 // not bind or overwrite authenticated account queue/session persistence.
 export function resetOfflineQueue() {
- if (!offlineMusicMode()) return;
+ if (!deviceLibraryMode()) return;
  beginPlaybackIntent(); revision++; activeID=null; entries=[]; index=-1;
  canonical=[]; undo=null; label=''; loading=false; albumLoading=false;
  restored=false; restoreError=false; savedPosition=0; positionEntry=null;
