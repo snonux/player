@@ -155,6 +155,15 @@ export async function openSidebarMusic(
   }
 }
 
+/** Open the albums/artists Filters disclosure when present and closed. */
+export async function openMusicFilters(page: Page): Promise<void> {
+  const filters = page.locator('[data-music-filters]');
+  if (!(await filters.count())) return;
+  if (await filters.evaluate((el: HTMLDetailsElement) => el.open)) return;
+  await filters.locator(':scope > summary').click();
+  await expect(filters).toHaveAttribute('open', '');
+}
+
 /**
  * Forget saved progress so the item starts at 0:00. Player resumes audio
  * where the account left off; a short fixture track left near its end by an

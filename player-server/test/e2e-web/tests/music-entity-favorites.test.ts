@@ -2,7 +2,7 @@ import { expect, request, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
-import { keyboardLogin, openSidebarMusic, openPlaylistNewAction, openPlaylistDetailMoreAction } from './helpers/music-ui';
+import { keyboardLogin, openMusicFilters, openSidebarMusic, openPlaylistNewAction, openPlaylistDetailMoreAction } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local music fixture');
 let fixture: MusicFixture;
@@ -55,6 +55,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
     await albumHeart.click();
     await expect(albumHeart).toHaveAttribute('aria-pressed', 'true');
     await expect(albumHeart).toBeFocused();
+    await openMusicFilters(page);
     await page.getByRole('checkbox', { name: 'Favorites only' }).check();
     await expect(albumCard).toBeVisible();
     await expect(page.locator('[data-album]')).toHaveCount(1);
@@ -64,6 +65,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
     await expect(await heart(page, 'album', album.album_key)).toHaveAttribute('aria-pressed', 'true');
     await page.keyboard.press('Backspace');
     await expect(albumCard.locator('.collection-open')).toBeFocused();
+    // Active favorites filter keeps Filters open so the checkbox stays reachable.
     await expect(page.getByRole('checkbox', { name: 'Favorites only' })).toBeChecked();
 
     await catalog(page, 'Artists');
@@ -112,6 +114,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
 
     // A failed write preserves the old pressed state and can be retried online.
     await catalog(page, 'Albums');
+    await openMusicFilters(page);
     await page.getByRole('checkbox', { name: 'Favorites only' }).check();
     await context.setOffline(true);
     await (await heart(page, 'album', album.album_key)).click();

@@ -22,9 +22,21 @@ export function bindRatings(grid,current) {
  if(pendingRatingFocus){const match=[...grid.querySelectorAll('[data-music-rating]')].find(select=>select.dataset.kind===pendingRatingFocus.kind && select.dataset.key===pendingRatingFocus.key);pendingRatingFocus=null;if(match)requestAnimationFrame(()=>{if(current()&&match.isConnected)match.focus();});}
 }
 export function ratingFilters(grid,view,reload) {
- const heading=grid.querySelector('.grid-full');if(!heading)return;
- heading.insertAdjacentHTML('beforeend',`<label><input type="checkbox" data-rated-only ${view.rated?'checked':''}> Rated only</label> <label>Rating order <select data-rating-order aria-label="Rating order"><option value="" ${!view.ratingSort?'selected':''}>Current order</option><option value="rating" ${view.ratingSort?'selected':''}>Highest rated</option></select></label>`);
- heading.querySelector('[data-rated-only]').onchange=e=>{state.music.rated=e.target.checked;reload();};
- heading.querySelector('[data-rating-order]').onchange=e=>{state.music.ratingSort=e.target.value;reload();};
+ // Prefer the shared Filters disclosure; fall back to the heading for views
+ // that have not folded filters yet (artist list until qs3).
+ const host=grid.querySelector('[data-music-filter-extras]') || grid.querySelector('.grid-full');
+ if(!host)return;
+ // Layout Sort owns rating order on albums/search; keep Rating-order only when
+ // falling back without a Sort toolbar (artists until they get one).
+ const showOrder=!grid.querySelector('[data-layout-sort]');
+ const order=showOrder?` <label>Rating order <select data-rating-order aria-label="Rating order"><option value="" ${!view.ratingSort?'selected':''}>Current order</option><option value="rating" ${view.ratingSort?'selected':''}>Highest rated</option></select></label>`:'';
+ host.insertAdjacentHTML('beforeend',`<label><input type="checkbox" data-rated-only ${view.rated?'checked':''}> Rated only</label>${order}`);
+ host.querySelector('[data-rated-only]').onchange=e=>{
+  state.music.rated=e.target.checked;
+  state.music.filtersOpen=true;
+  reload();
+ };
+ host.querySelector('[data-rating-order]')?.addEventListener('change',e=>{state.music.ratingSort=e.target.value;reload();});
 }
+// Keep ratingSort in params for URL/state leftovers and search until ts3 clears it.
 export function ratingParams(view){return {rated:view.rated || false,...(view.ratingSort?{sort:'rating'}:{})};}

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { normalizeMusicLayout, readMusicLayout, sortMusic } from '../music-layout.js';
+import { normalizeMusicLayout, readMusicLayout, writeMusicLayout, sortMusic } from '../music-layout.js';
 import { state } from '../state.js';
 
 const data=[{album_key:'a',title:'Second',year:2020,artist:'Z'},{album_key:'b',title:'First',year:1990,artist:'A'},{album_key:'c',title:'Missing',artist:'A'}];
@@ -12,15 +12,19 @@ assert.deepEqual(sortMusic(songs,normalizeMusicLayout({sort:'artist'},'songs'),'
 assert.deepEqual(normalizeMusicLayout({sort:'rating',columns:['artist','unsupported'],view:'bad'},'songs'),{sort:'rating',descending:false,columns:['artist'],view:'grid'});
 const storage=new Map();
 globalThis.location={origin:'https://one.example'};
-globalThis.localStorage={getItem:key=>storage.get(key) ?? null};
+globalThis.localStorage={getItem:key=>storage.get(key) ?? null,setItem:(key,value)=>storage.set(key,value)};
 state.user={id:1};
 storage.set('player.music-layout.v1:https://one.example:1:albums',JSON.stringify({view:'table',columns:[],sort:'year',descending:true}));
 assert.equal(readMusicLayout('albums').view,'table');
 assert.deepEqual(readMusicLayout('albums').columns,[],'hiding optional columns survives restart');
 assert.equal(readMusicLayout('songs').sort,'title','song settings independent');
+assert.equal(writeMusicLayout('albums',{sort:'rating',descending:true,view:'table',columns:[]}),true);
+assert.equal(readMusicLayout('albums').sort,'rating');
+assert.equal(readMusicLayout('albums').descending,true,'ratingSort migration persists Sort by Rating');
 state.user={id:2};assert.equal(readMusicLayout('albums').view,'grid','account settings isolated');
 state.user={id:1};globalThis.location.origin='https://two.example';assert.equal(readMusicLayout('albums').view,'grid','server settings isolated');
 localStorage.getItem=()=>{throw Error('Storage blocked');};assert.equal(readMusicLayout('albums').sort,'title');
+localStorage.setItem=()=>{throw Error('Storage blocked');};assert.equal(writeMusicLayout('albums',{sort:'rating'}),false);
 console.log('Music layout sorting, missing metadata, immutable sequences, normalization and server/account isolation passed.');
 
 // Exercise production disclosure wiring before the real global library handler,

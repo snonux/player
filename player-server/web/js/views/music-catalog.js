@@ -7,7 +7,7 @@ import { mountArtistTopSongs } from '../music-top-songs.js';
 import { listeningDetails } from '../music-listening.js';
 import { ratingControl, bindRatings, ratingFilters, ratingParams } from '../music-ratings.js';
 import { favoriteButton, bindFavorites, favoriteFilter } from '../music-favorites.js';
-import { readMusicLayout, sortMusic, musicColumns, musicColumnText, musicLayoutToolbar, bindMusicLayout } from '../music-layout.js';
+import { readMusicLayout, writeMusicLayout, sortMusic, musicColumns, musicColumnText, musicLayoutToolbar, bindMusicLayout } from '../music-layout.js';
 import { mountMusicFacets, facetParams, hasFacets } from '../music-facets.js';
 import { renderMusicSearch } from '../music-search.js';
 import { collectionButtons, bindCollectionActions, bindCollectionCatalog, cancelCollectionSelection } from '../collection-actions.js';
@@ -127,10 +127,15 @@ export async function renderMusic(grid, isCurrent) {
   if (view.artists && !view.album) { await renderArtists(grid, view, current);await mountMusicFacets(grid,view,current,reload); return; }
   let data = view.album ? await API.album(view.album) : await API.albums({...ratingParams(view),collection:personalCollections.includes(view.collection)?'':view.collection || '',favorite:view.favorites || false,...facetParams(view.facets),...(view.artist ? {artist:view.artist} : {}),...libraryQueryParams()});
   if (!current()) return;
-  if (!view.album) await mountMusicLibraryFilter(grid, () => { if (current()) reload(); });
   if(!view.album && personalCollections.includes(view.collection)) data=discoverAlbums(data,view.collection);
   const layoutPreferences=readMusicLayout('albums');
-  if(!view.album && !view.ratingSort && !view.collection) data=sortMusic(data,layoutPreferences,'albums');
+  // Migrate leftover Rating-order into Sort by Rating and persist the layout preference.
+  if(!view.album && view.ratingSort && !view.collection) {
+   layoutPreferences.sort='rating'; layoutPreferences.descending=true;
+   writeMusicLayout('albums', layoutPreferences);
+   delete state.music.ratingSort; view.ratingSort='';
+  }
+  if(!view.album && !view.collection) data=sortMusic(data,layoutPreferences,'albums');
   if(!view.album && ['random','liked_mix'].includes(view.collection) && !view.collectionKeys) { state.music.collectionKeys=data.map(a=>a.album_key);view.collectionKeys=state.music.collectionKeys; }
   if(!view.album && ['random','liked_mix'].includes(view.collection) && view.collectionKeys) { const ranks=new Map(view.collectionKeys.map((key,i)=>[key,i]));data.sort((a,b)=>(ranks.get(a.album_key) ?? Infinity)-(ranks.get(b.album_key) ?? Infinity)); }
   if (view.album) {
@@ -166,10 +171,26 @@ export async function renderMusic(grid, isCurrent) {
    grid.querySelectorAll('[data-song-info]').forEach(button => button.onclick = () => { selectByElement(button.closest('.media-row')); document.dispatchEvent(new Event('music:song-info')); });
   } else {
    count.innerHTML = view.collection ? `${ui('Music')} · ${esc(t(albumCollections[view.collection]?.[0] || 'Albums'))} · ${uiCount(data.length, '{count} album', '{count} albums')}` : view.artist ? ui('Albums by {name}', {name: view.name || t('Artist')}) : `${ui('Music')} · ${uiCount(data.length, '{count} album', '{count} albums')}`;
-   grid.innerHTML = html`<div class="grid-full"><button class="btn btn-ghost" data-music-back>← ${view.collection || view.artist ? ui('Back to albums') : ui('Back to Sets')}</button>${view.collection ? html`<h1>${albumCollections[view.collection]?.[0] || t('Albums')}</h1><p class="text-muted">${albumCollections[view.collection]?.[1] || ''}</p>` : ''}${view.artist ? html`<h1>Albums by ${esc(view.name || 'artist')}</h1>` : ''}</div>` + (data.length ? data.map(album => html`<div class="${layoutPreferences.view==='table'?'media-row':'media-card'} album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${layoutPreferences.view==='grid'?cover(album):''}<div class="card-body">${favoriteButton('album',album.album_key,album)} ${ratingControl('album',album.album_key,album)}<div class="title" title="${esc(album.title)}">${esc(album.title)}</div>${layoutPreferences.columns.map(column=>html`<span class="music-column text-muted text-sm" data-column="${column}"><span class="music-column-label">${ui(musicColumns.albums[column])}: </span>${esc(musicColumnText(album,column,'albums'))}</span>`).join('')}${hasFacets(view) ? html`<span class="text-muted text-sm">${album.song_count} matching songs</span>` : ''}${listeningDetails(album)}${album.from_folder ? html`<span class="text-muted text-xs">From folder</span>` : ''}</div></div>`).join('') : html`<p class="grid-full">${view.collection?albumCollections[view.collection]?.[2]:view.favorites?ui('No favorite albums. Show all albums to favorite one.'):ui('Nothing matches these filters. Clear filters or browse Sets for more music.')}</p>`);
+   grid.innerHTML = html`<div class="grid-full"><button class="btn btn-ghost" data-music-back>← ${view.collection || view.artist ? ui('Back to albums') : ui('Back to Sets')}</button>${view.collection ? html`<h1>${albumCollections[view.collection]?.[0] || t('Albums')}</h1><p class="text-muted">${albumCollections[view.collection]?.[1] || ''}</p>` : ''}${view.artist ? html`<h1>Albums by ${esc(view.name || 'artist')}</h1>` : ''}</div>` + (data.length ? data.map(album => html`<div class="${layoutPreferences.view==='table'?'media-row':'media-card'} album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${layoutPreferences.view==='grid'?cover(album):''}<div class="card-body">${favoriteButton('album',album.album_key,album)} ${compactAlbumRating(album)}<button type="button" class="icon-btn" data-album-card-more aria-label="More" aria-haspopup="menu" title="More">☰</button><div class="title" title="${esc(album.title)}">${esc(album.title)}</div>${layoutPreferences.columns.map(column=>html`<span class="music-column text-muted text-sm" data-column="${column}"><span class="music-column-label">${ui(musicColumns.albums[column])}: </span>${esc(musicColumnText(album,column,'albums'))}</span>`).join('')}${hasFacets(view) ? html`<span class="text-muted text-sm">${album.song_count} matching songs</span>` : ''}${listeningDetails(album)}${album.from_folder ? html`<span class="text-muted text-xs">From folder</span>` : ''}</div></div>`).join('') : html`<p class="grid-full">${view.collection?albumCollections[view.collection]?.[2]:view.favorites?ui('No favorite albums. Show all albums to favorite one.'):ui('Nothing matches these filters. Clear filters or browse Sets for more music.')}</p>`);
    grid.classList.toggle('music-table',layoutPreferences.view==='table');
    grid.querySelector('.grid-full').insertAdjacentHTML('beforeend',musicLayoutToolbar('albums',layoutPreferences));
-   grid.querySelectorAll('[data-album]').forEach(card => card.onclick = () => openAlbum(card.dataset.album));
+   grid.querySelectorAll('[data-album]').forEach(card => card.onclick = event => {
+    // Open album (.collection-open) must still open; suppress only nested chrome.
+    if (event.target.closest('.collection-open')) {
+     openAlbum(card.dataset.album);
+     return;
+    }
+    if (event.target.closest('button, input, select, label, [data-album-card-more], .album-rating-badge, [data-rating-label]')) return;
+    openAlbum(card.dataset.album);
+   });
+   grid.querySelectorAll('[data-album-card-more]').forEach(button => button.onclick = event => {
+    event.stopPropagation();
+    albumCardMore(event.currentTarget, event.currentTarget.closest('.album-card'));
+   });
+   grid.querySelectorAll('[data-album-rating-open]').forEach(badge => badge.onclick = event => {
+    event.stopPropagation();
+    openAlbumRatingEditor(badge, badge);
+   });
    if(view.collection) {
     const actions=document.createElement('div');actions.innerHTML=collectionButtons('Play collection');grid.querySelector('.grid-full').append(actions);
     bindCollectionActions(actions,()=>data.map(a=>({kind:'album',key:a.album_key})),current,albumCollections[view.collection][0]);
@@ -179,7 +200,6 @@ export async function renderMusic(grid, isCurrent) {
    bindCollectionCatalog(grid,data,'album','album_key','title',current);
   }
   bindFavorites(grid,current);bindRatings(grid,current);
-  if(!view.album){favoriteFilter(grid,view,reload);ratingFilters(grid,view,reload);}
   grid.querySelector('[data-music-back]').onclick = backMusic;
   const saved = positions.get(viewKey(view));
   const restored = saved?.album ? grid.querySelector(`[data-album="${CSS.escape(saved.album)}"]`) : saved?.song ? grid.querySelector(`[data-id="${CSS.escape(saved.song)}"]`) : null;
@@ -187,7 +207,13 @@ export async function renderMusic(grid, isCurrent) {
   if (target) { selectByElement(target); focusSelectedCard(); } else grid.querySelector('[data-music-back]')?.focus();
   restoreSavedScroll(grid,saved,current);
   await mountMusicFacets(grid,view,current,reload);
-  if(!view.album) { bindMusicLayout(grid,'albums',layoutPreferences,reload,remember);if(view.collection) grid.querySelectorAll('[data-layout-sort], [data-layout-direction], [data-rating-order]').forEach(control=>{control.disabled=true;control.title='This collection uses its own order.';}); }
+  // Filters extras (favorites/rated/libraries) mount after the disclosure exists.
+  if(!view.album){
+   favoriteFilter(grid,view,reload);ratingFilters(grid,view,reload);
+   await mountMusicLibraryFilter(grid, () => { if (current()) reload(); });
+   bindMusicLayout(grid,'albums',layoutPreferences,()=>{delete state.music.ratingSort;reload();},remember);
+   if(view.collection) grid.querySelectorAll('[data-layout-sort], [data-layout-direction]').forEach(control=>{control.disabled=true;control.title='This collection uses its own order.';});
+  }
  } catch (e) {
   if (!current()) return;
   grid.innerHTML = html`<div class="grid-full" role="alert"><p>${view.search ? t('Could not search music') : t('Could not load')} ${view.search ? '' : view.artists && !view.album ? 'artists' : view.playlists ? 'playlists' : 'albums'}: ${esc(e.message || t('Connection unavailable. Check your connection.'))}</p><button class="btn" data-retry>Retry</button><button class="btn btn-ghost" data-music-back>← Back</button></div>`;
@@ -195,6 +221,53 @@ export async function renderMusic(grid, isCurrent) {
   grid.querySelector('[data-retry]').onclick = reload;
   grid.querySelector('[data-music-back]').onclick = backMusic;
  }
+}
+function compactAlbumRating(album) {
+ const value = Number(album.rating || 0);
+ return html`<button type="button" class="btn btn-ghost album-rating-badge" data-album-rating-open aria-label="${value ? `${value} stars` : 'Unrated'}">${value ? '★'.repeat(value) : '☆'}</button><span hidden>${ratingControl('album', album.album_key, album)}</span>`;
+}
+function openAlbumRatingEditor(badge, focusBack) {
+ const rating = badge.parentElement?.querySelector('[data-music-rating]') || badge.nextElementSibling?.querySelector?.('[data-music-rating]');
+ const ratingWrap = badge.nextElementSibling;
+ if (!rating || !ratingWrap) return;
+ ratingWrap.hidden = false;
+ rating.focus();
+ const hide = () => {
+  ratingWrap.hidden = true;
+  const shown = Number(rating.dataset.saved || 0);
+  badge.textContent = shown ? '★'.repeat(shown) : '☆';
+  badge.setAttribute('aria-label', shown ? `${shown} stars` : 'Unrated');
+  if (focusBack?.isConnected) focusBack.focus();
+  else if (badge.isConnected) badge.focus();
+  rating.removeEventListener('change', onChange);
+  rating.removeEventListener('blur', onBlur);
+ };
+ const onChange = () => {
+  // Wait until bindRatings finishes (disabled clears; dataset.saved is authoritative).
+  const sync = () => {
+   if (rating.disabled) { requestAnimationFrame(sync); return; }
+   hide();
+  };
+  requestAnimationFrame(sync);
+ };
+ const onBlur = () => setTimeout(() => { if (document.activeElement !== rating) hide(); }, 0);
+ rating.addEventListener('change', onChange, { once: true });
+ rating.addEventListener('blur', onBlur, { once: true });
+}
+function albumCardMore(button, card) {
+ if (!card) return;
+ const badge = card.querySelector('[data-album-rating-open]');
+ // Heart stays on the card; More only opens the rating editor (no duplicate Favorite).
+ const popover = document.createElement('div');
+ popover.className = 'shortcut-picker'; popover.setAttribute('popover', 'auto');
+ popover.setAttribute('role', 'menu'); popover.setAttribute('aria-label', t('More album actions'));
+ popover.innerHTML = html`<button class="btn btn-ghost" data-more="rating">${esc(t('Album rating'))}</button>`;
+ popover.querySelector('[data-more]').onclick = () => {
+  popover.hidePopover();
+  if (badge) openAlbumRatingEditor(badge, button);
+ };
+ popover.addEventListener('toggle', event => { if (event.newState === 'closed') { popover.remove(); if (button.isConnected) button.focus(); } });
+ document.body.append(popover); popover.showPopover(); popover.querySelector('button')?.focus();
 }
 function compactSongRating(song) {
  const value = Number(song.rating || 0);

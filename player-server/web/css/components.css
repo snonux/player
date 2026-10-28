@@ -339,13 +339,21 @@ label {
 @media (min-width: 700px) { body.queue-open .page { margin-right: min(28rem, 45vw); } }
 @media (max-width: 699px) { .queue-panel { top: 0; width: 100%; z-index: 300; } .queue-panel.open { display: block; } .queue-content { background: var(--bg-surface); padding: 1rem; } }
 
-.music-facet-controls, .music-facet-chips { display: flex; flex-wrap: wrap; gap: var(--gap); align-items: center; }
-.music-facet-controls label { display: flex; align-items: center; gap: .375rem; max-width: 100%; }
-.music-facet-controls select { max-width: min(16rem, 65vw); }
+.music-facet-controls, .music-facet-chips, .music-filter-extras { display: flex; flex-wrap: wrap; gap: var(--gap); align-items: center; }
+.music-facet-controls label, .music-filter-extras label { display: flex; align-items: center; gap: .375rem; max-width: 100%; min-height: 2.75rem; }
+.music-facet-controls select, .music-filter-extras select { max-width: min(16rem, 65vw); }
+.music-filters { padding: .5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.music-filters > summary { cursor: pointer; min-height: 2.75rem; display: inline-flex; align-items: center; }
 .music-facet-controls details { padding: .5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.music-facet-controls summary { cursor: pointer; }
+.music-facet-controls summary { cursor: pointer; min-height: 2.75rem; display: inline-flex; align-items: center; }
 .music-facet-chips { margin-top: .5rem; }
 .music-facet-chips button { max-width: 100%; overflow-wrap: anywhere; }
+.music-libraries { display: flex; flex-direction: column; gap: .25rem; max-width: 100%; }
+.album-rating-badge {
+  display: inline-flex; align-items: center; min-width: 2.75rem; min-height: 2.75rem; letter-spacing: 0.05em;
+  color: var(--text-secondary); font-size: 0.85rem;
+}
+.album-card [data-album-card-more] { min-width: 2.75rem; min-height: 2.75rem; }
 
 /* Music layouts keep the existing selection, collection actions and theme. */
 .music-layout-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-block: 12px; }

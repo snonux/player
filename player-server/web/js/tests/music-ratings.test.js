@@ -23,10 +23,28 @@ select.value='0';await select.onchange();assert.equal(select.dataset.saved,'0');
 API.musicRating=async()=>{throw Error('offline');};select.value='4';await select.onchange();assert.equal(select.value,'0');assert.equal(select.disabled,false);
 let stopped=false;label.onclick({stopPropagation(){stopped=true;}});assert.equal(stopped,true);
 stopped=false;select.onkeydown({key:'Enter',stopPropagation(){stopped=true;}});assert.equal(stopped,true);
-let reloads=0;const checkbox={},order={};const heading={insertAdjacentHTML(){},querySelector:query=>query==='[data-rated-only]'?checkbox:order};
+
+// Albums Filters extras + layout Sort: Rated-only only (no Rating-order overlap).
+let reloads=0;let albumHtml='';const checkbox={};const extras={insertAdjacentHTML(_,html){albumHtml=html;},querySelector:sel=>sel==='[data-rated-only]'?checkbox:null};
 state.music={favorites:true,facets:{genre:'Jazz'}};
-ratingFilters({querySelector:()=>heading},{...state.music},()=>reloads++);
-checkbox.onchange({target:{checked:true}});order.onchange({target:{value:'rating'}});
-assert.deepEqual(state.music,{favorites:true,facets:{genre:'Jazz'},rated:true,ratingSort:'rating'});assert.equal(reloads,2);
+ratingFilters({querySelector:selector=>selector==='[data-music-filter-extras]'?extras:selector==='[data-layout-sort]'?{}:null},{...state.music},()=>reloads++);
+assert.match(albumHtml,/data-rated-only/);
+assert.doesNotMatch(albumHtml,/data-rating-order/);
+checkbox.onchange({target:{checked:true}});
+assert.deepEqual(state.music,{favorites:true,facets:{genre:'Jazz'},rated:true,filtersOpen:true});assert.equal(reloads,1);
+
+// Artists .grid-full fallback without Sort: keep Rating-order until qs3 adds a toolbar.
+reloads=0;let artistHtml='';
+const orderHandlers={};
+const orderSelect={addEventListener(name,handler){orderHandlers[name]=handler;}};
+const ratedSelect={};
+const artistHost={insertAdjacentHTML(_,html){artistHtml=html;},querySelector:query=>query==='[data-rated-only]'?ratedSelect:query==='[data-rating-order]'?orderSelect:null};
+state.music={favorites:true,facets:{genre:'Jazz'}};
+ratingFilters({querySelector:selector=>selector==='[data-music-filter-extras]'?null:selector==='.grid-full'?artistHost:null},{...state.music},()=>reloads++);
+assert.match(artistHtml,/data-rating-order/);
+ratedSelect.onchange({target:{checked:true}});
+orderHandlers.change({target:{value:'rating'}});
+assert.deepEqual(state.music,{favorites:true,facets:{genre:'Jazz'},rated:true,filtersOpen:true,ratingSort:'rating'});assert.equal(reloads,2);
+
 assert.deepEqual(sortMusic([{id:1,rating:1},{id:2,rating:5}],normalizeMusicLayout({sort:'rating',descending:true},'songs'),'songs').map(s=>s.id),[2,1]);
-console.log('Ratings controls: set/clear/error rollback, focus, native keyboard, account-view filters and song rating sort passed.');
+console.log('Ratings controls: set/clear/error rollback, focus, native keyboard, Rated-only with Sort overlap removed and artist Rating-order kept.');

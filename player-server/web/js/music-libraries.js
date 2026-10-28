@@ -22,6 +22,10 @@ export function libraryQueryParams() {
   return ids.length ? { library_ids: ids.join(',') } : {};
 }
 
+export function clearSelectedLibraries() {
+  try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* optional preference */ }
+}
+
 export async function loadMusicLibraries() {
   if (cached) return cached;
   cached = await API.musicLibraries();
@@ -47,7 +51,7 @@ export async function mountMusicLibraryFilter(host, onChange) {
   if (!Array.isArray(libs) || libs.length <= 1) return;
   const selected = new Set(selectedLibraryIds());
   const wrap = document.createElement('div');
-  wrap.className = 'music-libraries grid-full';
+  wrap.className = 'music-libraries';
   wrap.dataset.musicLibraries = '1';
   wrap.innerHTML = `<label class="text-xs">${ui('Libraries')}
     <select multiple size="${Math.min(libs.length, 4)}" aria-label="${ui('Filter music by library')}">
@@ -61,5 +65,7 @@ export async function mountMusicLibraryFilter(host, onChange) {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
     onChange?.(ids);
   });
-  host.prepend(wrap);
+  // Prefer the shared Filters disclosure extras slot when present.
+  const slot = host.querySelector('[data-music-filter-extras]') || host;
+  slot.append(wrap);
 }

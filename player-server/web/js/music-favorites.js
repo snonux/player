@@ -1,4 +1,5 @@
 import { API } from './api.js';
+import { state } from './state.js';
 import { escapeHtml as esc, toast } from './utils.js';
 
 function entityFavoriteLabel(favorite) {
@@ -25,7 +26,13 @@ export function bindFavorites(grid,current) {
  });
 }
 export function favoriteFilter(grid,view,reload) {
- const heading=grid.querySelector('.grid-full');if(!heading)return;
- heading.insertAdjacentHTML('beforeend',`<label><input type="checkbox" data-favorites-only ${view.favorites?'checked':''}> Favorites only</label>`);
- heading.querySelector('[data-favorites-only]').onchange=event=>{view.favorites=event.target.checked;document.dispatchEvent(new CustomEvent('music:favorite-filter',{detail:view.favorites}));reload();};
+ const host=grid.querySelector('[data-music-filter-extras]') || grid.querySelector('.grid-full');
+ if(!host)return;
+ host.insertAdjacentHTML('beforeend',`<label><input type="checkbox" data-favorites-only ${view.favorites?'checked':''}> Favorites only</label>`);
+ host.querySelector('[data-favorites-only]').onchange=event=>{
+  view.favorites=event.target.checked;
+  if(state.music) state.music.filtersOpen=true;
+  document.dispatchEvent(new CustomEvent('music:favorite-filter',{detail:view.favorites}));
+  reload();
+ };
 }

@@ -19,6 +19,10 @@ export function readMusicLayout(kind) {
  try { return normalizeMusicLayout(JSON.parse(localStorage.getItem(key(kind))),kind); }
  catch { return normalizeMusicLayout(null,kind); }
 }
+export function writeMusicLayout(kind, layout) {
+ try { localStorage.setItem(key(kind), JSON.stringify(normalizeMusicLayout(layout, kind))); return true; }
+ catch { return false; }
+}
 function value(item, column, kind) {
  if(kind==='albums' || column==='rating') return item[column];
  return column==='title' ? item.music?.title || item.file_name : column==='duration' ? item.duration : item.music?.[column];
