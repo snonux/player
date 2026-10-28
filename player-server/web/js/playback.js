@@ -643,7 +643,7 @@ export function stopAndClose() {
   }
   exitFullscreenIfNeeded();
   const e = els();
-  e.player?.classList.remove('open', 'has-image', 'minimized');
+  e.player?.classList.remove('open', 'has-image', 'has-video', 'minimized', 'fs-show-controls');
   e.video?.classList.add('hidden');
   e.audio?.classList.add('hidden');
   e.image?.classList.add('hidden');
@@ -810,12 +810,14 @@ function showImage(e, url) {
   e.image.classList.remove('hidden');
   e.image.src = url;
   e.player?.classList.add('open', 'has-image');
+  e.player?.classList.remove('has-video', 'fs-show-controls');
 }
 
 function showAudioVideo(e, media, url, thumbnailUrl, resumeFrom) {
   stopSlideshow();
   showTransportControls(e);
   const isVideo = media.type === 'video';
+  e.player?.classList.toggle('has-video', isVideo);
   const active = isVideo ? e.video : e.audio;
   const idle = isVideo ? e.audio : e.video;
   active.pause();
@@ -845,6 +847,8 @@ function showTransportControls(e) {
   e.btnSlideshow?.classList.add('hidden');
   e.player?.classList.remove('has-image');
   e.player?.classList.add('open');
+  // has-video is set by showAudioVideo for the active item.
+
   e.btnPlay.textContent = '⏸';
   e.bigPlay?.classList.add('hidden');
 }

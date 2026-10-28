@@ -129,6 +129,27 @@
   max-height: 100%;
 }
 
+/* Video fullscreen: chrome stays off until the user reveals it briefly. */
+.player.is-fullscreen.has-video .controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  border-top: none;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.72));
+  transition: opacity 0.2s ease;
+}
+.player.is-fullscreen.has-video.fs-show-controls .controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+.player.is-fullscreen.has-video .stage {
+  position: relative;
+}
+
 .player.crop-mode video {
   object-fit: cover;
   object-position: var(--crop-x, 50%) var(--crop-y, 50%);

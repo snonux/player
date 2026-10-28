@@ -260,6 +260,33 @@ function seekPercent(percent) {
   sendState();
 }
 
+
+let fsControlsTimer = 0;
+function revealFullscreenVideoControls() {
+  const player = document.getElementById('player');
+  if (!player?.classList.contains('is-fullscreen') || !player.classList.contains('has-video')) return;
+  player.classList.add('fs-show-controls');
+  clearTimeout(fsControlsTimer);
+  fsControlsTimer = setTimeout(() => player.classList.remove('fs-show-controls'), 2500);
+}
+function bindFullscreenVideoChrome() {
+  const player = document.getElementById('player');
+  if (!player?.dataset || player.dataset.fsChromeBound) return;
+  player.dataset.fsChromeBound = '1';
+  for (const event of ['pointermove', 'pointerdown', 'touchstart']) {
+    player.addEventListener(event, revealFullscreenVideoControls, { passive: true });
+  }
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) {
+      player.classList.remove('fs-show-controls');
+      clearTimeout(fsControlsTimer);
+    } else if (player.classList.contains('has-video')) {
+      // Start fully chrome-free; first pointer reveals briefly.
+      player.classList.remove('fs-show-controls');
+    }
+  });
+}
+bindFullscreenVideoChrome();
 function toggleFullscreen() {
   const player = document.getElementById('player');
   if (!player) return;

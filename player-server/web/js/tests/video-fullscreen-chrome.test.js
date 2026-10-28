@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const css = readFileSync(join(root, '../css/player.css'), 'utf8');
+const playback = readFileSync(join(root, 'playback.js'), 'utf8');
+const detach = readFileSync(join(root, 'detachPopup.js'), 'utf8');
+assert.match(css, /is-fullscreen\.has-video \.controls/);
+assert.match(css, /fs-show-controls/);
+assert.match(playback, /has-video/);
+assert.match(detach, /revealFullscreenVideoControls/);
+console.log('video-fullscreen-chrome source checks passed');
