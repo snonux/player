@@ -149,4 +149,33 @@ void main() {
     expect(find.text('Various Artists\nComposer'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+      'detail keeps one primary Play; artwork edit and Play top songs live in More',
+      (tester) async {
+    final client = _Client()
+      ..topSongs = {
+        'source': 'personal',
+        'songs': [
+          {
+            'id': 1,
+            'type': 'audio',
+            'file_name': 'a.mp3',
+            'personal_play_count': 9,
+            'music': {'title': 'Hit One', 'album': 'Compilation'}
+          }
+        ]
+      };
+    await mount(tester, client, key: 'ar_composer');
+    expect(find.text('Play artist'), findsOneWidget);
+    expect(find.text('Play top songs'), findsNothing);
+    expect(find.text('Change artwork'), findsNothing);
+    expect(find.text('Remove artwork'), findsNothing);
+    expect(find.byTooltip('Play Hit One'), findsNothing);
+    await tester.tap(find.byKey(const Key('overflow_menu_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Play top songs'), findsOneWidget);
+    expect(find.text('Change artwork'), findsOneWidget);
+    expect(find.text('Keep offline'), findsOneWidget);
+  });
 }

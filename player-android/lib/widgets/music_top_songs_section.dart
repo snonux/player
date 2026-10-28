@@ -6,18 +6,25 @@ import '../services/music_queue.dart';
 import 'server_song_actions.dart';
 
 /// An explained local ranking, using the same queue actor as artist playback.
+///
+/// Row tap plays from that song. Play-all lives on the artist More sheet so
+/// this section does not compete with Play artist as a second primary button,
+/// and trailing play icons do not duplicate the row action.
 class MusicTopSongsSection extends ConsumerWidget {
   const MusicTopSongsSection(
       {super.key, required this.ranking, required this.artist});
   final Map<String, dynamic>? ranking;
   final String artist;
 
+  static List<Media> songsOf(Map<String, dynamic>? ranking) =>
+      (ranking?['songs'] as List? ?? [])
+          .map((song) => Media.fromJson(song as Map<String, dynamic>))
+          .toList();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final source = ranking?['source'] as String? ?? 'none';
-    final songs = (ranking?['songs'] as List? ?? [])
-        .map((song) => Media.fromJson(song as Map<String, dynamic>))
-        .toList();
+    final songs = songsOf(ranking);
     final sourceLabel = switch (source) {
       'personal' => 'From your library · your most-played credited songs',
       'global' =>
@@ -38,11 +45,7 @@ class MusicTopSongsSection extends ConsumerWidget {
           if (songs.isEmpty)
             const Text(
                 'No top songs yet. Play this artist to build a local ranking. You can still use Play artist.')
-          else ...[
-            FilledButton.icon(
-                onPressed: () => play(0),
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Play top songs')),
+          else
             for (var i = 0; i < songs.length; i++)
               ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -50,12 +53,7 @@ class MusicTopSongsSection extends ConsumerWidget {
                   title: Text(songs[i].displayTitle),
                   subtitle: Text(
                       '${songs[i].music?.album ?? ''} · ${source == 'personal' ? songs[i].personalPlayCount : songs[i].playCount} ${source == 'personal' ? 'personal' : 'server-wide'} plays'),
-                  trailing: IconButton(
-                      tooltip: 'Play ${songs[i].displayTitle}',
-                      icon: const Icon(Icons.play_arrow),
-                      onPressed: () => play(i)),
                   onTap: () => play(i)),
-          ],
         ]));
   }
 }

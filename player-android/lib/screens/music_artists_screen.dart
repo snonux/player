@@ -12,7 +12,9 @@ import '../widgets/music_filter_sheet.dart';
 import '../widgets/music_search_button.dart';
 import '../widgets/music_mini_player.dart';
 import '../services/music_collections.dart';
+import '../services/music_queue.dart';
 import '../widgets/music_collection_actions.dart';
+import '../widgets/server_song_actions.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -94,6 +96,7 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
   }
 
   final _scroll = ScrollController();
+  final _artworkKey = GlobalKey<MusicArtworkSectionState>();
   @override
   void initState() {
     super.initState();
@@ -265,6 +268,23 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
           isThreeLine: true,
           trailing: _personal('artist', person),
           onTap: toggle ?? () => _openArtist(person['artist_key'] as String)));
+  List<Widget> _detailMoreItems(Map<String, dynamic> artist) {
+    final topSongs = MusicTopSongsSection.songsOf(
+        artist['top_songs'] as Map<String, dynamic>?);
+    final name = artist['name'] as String;
+    return [
+      ...?_artworkKey.currentState?.editMenuItems(),
+      if (topSongs.isNotEmpty)
+        OverflowMenuItem(
+            key: const Key('play_top_songs'),
+            icon: Icons.military_tech_outlined,
+            label: 'Play top songs',
+            onSelected: () => insertServerSongs(
+                context, ref, topSongs, QueueInsertion.now,
+                replace: true, sourceLabel: '$name · Top songs')),
+    ];
+  }
+
   Widget _detail() {
     final artist = _artist!;
     final albums =
@@ -283,7 +303,11 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
             padding: const EdgeInsets.all(16),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              MusicArtworkSection(kind: 'artist', entityKey: widget.artistKey!),
+              MusicArtworkSection(
+                  key: _artworkKey,
+                  kind: 'artist',
+                  entityKey: widget.artistKey!,
+                  showEditButtons: false),
               Text(artist['name'] as String,
                   style: Theme.of(context).textTheme.titleLarge),
               Text(creditRoleLabels(artist['roles'], context)),
@@ -294,7 +318,8 @@ class _MusicArtistsScreenState extends ConsumerState<MusicArtistsScreen> {
                   collections: [MusicCollection('artist', widget.artistKey!)],
                   playLabel: context.tr('Play artist'),
                   sourceLabel: artist['name'] as String,
-                  enabled: albums.isNotEmpty),
+                  enabled: albums.isNotEmpty,
+                  moreExtras: (_) => _detailMoreItems(artist)),
               MusicEnrichmentSection(
                   kind: 'artist', entityKey: widget.artistKey!),
               MusicTopSongsSection(

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/widgets/music_artwork_section.dart';
+import 'package:player_android/widgets/overflow_menu.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -48,5 +49,77 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Change artwork'), findsNothing);
     expect(find.text('Original cover'), findsOneWidget);
+  });
+
+  testWidgets(
+      'hidden edit buttons stay reachable via editMenuItems; cancel never writes',
+      (tester) async {
+    final writes = <String>[];
+    final key = GlobalKey<MusicArtworkSectionState>();
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.method != 'GET') writes.add(options.method);
+      handler.resolve(Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {'has_artwork': false, 'can_edit': true, 'revision': ''}));
+    }));
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async => null);
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    await tester.pumpWidget(ProviderScope(
+        overrides: [
+          apiClientProvider.overrideWithValue(PlayerApiClient(dio: dio))
+        ],
+        child: MaterialApp(
+            home: Scaffold(
+                body: Column(children: [
+              MusicArtworkSection(
+                  key: key,
+                  kind: 'artist',
+                  entityKey: 'ar_a',
+                  showEditButtons: false,
+                  fallback: const Text('Cover')),
+              OverflowMenuButton(
+                  items: (_) => key.currentState?.editMenuItems() ?? const []),
+            ])))));
+    await tester.pumpAndSettle();
+    expect(find.text('Change artwork'), findsNothing);
+    expect(find.text('Remove artwork'), findsNothing);
+    expect(key.currentState!.editMenuItems(), hasLength(1));
+    await tester.tap(find.byKey(const Key('overflow_menu_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Change artwork'), findsOneWidget);
+    await tester.tap(find.text('Change artwork'));
+    await tester.pumpAndSettle();
+    expect(writes, isEmpty);
+    expect(find.text('Cover'), findsOneWidget);
+  });
+
+  testWidgets('editMenuItems empty when viewer cannot edit', (tester) async {
+    final key = GlobalKey<MusicArtworkSectionState>();
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      handler.resolve(Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {'has_artwork': true, 'can_edit': false, 'revision': '1'}));
+    }));
+    await tester.pumpWidget(ProviderScope(
+        overrides: [
+          apiClientProvider.overrideWithValue(PlayerApiClient(dio: dio))
+        ],
+        child: MaterialApp(
+            home: Scaffold(
+                body: MusicArtworkSection(
+                    key: key,
+                    kind: 'artist',
+                    entityKey: 'ar_a',
+                    showEditButtons: false)))));
+    await tester.pumpAndSettle();
+    expect(key.currentState!.editMenuItems(), isEmpty);
+    expect(find.byType(OverflowMenuItem), findsNothing);
   });
 }

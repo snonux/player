@@ -4,19 +4,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import '../api/music_artwork_api.dart';
 import '../providers/api_client_provider.dart';
+import 'overflow_menu.dart';
 
 /// Fixed-size preview and discoverable native artwork editing controls.
+///
+/// Detail hosts that already expose a hamburger More sheet pass
+/// [showEditButtons] false and append [editMenuItems] there so Change/Remove
+/// are not always-visible primary buttons beside the cover.
 class MusicArtworkSection extends ConsumerStatefulWidget {
   const MusicArtworkSection(
-      {super.key, required this.kind, required this.entityKey, this.fallback});
+      {super.key,
+      required this.kind,
+      required this.entityKey,
+      this.fallback,
+      this.showEditButtons = true});
   final String kind, entityKey;
   final Widget? fallback;
+  final bool showEditButtons;
   @override
-  ConsumerState<MusicArtworkSection> createState() =>
-      _MusicArtworkSectionState();
+  ConsumerState<MusicArtworkSection> createState() => MusicArtworkSectionState();
 }
 
-class _MusicArtworkSectionState extends ConsumerState<MusicArtworkSection> {
+class MusicArtworkSectionState extends ConsumerState<MusicArtworkSection> {
   Map<String, dynamic>? _data;
   Uint8List? _image;
   bool _busy = false, _failed = false;
@@ -109,7 +118,12 @@ class _MusicArtworkSectionState extends ConsumerState<MusicArtworkSection> {
     }
   }
 
-  Future<void> _remove() async {
+  bool get canEdit => _data?['can_edit'] == true;
+  bool get hasArtwork => _data?['has_artwork'] == true;
+
+  Future<void> changeArtwork() => _load(pick: true);
+
+  Future<void> removeArtwork() async {
     final client = ref.read(apiClientProvider),
         key = widget.entityKey,
         kind = widget.kind;
@@ -136,6 +150,24 @@ class _MusicArtworkSectionState extends ConsumerState<MusicArtworkSection> {
     }
   }
 
+  /// Change/Remove rows for a host hamburger; empty when editing is unavailable.
+  List<Widget> editMenuItems() {
+    if (!canEdit) return const [];
+    return [
+      OverflowMenuItem(
+          key: const Key('change_artwork'),
+          icon: Icons.image_outlined,
+          label: 'Change artwork',
+          onSelected: _busy ? null : changeArtwork),
+      if (hasArtwork)
+        OverflowMenuItem(
+            key: const Key('remove_artwork'),
+            icon: Icons.hide_image_outlined,
+            label: 'Remove artwork',
+            onSelected: _busy ? null : removeArtwork),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen(apiClientProvider, (previous, next) {
@@ -158,15 +190,15 @@ class _MusicArtworkSectionState extends ConsumerState<MusicArtworkSection> {
                   semanticLabel: 'Custom ${widget.kind} artwork',
                   errorBuilder: (_, __, ___) =>
                       const Icon(Icons.broken_image_outlined))),
-      if (_data?['can_edit'] == true)
+      if (widget.showEditButtons && canEdit)
         Wrap(spacing: 8, children: [
           TextButton.icon(
-              onPressed: _busy ? null : () => _load(pick: true),
+              onPressed: _busy ? null : changeArtwork,
               icon: const Icon(Icons.image_outlined),
               label: const Text('Change artwork')),
-          if (_data?['has_artwork'] == true)
+          if (hasArtwork)
             TextButton(
-                onPressed: _busy ? null : _remove,
+                onPressed: _busy ? null : removeArtwork,
                 child: const Text('Remove artwork'))
         ]),
       if (_message != null) Text(_message!, semanticsLabel: _message),
