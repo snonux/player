@@ -22,6 +22,7 @@ const mountMusicPresence=host=>{
  return ()=>presenceEvents.push(`cleanup:${account}:visible:${state.user?.id}`);
 };
 const env={state,setAuthenticatedUser:trackedIdentity,closeMusicPresence:null,mountMusicPresence,document:{querySelector:selector=>{assert.equal(selector,'.main-content');return presenceHost;}},loggingOut:false,API:{config:async()=>({user_id:17}),sets:async()=>[],users:async()=>[],logout:async()=>{}},setPlaybackCacheAccount:noop,setListeningProgressAccount:noop,initSongNotifications:noop,setMediaPageSize:noop,showAdmin:noop,renderSets:()=>assert.equal(state.user?.id,17,'identity must exist before library rendering'),initNavigation:()=>({restore:async()=>{}}),isShuffle:noop,setShuffle:noop,syncChromeVirtualSets:noop,restoreQueue:async()=>{},queueState:()=>({}),toast:noop,navigatedDuringStartup:false,initialCollection:'library',openCollection:noop,stopRenderer:async()=>{},clearSongNotifications:noop,releasePlaybackCache:noop,location:{origin:'http://fixture',search:'',hash:''}};
+env.loadMedia=async()=>{};
 env.setPodcastAccount=noop;
 env.initGlobalSyncControls=noop;
 env.toast=(message,kind)=>assert.notEqual(kind,'error',message);
@@ -29,6 +30,22 @@ const startup=source.slice(startupStart,startupEnd),logout=source.slice(logoutBo
 await run(startup,env);
 assert.equal(state.user.id,17,'authenticated config initializes production identity');
 assert.deepEqual(presenceEvents,['identity:17','mount:17'],'production startup mounts only after identity is established');
+
+// A slow optional queue restore must not leave the root library blank.
+let finishQueue;
+let libraryShown=false;
+env.loadMedia=async()=>{libraryShown=true;};
+env.restoreQueue=()=>new Promise(resolve=>{finishQueue=resolve;});
+const slowQueueStartup=run(startup,env);
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(libraryShown,true,'root library is visible before saved queue hydration finishes');
+finishQueue();await slowQueueStartup;
+// Deep links keep queue-position recovery ahead of route restoration.
+libraryShown=false;env.location.search='?media=12';
+env.restoreQueue=async()=>{};
+await run(startup,env);
+assert.equal(libraryShown,false,'do not render the root library over a deep link');
+env.location.search='';
 
 // Logout invalidates in-flight home actors before awaiting slow renderer/network I/O.
 let finishRenderer;

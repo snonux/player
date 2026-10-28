@@ -379,6 +379,9 @@ async function initApp() {
     }).catch(() => {});
     renderSets();
     const navigation = initNavigation({ isShuffle, setShuffle, syncChrome: syncChromeVirtualSets });
+    // Show the root library while optional saved-queue metadata is restored.
+    // Deep links retain the existing queue-position recovery order.
+    if (!location.search && !location.hash) await loadMedia({ restoring: true });
     await restoreQueue(cfg?.user_id);
     void initGlobalSyncControls()?.syncNow();
     if (queueState().restored) toast('Queue restored, paused. Open Now Playing to resume.', 'info');
