@@ -27,13 +27,18 @@ class MusicPinButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) => OutlinedButton.icon(
       onPressed: enabled
-          ? () => showDialog<void>(
-              context: context,
-              builder: (_) => _PinDialog(collection: collection, title: title))
+          ? () => showMusicPinDialog(context, collection: collection, title: title)
           : null,
       icon: const Icon(Icons.push_pin_outlined),
       label: const Text('Pin offline…'));
 }
+
+/// Opens the pin/manage offline dialog used by the collection More menu.
+Future<void> showMusicPinDialog(BuildContext context,
+        {required MusicCollection collection, required String title}) =>
+    showDialog<void>(
+        context: context,
+        builder: (_) => _PinDialog(collection: collection, title: title));
 
 class _PinDialog extends ConsumerStatefulWidget {
   const _PinDialog(

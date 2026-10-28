@@ -214,7 +214,8 @@ def saved_copy(run):
     if rows:
         return rows[0]
     open_album()
-    # Album collection action opens the normal two-song Keep offline flow.
+    # Album collection More sheet opens the normal two-song Keep offline flow.
+    assert adrv.tap('^More options$'), app_ui.labels()
     node = baseline.find_visible('^Keep offline$')
     assert node, app_ui.labels()
     adrv.tap_node(node)

@@ -119,6 +119,7 @@ class Run(baseline.Run):
             self.failures += 1
 
     def pin(self, title, count):
+        playlists.tap_visible('^More options$')
         playlists.tap_visible('^Pin offline…$')
         wait('^' + re.escape(title) + '$')
         touch('^Pin offline$')

@@ -12,9 +12,13 @@ import '../services/music_collections.dart';
 import '../services/music_queue.dart';
 import '../services/music_shuffle.dart';
 import 'music_shuffle_options_dialog.dart';
+import 'overflow_menu.dart';
 import 'server_song_actions.dart';
 
 /// Whole collections resolve atomically before using the normal queue owner.
+///
+/// Detail headers show Play + Shuffle + hamburger More. Compact card embeds
+/// show only the More sheet so related/discovery rows stay uncluttered.
 class MusicCollectionActions extends ConsumerStatefulWidget {
   const MusicCollectionActions(
       {super.key,
@@ -22,10 +26,11 @@ class MusicCollectionActions extends ConsumerStatefulWidget {
       required this.playLabel,
       this.enabled = true,
       this.playOnly = false,
+      this.compact = false,
       this.sourceLabel = 'Selected collections'});
   final List<MusicCollection> collections;
   final String playLabel, sourceLabel;
-  final bool enabled, playOnly;
+  final bool enabled, playOnly, compact;
   @override
   ConsumerState<MusicCollectionActions> createState() => _ActionsState();
 }
@@ -159,9 +164,96 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
     }
   }
 
+  bool get _canPin =>
+      widget.collections.length == 1 &&
+      const ['album', 'playlist'].contains(widget.collections.single.kind);
+
+  List<Widget> _moreItems(bool enabled, {required bool includePlayShuffle}) {
+    final items = <Widget>[
+      if (includePlayShuffle) ...[
+        OverflowMenuItem(
+            icon: Icons.play_arrow,
+            label: widget.playLabel,
+            onSelected: enabled
+                ? () => _run(QueueInsertion.now, replace: true)
+                : null),
+        OverflowMenuItem(
+            icon: Icons.shuffle,
+            label: context.tr('Shuffle'),
+            onSelected: enabled
+                ? () => _run(QueueInsertion.now, replace: true, shuffled: true)
+                : null),
+      ],
+      OverflowMenuItem(
+          icon: Icons.download_outlined,
+          label: context.tr('Keep offline'),
+          onSelected: enabled ? _download : null),
+      if (_canPin)
+        OverflowMenuItem(
+            icon: Icons.push_pin_outlined,
+            label: 'Pin offline…',
+            onSelected: enabled
+                ? () => showMusicPinDialog(context,
+                    collection: widget.collections.single,
+                    title: widget.sourceLabel)
+                : null),
+      OverflowMenuItem(
+          icon: Icons.share_outlined,
+          label: context.tr('Share…'),
+          onSelected: enabled ? () => _download(share: true) : null),
+      for (final action in [QueueInsertion.next, QueueInsertion.append])
+        OverflowMenuItem(
+            icon: action == QueueInsertion.next
+                ? Icons.playlist_play
+                : Icons.playlist_add,
+            label: context.tr(queueActionLabel(action)),
+            onSelected: enabled ? () => _run(action) : null),
+      OverflowMenuItem(
+          icon: Icons.tune,
+          label: context.tr('Shuffle options…'),
+          onSelected: enabled
+              ? () => showDialog<void>(
+                  context: context,
+                  builder: (_) => MusicShuffleOptionsDialog(
+                      run: (options, current, report) => _run(QueueInsertion.now,
+                          replace: true,
+                          shuffled: true,
+                          options: options,
+                          dialogCurrent: current,
+                          report: report)))
+              : null),
+    ];
+    return items;
+  }
+
+  Widget _messageBanner() => _message == null
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Semantics(liveRegion: true, child: Text(_message!)));
+
   @override
   Widget build(BuildContext context) {
     final enabled = widget.enabled && widget.collections.isNotEmpty && !_busy;
+    if (widget.playOnly) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        FilledButton.icon(
+            onPressed: enabled
+                ? () => _run(QueueInsertion.now, replace: true)
+                : null,
+            icon: const Icon(Icons.play_arrow),
+            label: Text(widget.playLabel)),
+        _messageBanner(),
+      ]);
+    }
+    if (widget.compact) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        OverflowMenuButton(
+            enabled: enabled,
+            items: (_) => _moreItems(enabled, includePlayShuffle: true)),
+        _messageBanner(),
+      ]);
+    }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Wrap(
           spacing: 8,
@@ -174,78 +266,21 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
                     : null,
                 icon: const Icon(Icons.play_arrow),
                 label: Text(widget.playLabel)),
-            if (!widget.playOnly) ...[
-              OutlinedButton.icon(
-                  onPressed: enabled
-                      ? () => _run(QueueInsertion.now,
-                          replace: true, shuffled: true)
-                      : null,
-                  style:
-                      OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
-                  icon: const Icon(Icons.shuffle),
-                  label: Text(context.tr('Shuffle'))),
-              OutlinedButton.icon(
-                  onPressed: enabled ? _download : null,
-                  icon: const Icon(Icons.download_outlined),
-                  label: Text(context.tr('Keep offline'))),
-              if (widget.collections.length == 1 &&
-                  const ['album', 'playlist']
-                      .contains(widget.collections.single.kind))
-                MusicPinButton(
-                    enabled: enabled,
-                    collection: widget.collections.single,
-                    title: widget.sourceLabel),
-              OutlinedButton.icon(
-                  onPressed: enabled ? () => _download(share: true) : null,
-                  icon: const Icon(Icons.share_outlined),
-                  label: Text(context.tr('Share…'))),
-              // Keep the native popup semantic target within its own control;
-              // otherwise the custom-child tap semantics can merge into Wrap.
-              Semantics(
-                  container: true,
-                  child: PopupMenuButton<String>(
-                      tooltip: context.tr('Queue actions'),
-                      enabled: enabled,
-                      onSelected: (action) {
-                        if (action == 'options') {
-                          showDialog<void>(
-                              context: context,
-                              builder: (_) => MusicShuffleOptionsDialog(
-                                  run: (options, current, report) => _run(
-                                      QueueInsertion.now,
-                                      replace: true,
-                                      shuffled: true,
-                                      options: options,
-                                      dialogCurrent: current,
-                                      report: report)));
-                        } else {
-                          _run(QueueInsertion.values.byName(action));
-                        }
-                      },
-                      itemBuilder: (_) => [
-                            for (final action in [
-                              QueueInsertion.next,
-                              QueueInsertion.append
-                            ])
-                              PopupMenuItem(
-                                  value: action.name,
-                                  child: Text(
-                                      context.tr(queueActionLabel(action)))),
-                            PopupMenuItem(
-                                value: 'options',
-                                child: Text(context.tr('Shuffle options…')))
-                          ],
-                      child: ConstrainedBox(
-                          constraints: const BoxConstraints(minHeight: 48),
-                          child: const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: Text('Queue actions ▾'))))),
-            ],
+            OutlinedButton.icon(
+                onPressed: enabled
+                    ? () => _run(QueueInsertion.now,
+                        replace: true, shuffled: true)
+                    : null,
+                style:
+                    OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+                icon: const Icon(Icons.shuffle),
+                label: Text(context.tr('Shuffle'))),
+            OverflowMenuButton(
+                enabled: enabled,
+                items: (_) =>
+                    _moreItems(enabled, includePlayShuffle: false)),
           ]),
-      if (_message != null)
-        Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Semantics(liveRegion: true, child: Text(_message!))),
+      _messageBanner(),
     ]);
   }
 }

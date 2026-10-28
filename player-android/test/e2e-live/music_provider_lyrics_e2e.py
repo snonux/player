@@ -90,6 +90,7 @@ def journey(run, mode_file, resume_device=False):
     run.record('removal and explicit retry restore provider lyric')
 
     albums.album('A03c Provider')
+    playlists.tap_visible('^More options$')
     touch('^Pin offline…$')
     assert adrv.wait('^A03c Provider$', timeout=15), labels()
     touch('^Pin offline$')

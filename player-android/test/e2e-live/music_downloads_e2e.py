@@ -281,6 +281,7 @@ class Run(baseline.Run):
         return self.viewer.request('GET', '/api/v1/music/albums/' + entry['album_key'])['songs']
 
     def dialog(self):
+        self.touch('^More options$')
         self.touch('^Keep offline$')
         assert adrv.wait('^Keep music offline$'), app_ui.labels()
         self.touch('^Download quality /')

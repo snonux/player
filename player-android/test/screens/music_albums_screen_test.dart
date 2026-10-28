@@ -14,6 +14,7 @@ import 'package:go_router/go_router.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/music_albums_screen.dart';
+import 'package:player_android/widgets/music_collection_actions.dart';
 import 'package:player_android/widgets/music_filter_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -250,7 +251,7 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Select First album'));
     await tester.pump();
     expect(find.text('2 selected'), findsOneWidget);
-    await tester.tap(find.byTooltip('Queue actions'));
+    await tester.tap(find.descendant(of: find.byType(MusicCollectionActions), matching: find.byTooltip('More options')));
     await tester.pumpAndSettle();
     final target = find.text('Add to queue');
     expect(tester.getSize(target).height, greaterThan(0));
@@ -301,16 +302,15 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Select First album'));
     await tester.pump();
     api.pending = Completer<Map<String, dynamic>>();
-    await tester.tap(find.byTooltip('Queue actions'));
+    await tester.tap(find.descendant(of: find.byType(MusicCollectionActions), matching: find.byTooltip('More options')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Play next'));
     await tester.pumpAndSettle();
     expect(find.text('Loading songs…'), findsOneWidget);
-    final popup = tester.widget<PopupMenuButton<String>>(find.byWidgetPredicate(
-        (widget) =>
-            widget is PopupMenuButton<String> &&
-            widget.tooltip == 'Queue actions'));
-    expect(popup.enabled, isFalse);
+    final more = find.descendant(
+        of: find.byType(MusicCollectionActions),
+        matching: find.byKey(const Key('overflow_menu_button')));
+    expect(tester.widget<IconButton>(more).onPressed, isNull);
     expect(api.albumCalls, 1);
     final pop = tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
@@ -328,7 +328,7 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Select First album'));
     await tester.pump();
     api.fail = true;
-    await tester.tap(find.byTooltip('Queue actions'));
+    await tester.tap(find.descendant(of: find.byType(MusicCollectionActions), matching: find.byTooltip('More options')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Play next'));
     await tester.pumpAndSettle();
@@ -336,7 +336,7 @@ void main() {
     expect(find.text('1 selected'), findsOneWidget);
     expect(handler.musicQueue.entries, isEmpty);
     api.fail = false;
-    final menu = find.byTooltip('Queue actions');
+    final menu = find.descendant(of: find.byType(MusicCollectionActions), matching: find.byTooltip('More options'));
     expect(tester.getSize(menu).height, greaterThanOrEqualTo(48));
     await tester.tap(menu);
     await tester.pumpAndSettle();

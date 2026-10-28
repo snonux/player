@@ -153,6 +153,7 @@ class _MusicRelatedSectionState extends ConsumerState<MusicRelatedSection> {
                                   label: const Text('Play'))
                             else
                               MusicCollectionActions(
+                                  compact: true,
                                   collections: [
                                     MusicCollection(
                                         widget.kind, item['key'] as String)

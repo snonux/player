@@ -272,6 +272,7 @@ class _MusicDiscoveryPanelState extends ConsumerState<MusicDiscoveryPanel> {
                         '${AppRoutes.musicPlaylists}?playlist=${Uri.encodeComponent(playlist['playlist_id'] as String)}')),
                 MusicCollectionActions(
                     key: ValueKey('pin-${playlist['playlist_id']}'),
+                    compact: true,
                     collections: [
                       MusicCollection(
                           'playlist', playlist['playlist_id'] as String)

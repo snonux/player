@@ -236,7 +236,7 @@ def core(run):
 def open_options():
     if adrv.find('^Now Playing$'):
         app_ui.back()
-    touch(r'^Queue actions(?: ▾)?$')
+    touch(r'^More options$')
     touch('^Shuffle options…$')
     assert adrv.wait('^Shuffle options$'), app_ui.labels()
 

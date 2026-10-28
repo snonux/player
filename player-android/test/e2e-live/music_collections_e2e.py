@@ -120,7 +120,7 @@ def saved_order(run, expected):
 
 
 def enqueue(name):
-    tap(r'^Queue actions(?: ▾)?(?: /.*)?$')
+    tap(r'^More options$')
     assert adrv.tap('^' + re.escape(name) + '$'), app_ui.labels()
     assert adrv.wait(r'^Added \d+ songs?$', timeout=30), app_ui.labels()
 
@@ -187,7 +187,7 @@ def geometry_sanity(run, data):
     open_item(data[4][0]['name'])
     assert adrv.wait('^Play playlist$'), app_ui.labels()
     nodes = adrv.nodes()
-    matches = [n for n in nodes if adrv.label(n) in ('Queue actions', 'Queue actions ▾') and n['click']]
+    matches = [n for n in nodes if adrv.label(n) == 'More options' and n['click']]
     adjacent = [n for n in nodes if adrv.label(n) == 'Add songs' and n['click']]
     assert matches and adjacent, nodes
     node = min(matches, key=lambda n: (n['b'][2]-n['b'][0])*(n['b'][3]-n['b'][1]))
@@ -195,9 +195,9 @@ def geometry_sanity(run, data):
     density = int(re.search(r'Physical density: (\d+)', adrv.adb('shell', 'wm', 'density')).group(1)) / 160
     assert 48*density-1 <= menu[3]-menu[1] <= 80*density, node
     overlap = menu[0] < other[2] and other[0] < menu[2] and menu[1] < other[3] and other[1] < menu[3]
-    assert not overlap, ('Queue actions overlaps Add songs', node, adjacent)
+    assert not overlap, ('More options overlaps Add songs', node, adjacent)
     before = run.shot('m15-final-menu-compact')
-    tap(r'^Queue actions(?: ▾)?$')
+    tap(r'^More options$')
     assert adrv.wait('^Play next$') and adrv.find('^Add to queue$'), app_ui.labels()
     opened = run.shot('m15-final-menu-open')
     app_ui.back()
@@ -287,7 +287,7 @@ def boundaries(run, data):
     assert answers(run.state['origin'], '/healthz') is None, 'Owned server still answers'
     try:
         adrv.adb('reverse', '--remove', f'tcp:{port}')
-        tap(r'^Queue actions(?: ▾)?(?: /.*)?$')
+        tap(r'^More options$')
         assert adrv.tap('^Add to queue$')
         assert adrv.wait('Could not load songs', timeout=45), app_ui.labels()
         assert recovery.snapshot(run)['entries'] == before['entries']
@@ -308,7 +308,7 @@ def boundaries(run, data):
     grant = {'set_id': run.state['set_ids']['Music'], 'user_id': run.viewer_id, 'role': 'viewer'}
     try:
         run.admin.request('DELETE', '/api/v1/admin/permissions', grant)
-        tap(r'^Queue actions(?: ▾)?(?: /.*)?$')
+        tap(r'^More options$')
         assert adrv.tap('^Add to queue$')
         assert adrv.wait('Could not load songs', timeout=30), app_ui.labels()
         assert recovery.snapshot(run)['entries'] == before['entries']

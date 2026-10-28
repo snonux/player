@@ -12,6 +12,8 @@ import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/audio_handler_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/screens/music_artists_screen.dart';
+import 'package:player_android/widgets/music_collection_actions.dart';
+import 'package:player_android/services/music_collections.dart';
 import 'package:player_android/screens/music_playlists_screen.dart';
 import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/services/music_queue.dart';
@@ -158,7 +160,7 @@ void main() {
                 home: MusicArtistsScreen(artistKey: 'artist'));
           })));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Queue actions'));
+      await tester.tap(find.descendant(of: find.byType(MusicCollectionActions), matching: find.byTooltip('More options')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Shuffle options…'));
       await tester.pumpAndSettle();
@@ -241,7 +243,7 @@ void main() {
   }
 
   testWidgets(
-      'playlist Queue actions semantic rectangle is a compact target excluding adjacent Add songs and opens its menu',
+      'playlist More options semantic rectangle is a compact target excluding adjacent Add songs and opens its menu',
       (tester) async {
     tester.view.physicalSize = const Size(393, 844);
     tester.view.devicePixelRatio = 1;
@@ -258,7 +260,7 @@ void main() {
           child: const MaterialApp(
               home: MusicPlaylistsScreen(playlistId: 'playlist'))));
       await tester.pumpAndSettle();
-      final menu = find.byTooltip('Queue actions');
+      final menu = find.descendant(of: find.byType(MusicCollectionActions), matching: find.byTooltip('More options'));
       final node = tester.getSemantics(menu);
       var rect = node.rect;
       for (var ancestor = node;;) {
@@ -375,5 +377,36 @@ void main() {
       await tester.runAsync(handler.stop);
       router.dispose();
     }
+  });
+
+  testWidgets('compact card exposes only More with Play and Keep offline inside',
+      (tester) async {
+    await tester.pumpWidget(ProviderScope(
+        overrides: [
+          ...idlePlaybackOverrides(),
+          unpairedServerEndpointOverride(),
+          apiClientProvider.overrideWithValue(_Api()),
+        ],
+        child: MaterialApp(
+            home: Scaffold(
+                body: MusicCollectionActions(
+                    compact: true,
+                    collections: const [MusicCollection('album', 'album')],
+                    playLabel: 'Play',
+                    sourceLabel: 'Album')))));
+    await tester.pumpAndSettle();
+    expect(find.text('Play'), findsNothing);
+    expect(find.text('Shuffle'), findsNothing);
+    expect(find.text('Keep offline'), findsNothing);
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+    expect(find.text('Play'), findsOneWidget);
+    expect(find.text('Shuffle'), findsOneWidget);
+    expect(find.text('Keep offline'), findsOneWidget);
+    expect(find.text('Share…'), findsOneWidget);
+    expect(find.text('Pin offline…'), findsOneWidget);
+    expect(find.text('Play next'), findsOneWidget);
+    expect(find.text('Add to queue'), findsOneWidget);
+    expect(find.text('Shuffle options…'), findsOneWidget);
   });
 }
