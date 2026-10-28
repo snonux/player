@@ -1,4 +1,4 @@
-import { offlineMusicMode, deviceLibraryMode } from './offline-context.js';
+import { deviceLibraryMode } from './offline-context.js';
 import { cachedMediaDetail } from './playback-cache.js';
 import { preparedQueuePlan } from './queue-prepared.js';
 import { SavedQueueSync, savedQueueRequest } from './queue-sync.js';

@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v92';
+const CACHE = 'kiss-v93';
 const ASSETS = [
   '/',
   '/index.html',
@@ -23,9 +23,6 @@ const ASSETS = [
   '/js/local-podcasts-store.js',
   '/js/local-podcasts.js',
   '/js/music-libraries.js',
-  '/js/offline-browse-model.js',
-  '/js/offline-browse.js',
-  '/js/offline-cache.js',
   '/js/offline-context.js',
   '/js/podcast-detached.js',
   '/js/podcast-discovery.js',
@@ -177,9 +174,8 @@ self.addEventListener('fetch', (e) => {
       .catch(async () => {
         const exact = await caches.match(e.request);
         if (exact) return exact;
-        // A saved Offline music link has a query string. Reuse the cached app
-        // shell for an offline navigation even if this exact URL was never
-        // visited online; the query still reaches the page after it loads.
+        // On-device files and podcasts use query-string entry points. Reuse
+        // the app shell for offline navigation; the page still reads the query.
         if (e.request.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
           return caches.match('/index.html');
         }

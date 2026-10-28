@@ -1,4 +1,4 @@
-import { offlineMusicMode, deviceLibraryMode } from './offline-context.js';
+import { deviceLibraryMode } from './offline-context.js';
 const API_BASE = '';
 import { loginDestination } from './navigation-url.js';
 import { radioSearchQuery } from './radio-core.js';
@@ -17,7 +17,7 @@ export function redirectToLogin() {
 }
 
 async function api(path, options = {}) {
-  if (deviceLibraryMode()) throw new TypeError(offlineMusicMode() ? 'Offline music uses saved downloads. Reconnect and sign in for online actions.' : 'On-device library mode cannot call the server. Reconnect and sign in for online actions.');
+  if (deviceLibraryMode()) throw new TypeError('On-device library mode cannot call the server. Reconnect and sign in for online actions.');
   const url = `${API_BASE}${path}`;
   const isForm = options.body instanceof FormData;
   const headers = { Accept: 'application/json', ...(options.headers || {}) };

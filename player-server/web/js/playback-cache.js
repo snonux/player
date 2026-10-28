@@ -1,5 +1,3 @@
-import { offlineCachedSongs, offlineCachedResponse } from './offline-cache.js';
-import { offlineMusicMode, offlineMusicAccount } from './offline-context.js';
 import { offlinePinnedDetail, offlinePinnedResponse } from './offline-pins.js';
 import { initNetworkSettings, assertMusicStreamingAllowed, musicPrefetchAllowed, MusicNetworkRestricted } from './network-policy.js';
 import { mediaPlaybackUrl } from './streamSource.js';
@@ -34,11 +32,6 @@ export function cancelCacheTransfer() { transfer?.controller.abort(); }
 export function releasePlaybackCache() { cancelCacheTransfer(); if (liveURL) URL.revokeObjectURL(liveURL); liveURL = null; }
 function valid(name, signal) { return scope() === name && !signal?.aborted; }
 export async function cachedMediaDetail(id, load) {
-  if (offlineMusicMode()) {
-    const detail = await offlinePinnedDetail(id) || (await offlineCachedSongs()).filter(row => String(row.media.id) === String(id)).map(row => ({media:{...row.media,offlinePinURL:row.url},progress:null}))[0];
-    if (!detail) throw new TypeError('Saved download unavailable.');
-    return detail;
-  }
   try { return await load(); }
   catch (error) {
     if (!(error instanceof TypeError) || !scope() || !globalThis.caches) throw error;
@@ -109,16 +102,14 @@ export async function playbackCacheSource(media, url, signal, onSaved = () => {}
   // Explicit downloaded playback has its own local policy. It must never turn
   // into an audio network request if the bytes disappear or access is refused.
   if (media?.offlinePinURL) {
-    const pinScope = offlineMusicMode() ? offlineMusicAccount() : scope();
+    const pinScope = scope();
     if (new URL(media.offlinePinURL, location.origin).href !== new URL(url, location.origin).href ||
         mediaPlaybackUrl(media) !== new URL(url, location.origin).href) throw Error('Invalid saved download source.');
-    let pinned = await offlinePinnedResponse(url, signal);
-    const fromPin=!!pinned;
-    pinned ||= offlineMusicMode() ? await offlineCachedResponse(url,signal) : null;
+    const pinned = await offlinePinnedResponse(url, signal);
     if (!pinned) throw Error('Saved download unavailable. Retry pinning or choose online playback.');
     const blob = await pinned.blob();
-    if (signal?.aborted || (offlineMusicMode() ? offlineMusicAccount() : scope()) !== pinScope) throw new DOMException('Cancelled','AbortError');
-    onSaved({name:`player-${fromPin?'offline':'playback'}-v1-${offlineMusicMode()?offlineMusicAccount():account}`,url:new URL(url,location.origin).href,etag:pinned.headers.get('etag') || ''});
+    if (signal?.aborted || scope() !== pinScope) throw new DOMException('Cancelled','AbortError');
+    onSaved({name:`player-offline-v1-${account}`,url:new URL(url,location.origin).href,etag:pinned.headers.get('etag') || ''});
     liveURL = URL.createObjectURL(blob); return liveURL;
   }
   assertMusicStreamingAllowed(media);

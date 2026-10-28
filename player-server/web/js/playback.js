@@ -1,4 +1,4 @@
-import { offlineMusicMode, deviceLibraryMode } from './offline-context.js';
+import { deviceLibraryMode } from './offline-context.js';
 import { libraryPresenceSnapshot } from './playback-presence.js';
 import { musicStreamingBlocked, MusicNetworkRestricted, networkPolicyMessage } from './network-policy.js';
 import { stopRenderer } from './renderer.js';

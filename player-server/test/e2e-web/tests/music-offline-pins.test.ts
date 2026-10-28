@@ -144,15 +144,10 @@ test('M47 album and playlist pins survive cache eviction, restart and offline au
     await page.keyboard.press('Escape');
 
     await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { timeout: 20_000 }).toBe(true);
+    await page.goto(`/?music=album&id=${encodeURIComponent(album.album_key)}`);
+    await openPin(page, title);
     await context.setOffline(true);
-    await page.goto('/index.html?offline=music');
-    await expect(page.getByRole('heading', { name: 'Offline music' })).toBeVisible();
-    await page.getByLabel('Browse').selectOption('Albums');
-    await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible();
-    await page.getByRole('button', { name: title, exact: true }).focus();
-    await page.keyboard.press('Enter');
-    await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Play now', exact: true }).click();
+    await albumDialog.getByRole('button', { name: 'Play downloaded', exact: true }).click();
     await expectPlaying(page, albumSongs[0].id);
     const sound = await captureOutput(page, 1500, e.path('m47-pinned-offline.wav'));
     assertValidCapture(sound);

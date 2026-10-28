@@ -1,4 +1,3 @@
-import { offlineMusicMode, offlineMusicAccount } from './offline-context.js';
 import { state } from './state.js';
 import { waitForCompatStream } from './streamSource.js';
 import { downloadQuality } from './download-quality.js';
@@ -6,7 +5,7 @@ import { snapshotLyrics } from './saved-lyrics.js';
 
 const prefix = 'player-offline-v1-';
 let tail = Promise.resolve();
-function scope() { const id = offlineMusicMode() ? offlineMusicAccount() : state.user?.id; return id > 0 ? `${prefix}${id}` : null; }
+function scope() { const id = state.user?.id; return id > 0 ? `${prefix}${id}` : null; }
 function current(name, signal, authorized = () => true) { if (scope() !== name || signal?.aborted || !authorized()) throw new DOMException('Canceled', 'AbortError'); }
 function read(name) {
  const value = JSON.parse(localStorage.getItem(`${name}:index`) || '{"collections":{},"songs":{}}');
@@ -30,7 +29,6 @@ export async function offlinePinStatus(collection) {
  return { ...row, songs, complete: songs.length === row.urls.length && row.urls.length > 0 };
 }
 export async function pinMusicCollection(collection, title, songs, { signal, profile = downloadQuality(), progress = () => {}, automatic = false, authorized = () => true } = {}) {
- if (offlineMusicMode()) throw Error('Reconnect and sign in to pin music.');
  const name = scope();
  if (!name || !globalThis.caches) throw Error('Sign in and allow browser storage before pinning music.');
  if (!['album','playlist'].includes(collection.kind)) throw Error('Choose an album or playlist.');
@@ -177,7 +175,6 @@ export async function offlinePinnedResponse(url, signal) {
  url = new URL(url,location.origin).href;
  const rows = read(name), row = rows.songs[url]; if (!row) return null;
  const cache = await caches.open(name), response = await cache.match(url); if (!response) return null;
- if (offlineMusicMode()) { current(name,signal); return response; }
  let check;
  try { check = await fetch(url,{method:'HEAD',credentials:'same-origin',redirect:'manual',cache:'no-store',signal}); }
  catch(error) { if (!(error instanceof TypeError)) throw error; }
@@ -208,16 +205,6 @@ export async function offlineSavedCollections() {
  current(name); return result;
 }
 
-// Enumerate only existing saved download indexes for this origin. Account IDs
-// are labels for local snapshots, never evidence of an authenticated user.
-export function offlineSavedAccounts() {
- const ids = [];
- for (let i = 0; i < localStorage.length; i++) {
-  const match = localStorage.key(i)?.match(/^player-offline-v1-([1-9]\d*):index$/);
-  if (match && Number.isSafeInteger(Number(match[1]))) ids.push(Number(match[1]));
- }
- return ids.sort((a,b) => a-b);
-}
 export async function offlineSavedSongs() {
  const name=scope(); if (!name || !globalThis.caches) return [];
  const cache=await caches.open(name), songs=[];

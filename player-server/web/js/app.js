@@ -1,5 +1,4 @@
-import { offlineMusicMode, localFilesMode, localPodcastsMode } from './offline-context.js';
-import { initOfflineMusicApp } from './offline-browse.js';
+import { localFilesMode, localPodcastsMode } from './offline-context.js';
 import { initLocalFilesApp } from './local-files.js';
 import { initLocalPodcastsApp } from './local-podcasts.js';
 import { initLanguage } from './i18n.js';
@@ -132,7 +131,6 @@ function main() {
   const page = pageMap[location.pathname] || 'spa';
   if (page === 'login') initLogin();
   else if (page === 'bootstrap') initBootstrap();
-  else if (offlineMusicMode()) initOfflineMusicApp();
   else if (localFilesMode()) initLocalFilesApp();
   else if (localPodcastsMode()) initLocalPodcastsApp();
   else initApp();

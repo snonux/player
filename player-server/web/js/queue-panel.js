@@ -1,4 +1,3 @@
-import { offlineMusicMode } from './offline-context.js';
 import { t, html, plural } from './i18n.js';
 import { saveQueueAsPlaylist } from './queue-playlist.js';
 import { queueState, jumpQueue, moveQueue, removeQueue, clearQueue, undoQueue, resumeQueue, retryQueueRestore, cycleQueueRepeat, shuffleQueue, setQueueAutoplay, savedSessionState, continueSavedSession, replaceSavedSession, keepOtherSession } from './queue.js';
@@ -128,14 +127,12 @@ function openQueueShuffleMenu(opener) {
   ]);
 }
 function openQueueMoreMenu(opener) {
-  const q = queueState(), session = savedSessionState(), offline = offlineMusicMode();
+  const q = queueState(), session = savedSessionState();
   const items = [
-    ...(!offline ? [
-      ['continue-session', t('Continue session'), q.loading],
-      ['replace-session', t('Replace saved session'), q.loading],
-      ...(session.conflict ? [['keep-other', t('Keep other session'), false]] : []),
-      ['save-playlist', t('Save as playlist'), !q.entries.length || q.loading || q.restoreError],
-    ] : []),
+    ['continue-session', t('Continue session'), q.loading],
+    ['replace-session', t('Replace saved session'), q.loading],
+    ...(session.conflict ? [['keep-other', t('Keep other session'), false]] : []),
+    ['save-playlist', t('Save as playlist'), !q.entries.length || q.loading || q.restoreError],
     ['clear', t('Clear queue'), !q.entries.length || q.loading],
     ['undo', t('Undo'), !q.canUndo || q.loading],
   ];

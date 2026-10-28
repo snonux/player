@@ -145,13 +145,10 @@ test('M48 updates a pinned playlist and starred songs, waits for Wi-Fi, then pla
     await page.keyboard.press('Escape');
 
     await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { timeout: 20_000 }).toBe(true);
+    await page.goto(`/?music=playlist&id=${encodeURIComponent(playlistId)}`);
+    await openCollectionMoreAction(page, /Pin offline|Manage…/);
     await context.setOffline(true); offline = true;
-    await page.goto('/?offline=music');
-    await expect(page.getByRole('heading', { name: 'Offline music' })).toBeVisible();
-    await page.getByLabel('Browse').selectOption('Playlists');
-    await page.getByRole('button', { name, exact: true }).click();
-    await expect(page.locator('[data-results]')).toContainText('2 of 2 songs available');
-    await page.getByRole('button', { name: 'Play now', exact: true }).click();
+    await page.getByRole('dialog', { name, exact: true }).getByRole('button', { name: 'Play downloaded', exact: true }).click();
     await expectPlaying(page, first);
     const output = await captureOutput(page, 1500, evidence.path('automatic-offline-playback.wav'));
     assertValidCapture(output);

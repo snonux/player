@@ -20,7 +20,7 @@ assert(cached.has('/js/app.js'), 'the app entry point must be precached');
 // Recursively follow production static imports, re-exports, side-effect imports
 // and literal dynamic imports. Existing precached entry points such as detach
 // must be complete too. All app.js imports are required even when a branch of
-// startup only opens device files or offline music.
+// startup only opens device files or standalone podcasts.
 const visited = new Set();
 async function visit(module) {
   if (visited.has(module)) return;

@@ -329,27 +329,24 @@ offline. It also checks reload, local Unpin/Remove behavior, narrow theme,
 account isolation, and a real permission denial and retry. Evidence stays
 outside the repository; stop the fixture with `music_fixture.py down`.
 
-For M49 offline music browsing, use a fresh disposable music fixture on an
-unused port and run one installed browser at a time. The suite needs exclusive
-use of that fixture while it creates and removes its playlist:
+Web downloaded-music browsing has been removed; Android retains that library.
+The focused web regression uses an already bootstrapped disposable localhost
+server and installed Chrome and Firefox, serially:
 
 ```sh
-PLAYER_MUSIC_FIXTURE=/path/to/fixture PLAYER_M49_ISOLATED=1 \
-PLAYER_M49_EVIDENCE=/tmp/player-m49-web-evidence \
-PLAYER_E2E_PULSE_SINK=player_e2e_null \
-  npx --no-install playwright test -c playwright.music.config.ts \
-  tests/music-offline-browse.test.ts --project=chrome --workers=1
-# Repeat with --project=firefox.
+PLAYER_URL=http://127.0.0.1:18993 \
+PLAYER_DEVICE_LIBRARY_AUTH=/path/to/private/auth.json \
+  npx --no-install playwright test -c playwright.device-libraries.config.ts
 ```
 
-The focused test checks a fresh browser with no downloads, then pins a real
-album and overlapping playlist, caches an unpinned song through playback, and
-opens the music view after the browser network is disabled. It covers cold
-service-worker reload, browsing and search by keyboard, complete and partial
-collections, local queue and measured audio, separate saved accounts, and
-explicit sign-in after reconnection. It records screenshots, audio and API
-request counts outside the repository. Stop the fixture after the browser and
-Android acceptance runs are finished.
+The optional private auth file contains `username` and `password`. The suite
+checks legacy `?offline=music` URLs follow normal sign-in and online library
+behavior, the removed entry stays absent, saved browser bytes survive, and
+playback cache/download management remains reachable. It also checks local file
+import/reload and standalone podcast navigation without sign-in, including
+narrow and landscape layouts. It writes only browser-local device data and
+signs in; run against a disposable server. Existing M47/M48/provider suites use
+the retained **Play downloaded** collection control while signed in.
 
 For M36 personal listening, start a disposable `music_fixture.py up` server on
 an unused port and run the focused journey in installed Chrome and Firefox,

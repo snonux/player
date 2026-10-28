@@ -234,7 +234,7 @@ func isPublicDeviceShell(r *http.Request) bool {
 		return false
 	}
 	switch r.URL.RawQuery {
-	case "offline=music", "local=podcasts", "local=files":
+	case "local=podcasts", "local=files":
 		return true
 	default:
 		return false

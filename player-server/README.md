@@ -5,6 +5,13 @@ player
 
 Player is an opinionated, self-hosted web media player designed around the KISS principle: minimal dependencies, no frontend frameworks, keyboard-first navigation. Built with Go, SQLite, and vanilla JavaScript.
 
+Web music browsing uses the signed-in server library. Downloaded music browsing is
+available in the Android app. The web UI still supports **On this device** files
+and standalone podcasts without sign-in, along with signed-in playback cache,
+pinned collection management, and download/export controls. Older
+`?offline=music` bookmarks open the normal web library and require normal sign-in;
+this change does not remove existing browser downloads.
+
 Features
 --------
 

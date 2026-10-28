@@ -218,32 +218,34 @@ async function testVideoSequenceStillReachesImages() {
   }
 }
 
-async function testColdOfflineProductionLyricsCaller(){
+async function testSignedInSavedProductionLyricsCaller(){
  resetDom();
  const stage=fakeElement('stage'),controls=fakeElement('controls');
  elements.player.querySelector=selector=>selector==='.stage'?stage:selector==='.controls'?controls:null;
  document.createDocumentFragment=()=>({...fakeElement('fragment'),isFragment:true});
  const oldLocation=globalThis.location,oldStorage=globalThis.localStorage,oldCaches=globalThis.caches;
- globalThis.location={origin:'http://test',pathname:'/',href:'http://test/?offline=music',search:'?offline=music'};
+ globalThis.location={origin:'http://test',pathname:'/',href:'http://test/',search:''};
  const url='http://test/api/media/99/download',lyricsKey=url+'?player_lyrics=1';
  const song={id:99,type:'audio',file_name:'saved.mp3',duration:12,offlinePinURL:url};
  globalThis.localStorage={getItem:key=>key==='player-offline-v1-7:index'?JSON.stringify({songs:{[url]:{media:song,url,lyricsKey,etag:'saved-a'}},collections:{}}):null};
  globalThis.caches={open:async()=>({match:async key=>key===url?new Response(new Uint8Array([1,2,3]),{headers:{etag:'saved-a'}}):key===lyricsKey?new Response(JSON.stringify({synced:true,lines:[{text:'Cold saved line',start:0}]}),{headers:{'x-player-audio-etag':'saved-a'}}):null})};
- const {selectOfflineMusicAccount}=await import('../offline-context.js');selectOfflineMusicAccount(7);
+ const oldUser=state.user;state.user={id:7};
+ const {setPlaybackCacheAccount}=await import("../playback-cache.js");setPlaybackCacheAccount(7);
+ const oldAnswer=answer;answer=async()=>{throw new TypeError("Network unavailable");};
  try {
   player.initPlayer();
-  player.selectMedia(song,0);await settle();
+  player.selectMedia(song,0);await settle();await settle();
   const panel=stage.children.find(child=>child.id==='audio-lyrics');
   const text=node=>(node?.textContent||'')+(node?.children||[]).map(text).join('');
-  assertEqual(text(panel?.children[0]),'Cold saved line','production showMedia retains identity for cold offline lyrics');
- }finally {player.stopAndClose();globalThis.location=oldLocation;globalThis.localStorage=oldStorage;globalThis.caches=oldCaches;}
+  assertEqual(text(panel?.children[0]),'Cold saved line','production showMedia retains identity for signed-in saved lyrics');
+ }finally {player.stopAndClose();setPlaybackCacheAccount(null);state.user=oldUser;answer=oldAnswer;globalThis.location=oldLocation;globalThis.localStorage=oldStorage;globalThis.caches=oldCaches;}
 }
 
 for (const test of [
   testNextAfterLastAudioSkipsCoverAndWrapsAmongAudio,
   testCrossFolderNextSkipsCoverAndStopsWithoutImage,
   testVideoSequenceStillReachesImages,
-  testColdOfflineProductionLyricsCaller,
+  testSignedInSavedProductionLyricsCaller,
 ]) {
   try {
     await test();

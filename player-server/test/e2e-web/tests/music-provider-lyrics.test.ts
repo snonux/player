@@ -82,15 +82,9 @@ test('A03c explicit provider and complete offline lyric snapshot', async ({ page
     await pin.getByRole('button', { name: 'Pin offline', exact: true }).click();
     await expect(pin.locator('[data-status]')).toContainText('Pinned · 1 of 1', { timeout: 60_000 });
     await pin.getByRole('button', { name: 'Close', exact: true }).click();
-    await page.getByRole('button', { name: 'Log out', exact: true }).click();
-    await page.waitForURL(url => url.pathname === '/login.html');
+    await openCollectionMoreAction(page, /Pin offline|Manage…/);
     await context.setOffline(true); offline = true;
-    await page.getByRole('link', { name: 'Browse offline music' }).click();
-    await expect(page.getByRole('heading', { name: 'Offline music' })).toBeVisible();
-    await page.reload();
-    await page.getByRole('button', { name: media.title, exact: true }).click();
-    await expect(page.locator('[data-results] h2')).toHaveText(media.title);
-    await page.getByRole('button', { name: 'Play now', exact: true }).click();
+    await pin.getByRole('button', { name: 'Play downloaded', exact: true }).click();
     await expectPlaying(page, media.id);
     await expect(panel.getByRole('button', { name: 'Seek to 0:01: Voice: Lead · Provider sky' })).toBeVisible();
     await expect(page.getByRole('status').filter({ hasText: 'Saved lyrics' })).toBeVisible();
@@ -113,7 +107,7 @@ test('A03c explicit provider and complete offline lyric snapshot', async ({ page
     expect(separate.provider_enabled).toBe(true);
     expect(separate.source).not.toBe('provider');
     expect(separate.lines).toHaveLength(0);
-    evidence.record({ feature: 'A03c', scenario: 'explicit provider, error/cache/removal, pinned rich lyrics after cold offline restart and real audio', result: 'pass',
+    evidence.record({ feature: 'A03c', scenario: 'explicit provider, error/cache/removal, signed-in pinned rich lyrics and real audio', result: 'pass',
       data: { media_id: media.id, provider_calls: readFileSync(callsFile, 'utf8').trim().split('\n').length,
         other_account_provider_state: separate.provider_state }, artifacts });
   } catch (error) {

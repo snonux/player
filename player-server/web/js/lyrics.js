@@ -1,5 +1,4 @@
 import { savedLyrics } from './saved-lyrics.js';
-import { offlineMusicMode } from './offline-context.js';
 
 // Derive access from the explicit playback URL, including detached/share URLs.
 // Unknown or cross-origin streams never trigger a library request by media ID.
@@ -271,7 +270,7 @@ export function initLyrics({ audio, player, getPosition = () => audio.currentTim
       visibility();
       if(pending)return;
       const url = media?.type === 'audio' ? lyricsUrl(streamUrl) : null;
-      const savedSource=saved || !!backing || !!media?.offlinePinURL || offlineMusicMode();
+      const savedSource=saved || !!backing || !!media?.offlinePinURL;
       if (!url && !savedSource) return;
       const controller = new AbortController();
       request = controller;

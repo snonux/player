@@ -1,5 +1,4 @@
 import { state } from './state.js';
-import { offlineMusicMode, offlineMusicAccount } from './offline-context.js';
 
 // Bodies stay lazy in the audio's account cache; manifests hold only key/size.
 export async function snapshotLyrics(id, audioURL, etag, signal, cache) {
@@ -29,7 +28,7 @@ export async function snapshotLyrics(id, audioURL, etag, signal, cache) {
 
 export async function savedLyrics(media, streamURL, signal, backing) {
  if(!Number.isSafeInteger(media?.id)||media.id<=0)return null;
- const id=offlineMusicMode()?offlineMusicAccount():state.user?.id;
+ const id=state.user?.id;
  if(!id || !globalThis.caches || !backing?.etag || ![`player-offline-v1-${id}`,`player-playback-v1-${id}`].includes(backing.name))return null;
  let exact;try{exact=new URL(streamURL,location.origin).href;if(exact!==backing.url || new URL(exact).origin!==location.origin || media.offlinePinURL && new URL(media.offlinePinURL,location.origin).href!==exact)return null;}catch{return null;}
  {
@@ -41,7 +40,7 @@ export async function savedLyrics(media, streamURL, signal, backing) {
    const cache=await caches.open(name);
    if(await cache.match(row.url)) {
     let lyrics;try{const response=await cache.match(row.lyricsKey);if(!response || response.headers.get('x-player-audio-etag')!==backing.etag)continue;lyrics=await response.json();if(!Array.isArray(lyrics?.lines))continue;}catch{continue;}
-    if(signal?.aborted || (offlineMusicMode()?offlineMusicAccount():state.user?.id)!==id)return null;
+    if(signal?.aborted || state.user?.id!==id)return null;
     return {...lyrics,provider_enabled:false,saved:true};
    }
   }

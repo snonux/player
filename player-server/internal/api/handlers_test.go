@@ -429,7 +429,7 @@ func TestServer_StaticPages(t *testing.T) {
 			authSvc := &service.MockAuthService{CountUsersFunc: func(context.Context) (int, error) { return count, nil }}
 			srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 			for _, method := range []string{http.MethodGet, http.MethodHead} {
-				for _, path := range []string{"/?offline=music", "/index.html?offline=music", "/?local=podcasts", "/index.html?local=podcasts", "/?local=files", "/index.html?local=files"} {
+				for _, path := range []string{"/?local=podcasts", "/index.html?local=podcasts", "/?local=files", "/index.html?local=files"} {
 					rr := httptest.NewRecorder()
 					srv.ServeHTTP(rr, httptest.NewRequest(method, path, nil))
 					if rr.Code != http.StatusOK || (method == http.MethodGet && !strings.Contains(rr.Body.String(), "index")) {
@@ -438,7 +438,8 @@ func TestServer_StaticPages(t *testing.T) {
 				}
 			}
 			cases := []struct{ method, path string }{
-				{http.MethodGet, "/?music=album"}, {http.MethodGet, "/index.html?offline=music&set=1"},
+				{http.MethodGet, "/?offline=music"}, {http.MethodHead, "/index.html?offline=music"},
+				{http.MethodGet, "/index.html?offline=music"}, {http.MethodGet, "/?music=album"}, {http.MethodGet, "/index.html?offline=music&set=1"},
 				{http.MethodGet, "/other?offline=music"}, {http.MethodGet, "/other?local=podcasts"},
 				{http.MethodGet, "/index.html?local=podcasts&set=1"}, {http.MethodGet, "/index.html?local=files&local=podcasts"},
 				{http.MethodGet, "/index.html?local=unknown"}, {http.MethodGet, "/index.html?local=podcasts&"},
