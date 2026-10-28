@@ -78,13 +78,14 @@ class _LyricsPanelState extends State<LyricsPanel> {
   bool _open = false;
   bool _loading = false;
   bool _failed = false;
+  bool _providerAction = false;
   Lyrics? _lyrics;
   String _language = '';
 
   @override
   void initState() {
     super.initState();
-    _syncController();
+    _load(); // Probe existing lyrics without delaying playback or contacting a provider.
   }
 
   @override
@@ -103,16 +104,19 @@ class _LyricsPanelState extends State<LyricsPanel> {
   }
 
   Future<void> _load([Future<Lyrics> Function()? action]) async {
+    if (_loading) return;
     setState(() {
       _loading = true;
       _failed = false;
     });
+    _syncController();
     try {
       final lyrics = await (action ?? widget.load)();
       if (!mounted) return;
       setState(() {
         _lyrics = lyrics;
         _language = '';
+        if (lyrics.lines.isEmpty) _open = false;
       });
     } catch (_) {
       if (!mounted) return;
@@ -126,7 +130,11 @@ class _LyricsPanelState extends State<LyricsPanel> {
   }
 
   Future<void> _runProvider(Future<Lyrics> Function()? action) async {
-    if (!_open) setState(() => _open = true);
+    if (_loading) return;
+    setState(() {
+      _open = true;
+      _providerAction = true;
+    });
     await _load(action);
   }
 
@@ -135,14 +143,16 @@ class _LyricsPanelState extends State<LyricsPanel> {
     if (controller == null) return;
     final saved = widget.saved || _lyrics?.saved == true;
     final lyrics = _lyrics;
-    // Offer Find before the first load so the hamburger stays discoverable;
-    // hide it once sidecar/embedded lyrics prove a provider lookup is wrong.
-    final canFind = !saved &&
+    // Keep provider actions in the hamburger after the availability probe;
+    // sidecar/embedded lyrics do not need a provider lookup.
+    final canFind = !_loading &&
+        !saved &&
         widget.lookup != null &&
         (lyrics == null ||
             (lyrics.providerEnabled &&
                 !{'sidecar', 'embedded'}.contains(lyrics.source)));
-    final canRemove = !saved &&
+    final canRemove = !_loading &&
+        !saved &&
         widget.removeProvider != null &&
         lyrics != null &&
         lyrics.providerEnabled &&
@@ -159,6 +169,25 @@ class _LyricsPanelState extends State<LyricsPanel> {
   @override
   Widget build(BuildContext context) {
     final saved = widget.saved || _lyrics?.saved == true;
+    // Unknown/empty lyrics have no primary control. Provider actions remain
+    // discoverable in the player menu; a failed read retains an explicit retry.
+    if (_lyrics?.lines.isNotEmpty != true && (_providerAction || !_failed)) {
+      if (!_providerAction) return const SizedBox.shrink();
+      final message = _loading
+          ? 'Looking up lyrics…'
+          : _failed || {'error', 'busy'}.contains(_lyrics?.providerState)
+              ? 'Lyric lookup failed. Try again from the player menu.'
+              : _lyrics?.providerState == 'empty'
+                  ? 'No provider match.'
+                  : 'No lyrics available.';
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: Semantics(
+          liveRegion: true,
+          child: Text(message, style: const TextStyle(color: Colors.white70)),
+        ),
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -177,7 +206,11 @@ class _LyricsPanelState extends State<LyricsPanel> {
             }
           },
           icon: Icon(_open ? Icons.expand_less : Icons.lyrics_outlined),
-          label: Text(_open ? 'Hide lyrics' : 'Lyrics'),
+          label: Text(_open
+              ? 'Hide lyrics'
+              : _failed
+                  ? 'Retry lyrics'
+                  : 'Lyrics'),
         ),
         if (_open)
           Padding(

@@ -924,6 +924,30 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('pending or absent lyrics do not block playback or add a control',
+      (tester) async {
+    final (player, handler) = _usePlayableHandler(tester);
+    final pending = Completer<Lyrics>();
+    final client = _FakeApiClient()..lyricsResult = () => pending.future;
+    await _pumpScreen(tester, client,
+        handlerOverride: handler,
+        mediaUrl: 'http://localhost:8080/api/v1/media/42/stream');
+    for (var i = 0; i < 20 && !player.isPlaying; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    expect(player.isPlaying, isTrue);
+    expect(find.byKey(const Key('audio_player_lyrics')), findsNothing);
+    expect(client.lyricsIds, [42]);
+    pending.complete(const Lyrics());
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('audio_player_lyrics')), findsNothing);
+    expect(player.isPlaying, isTrue);
+    expect(client.lyricsIds, [42]);
+    await tester.runAsync(handler.stop);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
       'server lyrics use the current media and line taps seek its session',
       (tester) async {
@@ -1003,13 +1027,10 @@ void main() {
     ));
     await tester.pump();
     await tester.pump();
-    await tester.ensureVisible(find.byKey(const Key('audio_player_lyrics')));
-    await tester.tap(find.byKey(const Key('audio_player_lyrics')));
-    await tester.pump();
-    await tester.pump();
     expect(client.shareLyricsRequests, [('abc', 'original')]);
     expect(client.shareFormatRequests, [('abc', 'original')]);
-    expect(find.text('No lyrics available.'), findsOneWidget);
+    expect(find.byKey(const Key('audio_player_lyrics')), findsNothing);
+    expect(find.byKey(const Key('lyrics_panel')), findsNothing);
     expect(player.isPlaying, isTrue);
     await tester.runAsync(handler.stop);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -1355,13 +1376,14 @@ void main() {
     expect(find.byTooltip('Skip forward 15 seconds'), findsNothing);
     player.elapsed = const Duration(seconds: 20);
     await _openMenu(tester);
-    await tester.ensureVisible(find.byKey(const Key('audio_player_seek_back_15')));
+    await tester
+        .ensureVisible(find.byKey(const Key('audio_player_seek_back_15')));
     await tester.tap(find.byKey(const Key('audio_player_seek_back_15')));
     await tester.pump();
     expect(player.elapsed, const Duration(seconds: 5));
     await _openMenu(tester);
-    await tester.ensureVisible(
-        find.byKey(const Key('audio_player_seek_forward_15')));
+    await tester
+        .ensureVisible(find.byKey(const Key('audio_player_seek_forward_15')));
     await tester.tap(find.byKey(const Key('audio_player_seek_forward_15')));
     await tester.pump();
     expect(player.elapsed, const Duration(seconds: 20));

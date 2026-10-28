@@ -64,7 +64,7 @@ test('synced lyrics follow native playback, forward/backward seeks, toggle and v
   await toggle.click(); await expect(panel).toBeVisible();
   await load(page, 2, 'book.m4b');
   await expect(panel).toBeVisible();
-  await expect(page.getByRole('combobox')).toBeDisabled();
+  await expect(page.getByRole('combobox', { name: 'Audio visualization', exact: true })).toBeDisabled();
 });
 
 test('plain lyrics scroll safely; absent, failed, invalid and non-audio tracks clear all lyrics', async ({ page }) => {
@@ -167,7 +167,7 @@ test('focused lyrics own reading keys in the library while playback shortcuts st
   await page.goto('/');
   await page.getByRole('button', { name: 'Set Music', exact: true }).click();
   await expect(page.locator('.media-card')).toHaveCount(12);
-  await page.locator('.media-card').first().getByRole('button', { name: '▶', exact: true }).click();
+  await page.locator('.media-card').first().getByRole('button', { name: 'Play', exact: true }).click();
   const audio = page.locator('#media-audio');
   await expect.poll(() => audio.evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(0);
   await audio.evaluate((a: HTMLAudioElement) => { a.pause(); a.currentTime = 4; });

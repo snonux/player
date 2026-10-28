@@ -14,8 +14,72 @@ final _timed = Lyrics.fromJson({
 });
 
 void main() {
-  testWidgets(
-      'provider actions stay on the controller; saved lyrics hide them',
+  for (final state in ['empty', 'busy', 'error']) {
+    testWidgets('explicit lookup reports $state without an empty lyrics toggle',
+        (tester) async {
+      final result = Completer<Lyrics>();
+      final controller = LyricsPanelController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(MaterialApp(
+          home: LyricsPanel(
+        controller: controller,
+        load: () async => const Lyrics(providerEnabled: true),
+        lookup: () => result.future,
+        positionStream: const Stream.empty(),
+        position: () => Duration.zero,
+        onSeek: (_) async {},
+      )));
+      await tester.pumpAndSettle();
+      final lookup = controller.findOnline();
+      await tester.pump();
+      expect(find.text('Looking up lyrics…'), findsOneWidget);
+      expect(find.byKey(const Key('audio_player_lyrics')), findsNothing);
+      expect(controller.canFindOnline, isFalse);
+      result.complete(Lyrics(providerEnabled: true, providerState: state));
+      await lookup;
+      await tester.pumpAndSettle();
+      expect(
+          find.text(state == 'empty'
+              ? 'No provider match.'
+              : 'Lyric lookup failed. Try again from the player menu.'),
+          findsOneWidget);
+      expect(find.byKey(const Key('audio_player_lyrics')), findsNothing);
+      expect(controller.canFindOnline, isTrue);
+    });
+  }
+  testWidgets('pending availability is quiet and cannot race provider actions',
+      (tester) async {
+    final pending = Completer<Lyrics>();
+    var lookups = 0;
+    final controller = LyricsPanelController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(MaterialApp(
+        home: LyricsPanel(
+      controller: controller,
+      load: () => pending.future,
+      lookup: () async {
+        lookups++;
+        return _timed;
+      },
+      positionStream: const Stream.empty(),
+      position: () => Duration.zero,
+      onSeek: (_) async {},
+    )));
+    expect(find.byKey(const Key('audio_player_lyrics')), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(controller.canFindOnline, isFalse);
+    await controller.findOnline();
+    expect(lookups, 0);
+    pending.complete(const Lyrics(providerEnabled: true));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('audio_player_lyrics')), findsNothing);
+    expect(controller.canFindOnline, isTrue);
+    await controller.findOnline();
+    await tester.pumpAndSettle();
+    expect(lookups, 1);
+    expect(find.text('First line'), findsOneWidget);
+  });
+  testWidgets('provider actions stay on the controller; saved lyrics hide them',
       (tester) async {
     var fetched = 0, removed = 0;
     final available = Lyrics.fromJson({'provider_enabled': true, 'lines': []});
@@ -54,12 +118,12 @@ void main() {
     await tester.pumpWidget(panel());
     expect(fetched, 0);
     expect(controller.canFindOnline, isTrue,
-        reason: 'Find is offered before the first load');
+        reason: 'Find remains available after an empty availability probe');
     expect(find.text('Find lyrics online (send track tags)'), findsNothing,
         reason: 'provider actions live in the overflow, not the panel');
-    await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
-    expect(fetched, 0, reason: 'opening lyrics reads cache only');
+    expect(find.text('Lyrics'), findsNothing);
+    expect(fetched, 0, reason: 'availability reads existing lyrics only');
     await controller.findOnline();
     await tester.pumpAndSettle();
     expect(fetched, 1);
@@ -68,17 +132,18 @@ void main() {
     await controller.removeProvider();
     await tester.pumpAndSettle();
     expect(removed, 1);
-    expect(find.text('No lyrics available.'), findsOneWidget);
+    expect(find.byKey(const Key('audio_player_lyrics')), findsNothing);
+    expect(find.byKey(const Key('lyrics_panel')), findsNothing);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpWidget(panel(saved: true));
-    await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
-    expect(find.text('No saved lyrics'), findsOneWidget);
+    expect(find.byKey(const Key('audio_player_lyrics')), findsNothing);
     expect(controller.canFindOnline, isFalse);
     expect(controller.canRemoveProvider, isFalse);
     expect(fetched, 1);
   });
-  testWidgets('loads on tap, highlights positions and seeks a timed line',
+  testWidgets(
+      'probes availability, highlights positions and seeks a timed line',
       (tester) async {
     final positions = StreamController<Duration>.broadcast();
     addTearDown(positions.close);
@@ -95,7 +160,8 @@ void main() {
       position: () => Duration.zero,
       onSeek: (position) async => sought = position,
     ))));
-    expect(calls, 0);
+    expect(calls, 1);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
     expect(calls, 1);
@@ -123,6 +189,7 @@ void main() {
     await tester.tap(find.text('Hide lyrics'));
     await tester.pump();
     expect(find.text('Second line'), findsNothing);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
     expect(calls, 1);
@@ -145,6 +212,7 @@ void main() {
       position: () => Duration.zero,
       onSeek: (_) async {},
     ))));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
     expect(find.text('Line 25'), findsNothing);
@@ -183,6 +251,7 @@ void main() {
         onSeek: (_) async {},
       )),
     )));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
     final current =
@@ -209,12 +278,14 @@ void main() {
       position: () => position,
       onSeek: (_) async {},
     ))));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('lyrics_current_line')), findsNothing);
     await tester.tap(find.text('Hide lyrics'));
     await tester.pump();
     position = const Duration(seconds: 5);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
     expect(find.text('Current: Second line'), findsOneWidget);
@@ -236,12 +307,12 @@ void main() {
       position: () => Duration.zero,
       onSeek: (_) async => fail('Unavailable lyrics cannot seek'),
     )));
-    await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
-    expect(find.text('Could not load lyrics.'), findsOneWidget);
+    expect(find.text('Retry lyrics'), findsOneWidget);
     await tester.tap(find.text('Retry lyrics'));
     await tester.pumpAndSettle();
-    expect(find.text('No lyrics available.'), findsOneWidget);
+    expect(find.byKey(const Key('audio_player_lyrics')), findsNothing);
+    expect(find.byKey(const Key('lyrics_panel')), findsNothing);
     expect(calls, 2);
     await tester.pumpWidget(MaterialApp(
         home: LyricsPanel(
@@ -251,6 +322,7 @@ void main() {
       position: () => Duration.zero,
       onSeek: (_) async => fail('Plain lyrics cannot seek'),
     )));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
     expect(find.text('Plain text'), findsOneWidget);
@@ -272,16 +344,16 @@ void main() {
           )),
         );
     await show('old', () => old.future);
-    await tester.tap(find.text('Lyrics'));
+    expect(find.byKey(const Key('audio_player_lyrics')), findsNothing);
     await tester.pump();
     await show('new', () async => const Lyrics());
     old.complete(_timed);
     await tester.pumpAndSettle();
     expect(find.text('First line'), findsNothing);
     expect(find.byKey(const Key('lyrics_panel')), findsNothing);
-    await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
-    expect(find.text('No lyrics available.'), findsOneWidget);
+    expect(find.byKey(const Key('audio_player_lyrics')), findsNothing);
+    expect(find.byKey(const Key('lyrics_panel')), findsNothing);
     await show('third', () async => _timed);
     expect(find.text('No lyrics available.'), findsNothing);
   });
@@ -327,6 +399,7 @@ void main() {
         seeks++;
       },
     ))));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
     Text banner() =>
