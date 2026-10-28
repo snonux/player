@@ -21,6 +21,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../support/idle_playback.dart';
 import '../support/server_endpoint.dart';
 
+Future<void> _openAlbumMore(WidgetTester tester) async {
+  await tester.tap(find.descendant(
+      of: find.byType(MusicCollectionActions),
+      matching: find.byTooltip('More options')));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _startSelectSongs(WidgetTester tester) async {
+  await _openAlbumMore(tester);
+  await tester.tap(find.text('Select songs'));
+  await tester.pumpAndSettle();
+}
+
 class _Client extends PlayerApiClient {
   _Client() : super(dio: Dio());
   @override
@@ -377,8 +390,10 @@ void main() {
           return MaterialApp.router(routerConfig: router);
         })));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Select songs'));
-    await tester.pumpAndSettle();
+    expect(find.text('Select songs'), findsNothing);
+    expect(find.text('Play album'), findsOneWidget);
+    expect(find.text('Shuffle'), findsOneWidget);
+    await _startSelectSongs(tester);
     await reveal(tester, find.bySemanticsLabel('Select Second by track'));
     await tester.tap(find.bySemanticsLabel('Select Second by track'));
     await tester.pump();
@@ -404,8 +419,14 @@ void main() {
     await tester.pumpAndSettle();
     await pop;
     await tester.pumpAndSettle();
-    expect(find.text('Select songs'), findsOneWidget);
+    expect(find.text('Cancel selection'), findsNothing);
     expect(find.byType(Checkbox), findsNothing);
+    // Back only clears selection; stay on the album and keep Play reachable.
+    expect(find.text('Night Transit'), findsOneWidget);
+    await reveal(tester, find.text('Play album'));
+    expect(find.text('Play album'), findsOneWidget);
+    await _openAlbumMore(tester);
+    expect(find.text('Select songs'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(handler.stop);
     router.dispose();
@@ -438,8 +459,7 @@ void main() {
                   child: child!));
         })));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Select songs'));
-    await tester.pumpAndSettle();
+    await _startSelectSongs(tester);
     await reveal(tester, find.bySemanticsLabel('Select First by track'));
     await tester.tap(find.bySemanticsLabel('Select First by track'));
     await reveal(tester, find.bySemanticsLabel('Select Second by track'));
@@ -454,6 +474,7 @@ void main() {
     expect(find.text('Added 2 songs'), findsOneWidget);
     await tester.tap(find.text('Cancel selection'));
     await tester.pumpAndSettle();
+    expect(find.text('Select songs'), findsNothing);
     await reveal(tester, find.byTooltip('Actions for First by track'));
     await tester.tap(find.byTooltip('Actions for First by track'));
     await tester.pumpAndSettle();

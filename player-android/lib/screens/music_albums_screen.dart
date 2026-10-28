@@ -530,6 +530,15 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
         ]));
   }
 
+  List<Widget> _detailMoreItems() => [
+        if (!_selecting)
+          OverflowMenuItem(
+              key: const Key('album_select_songs'),
+              icon: Icons.checklist,
+              label: context.tr('Select songs'),
+              onSelected: () => setState(() => _selecting = true)),
+      ];
+
   Widget _detail() {
     final album = _album!;
     final songs = (album['songs'] as List? ?? [])
@@ -603,22 +612,20 @@ class _MusicAlbumsScreenState extends ConsumerState<MusicAlbumsScreen> {
           collections: [MusicCollection('album', widget.albumKey!)],
           playLabel: context.tr('Play album'),
           sourceLabel: album['title'] as String,
-          enabled: songs.isNotEmpty),
+          enabled: songs.isNotEmpty,
+          moreExtras: (_) => _detailMoreItems()),
       MusicEnrichmentSection(kind: 'album', entityKey: widget.albumKey!),
-      Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-        TextButton(
-            onPressed: () => setState(() {
-                  _selecting = !_selecting;
-                  if (!_selecting) _selected.clear();
-                }),
-            child: Text(_selecting
-                ? context.tr('Cancel selection')
-                : context.tr('Select songs'))),
-        if (_selecting) ...[
+      if (_selecting)
+        Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+          TextButton(
+              onPressed: () => setState(() {
+                    _selecting = false;
+                    _selected.clear();
+                  }),
+              child: Text(context.tr('Cancel selection'))),
           Text(context.tr('{count} selected', {'count': _selected.length})),
-          actions(selectedSongs, context.tr('Selected song actions'))
-        ],
-      ]),
+          actions(selectedSongs, context.tr('Selected song actions')),
+        ]),
       const SizedBox(height: 16),
       for (var i = 0; i < songs.length; i++) ...[
         if (grouped && headings.containsKey(songs[i].id))

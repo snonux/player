@@ -56,11 +56,17 @@ def base_album(run, songs):
     assert adrv.wait('^Play album$'), app_ui.labels()
 
 
+def select_songs():
+    # Album detail keeps Select songs in the collection More sheet (fs3).
+    assert adrv.tap('^More options$'), app_ui.labels()
+    assert adrv.tap('^Select songs$'), app_ui.labels()
+
+
 def editing(run, songs):
     a, b, c = songs
     base_album(run, songs)
     before = sequence.state()
-    assert adrv.tap('^Select songs$')
+    select_songs()
     # Reverse selection click order still yields displayed album order B,C.
     for song in [c, b]:
         assert adrv.tap('^Select ' + re.escape(song['title']) + '$'), app_ui.labels()
@@ -70,7 +76,7 @@ def editing(run, songs):
     assert adrv.wait('^Added 2 songs$'), app_ui.labels()
     assert adrv.find('^2 selected$')
     app_ui.back()  # Back exits selection, does not leave album.
-    assert adrv.wait('^Select songs$') and adrv.find('^Play album$'), app_ui.labels()
+    assert adrv.wait('^Play album$') and not adrv.find('^Cancel selection$'), app_ui.labels()
     action(c['title'], 'Play next')
     expected = [a['title'], b['title'], c['title'], c['title'], b['title'], c['title']]
     inspect_order(expected)
@@ -220,7 +226,7 @@ def batch(run, songs):
     queue.action(c['title'], 'Remove')
     assert order() == [a['title'], b['title']], order()
     app_ui.back()
-    assert adrv.tap('^Select songs$')
+    select_songs()
     for song in [c, a]:
         assert adrv.tap('^Select ' + re.escape(song['title']) + '$'), app_ui.labels()
     assert adrv.tap('^Selected song actions$')
@@ -250,7 +256,8 @@ def batch(run, songs):
     assert append_progress.get('user_id') == run.viewer_id and append_progress.get('media_id') == a['id'], detail
     assert append_progress.get('position_seconds', 0) > before['position_ms'] / 1000 + .5, detail
     inspect_order([a['title'], b['title'], a['title'], c['title']])
-    assert adrv.tap('^Cancel selection$') and adrv.tap('^Select songs$')
+    assert adrv.tap('^Cancel selection$')
+    select_songs()
     for song in [c, b]:
         assert adrv.tap('^Select ' + re.escape(song['title']) + '$'), app_ui.labels()
     def play_selected():
@@ -279,7 +286,7 @@ def feedback(run, songs):
     # Fresh login above starts with an empty in-memory queue. No audio/volume
     # preconditions are needed for this UI-only confirmation correction.
     albums.album()
-    assert adrv.tap('^Select songs$')
+    select_songs()
     for song in [songs[1], songs[0]]:
         assert adrv.tap('^Select ' + re.escape(song['title']) + '$'), app_ui.labels()
     assert adrv.tap('^Selected song actions$')
@@ -288,7 +295,7 @@ def feedback(run, songs):
     batch_labels = [adrv.label(node) for node in batch_nodes]
     assert 'Added 2 songs' in batch_labels, batch_labels
     app_ui.back()
-    assert adrv.wait('^Select songs$'), app_ui.labels()
+    assert adrv.wait('^Play album$') and not adrv.find('^Cancel selection$'), app_ui.labels()
     action(songs[2]['title'], 'Add to queue')
     # Inspect the latest message and obtain its Undo from one actual semantic
     # snapshot, avoiding multiple slow dumps consuming a transient snackbar.
