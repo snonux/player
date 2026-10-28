@@ -32,8 +32,12 @@ String musicFacetValue(String key, String value) => key == 'compilation'
 /// Account-scoped applied facets; the sheet edits a draft until Apply.
 class MusicFilterBar extends ConsumerStatefulWidget
     implements PreferredSizeWidget {
-  const MusicFilterBar({super.key, required this.onChanged});
+  const MusicFilterBar(
+      {super.key, required this.onChanged, this.trailing = const []});
   final ValueChanged<Map<String, String>> onChanged;
+
+  /// Extra controls in the same horizontal filter strip (e.g. result groups).
+  final List<Widget> trailing;
   @override
   Size get preferredSize => const Size.fromHeight(48);
   @override
@@ -106,6 +110,8 @@ class _MusicFilterBarState extends ConsumerState<MusicFilterBar> {
                 onPressed: _open,
                 icon: const Icon(Icons.filter_list),
                 label: Text('Filters (${_filter.length})')),
+            for (final child in widget.trailing)
+              Padding(padding: const EdgeInsets.only(left: 8), child: child),
             for (final entry in _filter.entries)
               Padding(
                   padding: const EdgeInsets.only(left: 8),

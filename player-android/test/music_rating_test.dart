@@ -99,21 +99,20 @@ void main() {
     ], child: const MaterialApp(home: MusicSearchScreen())));
     await tester.pumpAndSettle();
     expect(find.text('Search songs, albums and artists.'), findsOneWidget);
-    Future<void> filter(String label) async {
-      await tester.tap(find.byTooltip('Rating filters and order'));
+    expect(find.byTooltip('Rating filters and order'), findsNothing);
+    Future<void> filter(Key key) async {
+      await tester.tap(find.byKey(const Key('overflow_menu_button')));
       await tester.pumpAndSettle();
-      await tester.tap(find.ancestor(
-          of: find.text(label),
-          matching: find.byType(CheckedPopupMenuItem<String>)));
+      await tester.tap(find.byKey(key));
       await tester.pumpAndSettle();
     }
 
-    await filter('Highest rated first');
+    await filter(const Key('music_highest_rated'));
     expect(client.searches.last['sort'], 'rating');
     expect(find.text('Highest album'), findsOneWidget);
-    await filter('Rated only');
+    await filter(const Key('music_rated_only'));
     expect(client.searches.last['rated'], 'true');
-    await filter('Rated only');
+    await filter(const Key('music_rated_only'));
     expect(client.searches.last.containsKey('rated'), isFalse);
     expect(client.searches.last['sort'], 'rating');
     expect(find.text('Highest album'), findsOneWidget);

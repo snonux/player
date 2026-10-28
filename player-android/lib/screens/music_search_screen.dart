@@ -4,6 +4,7 @@ import '../widgets/music_rating_button.dart';
 import '../widgets/music_rating_filter.dart';
 import '../widgets/music_layout_panel.dart';
 import '../widgets/music_filter_sheet.dart';
+import '../widgets/overflow_menu.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -156,11 +157,38 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
     });
   }
 
+  void _ratingFilterChanged(bool rated, bool highest) {
+    final changed = rated != _ratedOnly;
+    setState(() {
+      _ratedOnly = rated;
+      _highestRated = highest;
+    });
+    if (changed || _results == null) _load();
+  }
+
+  List<Widget> _menuItems() => musicRatingMenuItems(context,
+      rated: _ratedOnly,
+      highest: _highestRated,
+      onChanged: _ratingFilterChanged);
+
+  List<Widget> _groupChips() => [
+        for (final group in ['All', 'Songs', 'Albums', 'Artists'])
+          FilterChip(
+            label: Text(context.tr(group)),
+            selected: _group == group,
+            onSelected: (_) => setState(() {
+              _group = group;
+              if (_scroll.hasClients) _scroll.jumpTo(0);
+            }),
+          ),
+      ];
+
   @override
   Widget build(BuildContext context) => Scaffold(
         bottomNavigationBar: const MusicMiniPlayer(),
         appBar: AppBar(
-            bottom: MusicFilterBar(onChanged: _filtersChanged),
+            bottom: MusicFilterBar(
+                onChanged: _filtersChanged, trailing: _groupChips()),
             title: TextField(
               controller: _text,
               autofocus: true,
@@ -175,42 +203,14 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
               },
             ),
             actions: [
-              MusicRatingFilter(
-                  rated: _ratedOnly,
-                  highest: _highestRated,
-                  onChanged: (rated, highest) {
-                    final changed = rated != _ratedOnly;
-                    setState(() {
-                      _ratedOnly = rated;
-                      _highestRated = highest;
-                    });
-                    if (changed || _results == null) _load();
-                  }),
               IconButton(
                   tooltip: context.tr('Clear search'),
                   onPressed: _clear,
                   icon: const Icon(Icons.clear)),
-              const MusicQueueButton()
+              const MusicQueueButton(),
+              OverflowMenuButton(items: (_) => _menuItems()),
             ]),
-        body: Column(children: [
-          SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(children: [
-                for (final group in ['All', 'Songs', 'Albums', 'Artists'])
-                  Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        label: Text(context.tr(group)),
-                        selected: _group == group,
-                        onSelected: (_) => setState(() {
-                          _group = group;
-                          if (_scroll.hasClients) _scroll.jumpTo(0);
-                        }),
-                      )),
-              ])),
-          Expanded(child: MusicLayoutPanel(kind: 'songs', builder: _body)),
-        ]),
+        body: MusicLayoutPanel(kind: 'songs', builder: _body),
       );
 
   Widget _body(MusicLayout layout) {

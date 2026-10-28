@@ -8,6 +8,7 @@ import 'package:player_android/models/media.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/music_search_screen.dart';
+import 'package:player_android/widgets/music_filter_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/idle_playback.dart';
@@ -90,10 +91,18 @@ void main() {
     final client = _Client();
     await mount(tester, client);
     expect(find.text('Search songs, albums and artists.'), findsOneWidget);
+    expect(find.byKey(const Key('overflow_menu_button')), findsOneWidget);
+    expect(find.byTooltip('Rating filters and order'), findsNothing);
     expect(client.queries, isEmpty);
     await search(tester, 'Café');
     expect(find.text('Albums (1)'), findsOneWidget);
     expect(find.text('Artists (1)'), findsOneWidget);
+    // Group chips live in the filter bar strip, not a separate body row.
+    expect(
+        find.descendant(
+            of: find.byType(MusicFilterBar),
+            matching: find.widgetWithText(FilterChip, 'Songs')),
+        findsOneWidget);
     await tester.tap(find.widgetWithText(FilterChip, 'Songs'));
     await tester.pump();
     expect(find.text('Nothing matches these filters'), findsOneWidget);
