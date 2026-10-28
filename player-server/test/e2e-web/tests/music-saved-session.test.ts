@@ -1,16 +1,18 @@
 import { writeFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track } from './helpers/music-fixture';
-import { keyboardLogin, expectPlaying, audioState } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, audioState, openQueueMoreAction } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Disposable music fixture required');
 const panel = (p: Page) => p.locator('#queue-panel');
 const qstate = (p: Page) => p.evaluate(async () => (await import('/js/queue.js')).queueState());
 const remote = async (p: Page) => (await p.request.get('/api/v1/queue')).json();
 const button = (p: Page, name: string) => panel(p).getByRole('button', { name, exact: true });
+const moreActions = new Set(['Continue session', 'Replace saved session', 'Keep other session', 'Clear queue', 'Undo', 'Save as playlist']);
 async function action(p: Page, name: string, accept = true) {
   p.once('dialog', dialog => accept ? dialog.accept() : dialog.dismiss());
-  await button(p, name).click();
+  if (moreActions.has(name)) await openQueueMoreAction(p, name);
+  else await button(p, name).click();
 }
 
 test('M17 explicit cross-client continuation, durable choices, offline conflict and late response safety', async ({ page, browser }, info) => {
@@ -54,7 +56,7 @@ test('M17 explicit cross-client continuation, durable choices, offline conflict 
     await other.bringToFront();
     await keyboardLogin(other, f.admin);
     await other.keyboard.press('Q');
-    await button(other, 'Continue session').click();
+    await openQueueMoreAction(other, 'Continue session');
     await expect(button(other, 'Resume queue')).toBeVisible();
     const transferred = await qstate(other);
     expect(transferred.entries.map((entry: any) => entry.id)).toEqual(saved.entries.map((entry: any) => entry.id));
@@ -96,9 +98,9 @@ test('M17 explicit cross-client continuation, durable choices, offline conflict 
     await action(other, 'Replace saved session');
     await expect.poll(async () => (await remote(other)).revision).toBeGreaterThan(revision);
     await page.context().setOffline(false);
-    await expect(button(page, 'Keep other session')).toBeVisible({ timeout: 30000 });
+    await expect(panel(page)).toContainText('Another client saved a session', { timeout: 30000 });
     const kept = await remote(other);
-    await button(page, 'Keep other session').click();
+    await openQueueMoreAction(page, 'Keep other session');
     expect((await qstate(page)).entries.map((entry: any) => entry.id)).toEqual(offline.entries.map((entry: any) => entry.id));
     await page.waitForTimeout(700);
     expect((await remote(other)).revision).toBe(kept.revision);
@@ -124,7 +126,7 @@ test('M17 explicit cross-client continuation, durable choices, offline conflict 
     await expectPlaying(other, b.id);
     const active = await qstate(other);
     release();
-    await expect(button(other, 'Continue session')).toBeEnabled();
+    await expect.poll(async () => (await qstate(other)).loading).toBe(false);
     await other.waitForTimeout(700);
     expect((await qstate(other)).entries.map((entry: any) => entry.id)).toEqual(active.entries.map((entry: any) => entry.id));
     expect((await qstate(other)).index).toBe(2);

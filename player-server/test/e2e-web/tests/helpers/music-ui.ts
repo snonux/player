@@ -189,6 +189,31 @@ export async function openCollectionMoreAction(page: Page, action: string | RegE
   return more;
 }
 
+const queuePanel = (page: Page) => page.locator('#queue-panel');
+
+/** Open a queue secondary action from the toolbar More hamburger. */
+export async function openQueueMoreAction(page: Page, action: string | RegExp) {
+  const more = queuePanel(page).getByRole('button', { name: 'More', exact: true });
+  await more.click();
+  await page.getByRole('menu', { name: 'More queue actions', exact: true }).getByRole('button', { name: action }).click();
+  return more;
+}
+
+/** Open a shuffle submenu action (Toggle / tracks / albums / Reshuffle). */
+export async function openQueueShuffleAction(page: Page, action: string | RegExp) {
+  const opener = queuePanel(page).locator('[data-queue-action="shuffle-menu"]');
+  await opener.click();
+  await page.getByRole('menu', { name: 'Shuffle options', exact: true }).getByRole('button', { name: action }).click();
+  return opener;
+}
+
+/** Open a per-row ⋮ action (Move up/down, Remove). */
+export async function openQueueRowMenuAction(page: Page, index: number, action: string | RegExp) {
+  const row = queuePanel(page).locator(`[data-queue-index="${index}"]`).first();
+  await row.getByRole('button', { name: /^Actions for / }).click();
+  await page.getByRole('menu', { name: 'Queue track actions', exact: true }).getByRole('button', { name: action }).click();
+}
+
 /** Open Create / smart / Import from the playlist list New hamburger (locale-stable data-* keys). */
 export async function openPlaylistNewAction(page: Page, action: 'create' | 'smart' | 'import' | string) {
   await page.locator('#media-grid [data-new-menu]').click();

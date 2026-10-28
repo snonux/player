@@ -2,7 +2,7 @@
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, audioState, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, audioState, captureOutput, assertValidCapture, mainSegment, openQueueMoreAction} from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local music fixture');
 let f: MusicFixture, e: Evidence;
@@ -48,16 +48,17 @@ test('M28 named private playlist copies the full queue while playback continues'
   try {
     seed = await seedQueue(page, 'M28 seed ' + Date.now());
     const before = await audioState(page);
-    const saveButton = panel(page).getByRole('button', { name: 'Save as playlist' });
-    await saveButton.focus(); await page.keyboard.press('Enter');
+    const more = panel(page).getByRole('button', { name: 'More', exact: true });
+    await more.focus(); await page.keyboard.press('Enter');
+    await page.getByRole('menu', { name: 'More queue actions', exact: true }).getByRole('button', { name: 'Save as playlist', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Save queue as playlist' });
     await expect(form).toBeVisible();
     await expect(form.getByRole('textbox', { name: 'Playlist name' })).toBeFocused();
     await expect(form).toContainText('3 songs · Private playlist');
     await page.keyboard.press('Escape');
     await expect(form).toHaveCount(0);
-    await expect(saveButton).toBeFocused();
-    await saveButton.press('Enter');
+    await expect(more).toBeFocused();
+    await openQueueMoreAction(page, 'Save as playlist');
     await expect(form.getByRole('textbox', { name: 'Playlist name' })).toBeFocused();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: e.path('save-dialog-narrow-dark.png') });

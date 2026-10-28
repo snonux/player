@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
 import { Evidence, loadFixture } from './helpers/music-fixture';
-import { keyboardLogin, audioState } from './helpers/music-ui';
+import { keyboardLogin, audioState, openQueueMoreAction} from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE || !process.env.PLAYER_NATIVE_SESSION, 'Requires completed native M17 saved-session evidence and prepared viewer ACL queue');
 test('M17 native-to-browser continuation and live revoked-media revalidation', async ({ page, browser }, info) => {
@@ -17,7 +17,7 @@ test('M17 native-to-browser continuation and live revoked-media revalidation', a
   expect(remote.current_id).toBe(expected.current_id);
   expect(remote.position_seconds).toBeCloseTo(expected.position_seconds, 1);
   await page.keyboard.press('Q');
-  await panel.getByRole('button', { name: 'Continue session', exact: true }).click();
+  await openQueueMoreAction(page, 'Continue session');
   await expect(panel.getByRole('button', { name: 'Resume queue', exact: true })).toBeVisible();
   const transferred = await queue();
   expect(transferred.entries.map((entry: any) => entry.id)).toEqual(expected.entries.map((entry: any) => entry.id));
@@ -31,7 +31,7 @@ test('M17 native-to-browser continuation and live revoked-media revalidation', a
   expect(aclRemote.entries.map((entry: any) => entry.id)).toEqual([101, 102, 103]);
   await page.keyboard.press('Q');
   page.once('dialog', dialog => dialog.accept());
-  await panel.getByRole('button', { name: 'Continue session', exact: true }).click();
+  await openQueueMoreAction(page, 'Continue session');
   await expect(panel.getByRole('button', { name: 'Resume queue', exact: true })).toBeVisible();
   const filtered = await queue();
   expect(filtered.entries.map((entry: any) => entry.id)).toEqual([101, 103]);

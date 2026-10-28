@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, openQueueMoreAction} from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local music fixture');
 let f:MusicFixture,e:Evidence;
@@ -91,7 +91,7 @@ test('M16 repeated reordered queue reload exact short-song offset paused Resume 
   await page.keyboard.press('Escape');await page.getByRole('button',{name:'Log out',exact:true}).click();await keyboardLogin(page,f.user);
   await page.keyboard.press('Q');await expect(panel(page).getByRole('button',{name:'Resume queue',exact:true})).toBeVisible();
   expect((await state(page)).entries.map((v:any)=>v.id)).toEqual(saved.entries.map((v:any)=>v.id));
-  await panel(page).getByRole('button',{name:'Clear queue',exact:true}).click();await page.reload();await page.keyboard.press('Q');await expect(panel(page)).toContainText('Queue is empty');
+  await openQueueMoreAction(page,'Clear queue');await page.reload();await page.keyboard.press('Q');await expect(panel(page)).toContainText('Queue is empty');
   // Typing and native button focus remain owned by existing controls.
   await page.keyboard.press('Escape');await page.keyboard.press('/');await page.getByRole('searchbox',{name:'Search media'}).fill('r/h/l/? Q J K');await expect(page.getByRole('searchbox',{name:'Search media'})).toHaveValue('r/h/l/? Q J K');
   e.record({feature:'M16',scenario:'actual repeated queue reorder pause reload silent recovery explicit Resume source tone account isolation Clear reload typing themes',result:'pass',data:{snapshot,saved,tone,resumedRuntime},artifacts});

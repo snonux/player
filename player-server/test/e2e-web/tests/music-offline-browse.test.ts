@@ -193,8 +193,13 @@ test('M49 downloads and cached song browse, search, queue and play without netwo
     await page.keyboard.press('Q');
     const panel = page.locator('#queue-panel');
     await expect(panel).toHaveClass(/open/);
-    await expect(panel.getByRole('button', { name: 'Continue session' })).toHaveCount(0);
-    await expect(panel.getByRole('button', { name: 'Save as playlist' })).toHaveCount(0);
+    await panel.getByRole('button', { name: 'More', exact: true }).click();
+    const moreMenu = page.getByRole('menu', { name: 'More queue actions', exact: true });
+    await expect(moreMenu).toBeVisible();
+    await expect(moreMenu.getByRole('button', { name: 'Continue session' })).toHaveCount(0);
+    await expect(moreMenu.getByRole('button', { name: 'Save as playlist' })).toHaveCount(0);
+    await expect(moreMenu.getByRole('button', { name: 'Clear queue' })).toBeVisible();
+    await page.keyboard.press('Escape');
     await expect(panel.getByRole('button', { name: 'Autoplay related music' })).toBeDisabled();
     await page.keyboard.press('Escape');
 

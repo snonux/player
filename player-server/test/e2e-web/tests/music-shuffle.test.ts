@@ -1,7 +1,7 @@
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, openQueueShuffleAction, openQueueMoreAction } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE,'Requires disposable local music fixture');
 let f:MusicFixture,e:Evidence;
@@ -34,11 +34,13 @@ test('M18 queue remainder preserves current source, canonical Off, reshuffle Und
  try{
   const setup=await fixture(page);pid=setup.pid;
   await page.locator('.media-row').nth(1).click();await expectPlaying(page,setup.songs[1].id);await pause(page);await open(page);
-  const before=await q(page),runtime=await audioState(page),button=panel(page).locator('[data-queue-action="shuffle"]');
-  await button.focus();await page.keyboard.press('Enter');await expect(button).toBeFocused();await expect(button).toHaveAttribute('aria-pressed','true');
+  const before=await q(page),runtime=await audioState(page),button=panel(page).locator('[data-queue-action="shuffle-menu"]');
+  await button.focus();await page.keyboard.press('Enter');
+  await page.getByRole('menu',{name:'Shuffle options'}).getByRole('button',{name:/· Toggle/}).click();
+  await expect(button).toBeFocused();await expect(button).toHaveAttribute('aria-pressed','true');
   const mixed=await q(page);expect(ids(mixed).slice(0,2)).toEqual(ids(before).slice(0,2));expect(sorted(ids(mixed))).toEqual(sorted(ids(before)));expect((await audioState(page)).src).toBe(runtime.src);expect((await audioState(page)).time).toBeCloseTo(runtime.time,1);
-  await panel(page).getByRole('button',{name:'Reshuffle remaining',exact:true}).click();await panel(page).getByRole('button',{name:'Undo',exact:true}).click();expect(ids(await q(page))).toEqual(ids(mixed));expect((await q(page)).shuffle).toBe(true);
-  await button.click();expect(ids(await q(page))).toEqual(ids(before));await button.click();const retained=await q(page);
+  await openQueueShuffleAction(page,'Reshuffle remaining');await openQueueMoreAction(page,'Undo');expect(ids(await q(page))).toEqual(ids(mixed));expect((await q(page)).shuffle).toBe(true);
+  await openQueueShuffleAction(page,/· Toggle/);expect(ids(await q(page))).toEqual(ids(before));await openQueueShuffleAction(page,/· Toggle/);const retained=await q(page);
   await close(page);await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();await page.locator('#music-albums').click();await expect(page.locator('.album-card').first()).toBeVisible();expect(ids(await q(page))).toEqual(ids(retained));expect((await q(page)).index).toBe(retained.index);
   await page.getByRole('button',{name:'Log out',exact:true}).focus();await page.keyboard.press('r');expect((await q(page)).shuffle).toBe(true);expect(ids(await q(page))).toEqual(ids(retained));
   await page.goto('/?music=playlist&id='+pid);await page.locator('[data-collection-shuffle]').click();await expect.poll(async()=>(await q(page)).loading).toBe(false);await pause(page);await open(page);
@@ -49,7 +51,10 @@ test('M18 queue remainder preserves current source, canonical Off, reshuffle Und
    if(at+1<collection.entries.length){await page.getByRole('button',{name:'Log out',exact:true}).focus();await page.keyboard.press('N');await expectPlaying(page,collection.entries[at+1].media.id);await pause(page);}
   }
   expect(visited).toEqual(ids(collection));expect(new Set(visited).size).toBe(collection.entries.length);
-  await open(page);expect(await panel(page).locator('[data-queue-action="reshuffle"]').isDisabled()).toBe(true);await panel(page).locator('[data-queue-action="shuffle"]').click();expect((await q(page)).index).toBe(collection.entries.length-1);expect(ids(await q(page))).toEqual(ids(collection));
+  await open(page);await panel(page).locator('[data-queue-action="shuffle-menu"]').click();
+  await expect(page.getByRole('menu',{name:'Shuffle options'}).getByRole('button',{name:'Reshuffle remaining',exact:true})).toBeDisabled();
+  await page.getByRole('menu',{name:'Shuffle options'}).getByRole('button',{name:/· Toggle/}).click();
+  expect((await q(page)).index).toBe(collection.entries.length-1);expect(ids(await q(page))).toEqual(ids(collection));
   e.record({feature:'M18',scenario:'remainder toggle/current source/reshuffle Undo/library browse/r unchanged and complete audible occurrence cycle',result:'pass',data:{before,mixed,retained,collection,stored,visited,proof}});
  }catch(error){e.record({feature:'M18',scenario:'shuffle core',result:'fail',detail:String(error),data:{proof}});throw error;}
  finally{if(pid)await page.request.delete('/api/v1/playlists/'+pid);}
@@ -109,7 +114,7 @@ test('M18 settled actual theme controls show readable queue On and Shuffle optio
    await expect(page.locator('html')).toHaveAttribute('data-theme',theme);
    expect(await page.evaluate(()=>localStorage.getItem('kiss-theme'))).toBe(theme);
    await page.waitForTimeout(250);
-   await open(page);await expect(panel(page).locator('[data-queue-action="shuffle"]')).toHaveAttribute('aria-pressed','true');
+   await open(page);await expect(panel(page).locator('[data-queue-action="shuffle-menu"]')).toHaveAttribute('aria-pressed','true');
    const queueShot=e.path(`m18-actual-queue-${theme}-${width}.png`);await page.screenshot({path:queueShot,animations:'disabled'});artifacts.push(queueShot);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
    await close(page);const dialog=await options(page);

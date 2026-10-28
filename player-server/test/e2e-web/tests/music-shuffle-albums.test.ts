@@ -1,7 +1,7 @@
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, audioState, expectPlaying, captureOutput, assertValidCapture, mainSegment, openSidebarMusic } from './helpers/music-ui';
+import { keyboardLogin, audioState, expectPlaying, captureOutput, assertValidCapture, mainSegment, openSidebarMusic, openQueueShuffleAction, openQueueMoreAction } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires a disposable music fixture with --multi-disc');
 let fixture: MusicFixture;
@@ -119,12 +119,11 @@ test('M19 named album mode groups multiple discs, retains pin/source, Undo and r
     expect(ids(canonical).slice(0, 2)).toEqual([current, pin]);
     expect(canonical.entries[1].upNext).toBe(true);
     await openQueue(page);
-    const albums = panel(page).locator('[data-queue-action="shuffle-albums"]');
-    await albums.click();
+    await openQueueShuffleAction(page, 'Shuffle albums');
     await expect.poll(async () => (await state(page)).loading).toBe(false);
     const shuffled = await state(page);
     expect(shuffled.shuffle).toBe(true); expect(shuffled.shuffleMode).toBe('albums');
-    await expect(panel(page).locator('[data-queue-action="shuffle"]')).toContainText('Albums');
+    await expect(panel(page).locator('[data-queue-action="shuffle-menu"]')).toContainText('Albums');
     const continuation = [setup.night[1].id, setup.night[2].id];
     const orders = new Set<string>();
     orders.add(assertAlbumBlocks(shuffled, map, current, pin, continuation).join('|'));
@@ -134,13 +133,12 @@ test('M19 named album mode groups multiple discs, retains pin/source, Undo and r
     let beforeLast = shuffled;
     for (let i = 0; i < 5; i++) {
       beforeLast = await state(page);
-      await panel(page).locator('[data-queue-action="reshuffle"]').focus();
-      await page.keyboard.press('Enter');
+      await openQueueShuffleAction(page, 'Reshuffle remaining');
       await expect.poll(async () => (await state(page)).loading).toBe(false);
       orders.add(assertAlbumBlocks(await state(page), map, current, pin, continuation).join('|'));
     }
     expect(orders.size, 'repeated choices should change album block order').toBeGreaterThan(1);
-    await panel(page).getByRole('button', { name: 'Undo', exact: true }).click();
+    await openQueueMoreAction(page, 'Undo');
     expect(ids(await state(page))).toEqual(ids(beforeLast));
     const retained = await state(page);
     expect(retained.shuffleMode).toBe('albums');
@@ -161,7 +159,7 @@ test('M19 named album mode groups multiple discs, retains pin/source, Undo and r
         await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
         await openQueue(page);
       }
-      await expect(panel(page).locator('[data-queue-action="shuffle-albums"]')).toBeVisible();
+      await expect(panel(page).locator('[data-queue-action="shuffle-menu"]')).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const shot = evidence.path(`m19-albums-${theme}-${width}.png`);
       await page.screenshot({ path: shot, animations: 'disabled' }); artifacts.push(shot);
@@ -188,9 +186,9 @@ test('M19 named album mode groups multiple discs, retains pin/source, Undo and r
     await page.locator('#btn-next').click(); await expectPlaying(page, continuation[0]);
     await openQueue(page);
     const beforeMode = await state(page), beforeModeSource = await audioState(page);
-    await panel(page).locator('[data-queue-action="shuffle-tracks"]').click();
+    await openQueueShuffleAction(page, 'Shuffle tracks');
     await expect.poll(async () => (await state(page)).shuffleMode).toBe('tracks');
-    await panel(page).locator('[data-queue-action="shuffle"]').click();
+    await openQueueShuffleAction(page, /· Toggle/);
     const off = await state(page);
     expect(off.shuffle).toBe(false);
     const fixed = occurrences(beforeMode).slice(0, beforeMode.index + 1);
@@ -216,21 +214,23 @@ test('M19 offline retry, bounded catalog ACL and account isolation', async ({ pa
     await expectPlaying(page, setup.night[0].id);
     await page.locator('#btn-play').click();
     await openQueue(page);
-    const trackButton = panel(page).locator('[data-queue-action="shuffle-tracks"]');
+    const trackButton = panel(page).locator('[data-queue-action="shuffle-menu"]');
     await trackButton.focus(); await page.keyboard.press('Enter');
+    await page.getByRole('menu', { name: 'Shuffle options' }).getByRole('button', { name: 'Shuffle tracks', exact: true }).click();
     await expect(trackButton).toBeFocused();
     const before = await state(page);
     expect(before.shuffleMode).toBe('tracks'); expect(before.shuffle).toBe(true);
     await context.setOffline(true);
-    await panel(page).locator('[data-queue-action="shuffle-albums"]').click();
+    await openQueueShuffleAction(page, 'Shuffle albums');
     await expect.poll(async () => (await state(page)).status).toContain('Could not shuffle albums');
     const offline = await state(page);
     expect(ids(offline)).toEqual(ids(before));
     expect(occurrences(offline)).toEqual(occurrences(before));
     expect(offline.shuffleMode).toBe('tracks'); expect(offline.shuffle).toBe(true);
     await context.setOffline(false);
-    const retry = panel(page).locator('[data-queue-action="shuffle-albums"]');
+    const retry = panel(page).locator('[data-queue-action="shuffle-menu"]');
     await retry.focus(); await page.keyboard.press('Enter');
+    await page.getByRole('menu', { name: 'Shuffle options' }).getByRole('button', { name: 'Shuffle albums', exact: true }).click();
     await expect.poll(async () => (await state(page)).shuffleMode).toBe('albums');
     await expect(retry).toBeFocused();
     const restored = await state(page);
@@ -262,7 +262,7 @@ test('M19 offline retry, bounded catalog ACL and account isolation', async ({ pa
     await keyboardLogin(page, fixture.admin);
     await openQueue(page);
     expect((await state(page)).entries).toHaveLength(0);
-    await expect(panel(page).locator('[data-queue-action="shuffle-albums"]')).toBeDisabled();
+    await expect(panel(page).locator('[data-queue-action="shuffle-menu"]')).toBeDisabled();
     await panel(page).getByRole('button', { name: 'Close queue', exact: true }).click();
     await page.getByRole('button', { name: 'Log out', exact: true }).click();
     await page.waitForURL(url => url.pathname === '/login.html');

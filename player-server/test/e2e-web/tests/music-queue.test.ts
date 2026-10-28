@@ -1,7 +1,7 @@
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, playCard, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress , openSidebarMusic} from './helpers/music-ui';
+import { keyboardLogin, playCard, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress , openSidebarMusic, openQueueMoreAction, openQueueRowMenuAction} from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local music fixture');
 let fixture: MusicFixture, evidence: Evidence;
@@ -44,23 +44,26 @@ test('M13 queue keyboard and buttons preserve entry/focus, source edits and Undo
   expect(await titles(page)).toEqual(['First Light','Harbour','Long Road Home']);
   await expect(row(page,2)).toBeFocused();
   await page.keyboard.press('K'); await expect(row(page,1)).toBeFocused();
-  await row(page,1).getByRole('button',{name:'Move Long Road Home down',exact:true}).focus();
+  await row(page,1).getByRole('button',{name:/Actions for Harbour/}).focus();
   await page.keyboard.press('Space');
+  await expect(page.getByRole('menu',{name:'Queue track actions'})).toBeVisible();
+  await page.keyboard.press('Escape');
   expect(await titles(page)).toEqual(['First Light','Harbour','Long Road Home']);
-  await page.keyboard.press('K');
   await expect(row(page,1)).toBeFocused();
+  await page.keyboard.press('j');
+  await expect(row(page,2)).toBeFocused();
   await page.keyboard.press('Shift+F10');
-  await expect(page.getByRole('group',{name:'Queue track actions'})).toBeVisible();
-  await page.getByRole('group',{name:'Queue track actions'}).getByRole('button',{name:'Move Long Road Home down',exact:true}).click();
+  await expect(page.getByRole('menu',{name:'Queue track actions'})).toBeVisible();
+  await page.getByRole('menu',{name:'Queue track actions'}).getByRole('button',{name:'Move Long Road Home down',exact:true}).click();
   expect(await titles(page)).toEqual(['First Light','Harbour','Long Road Home']);
   expect(await row(page,0).getAttribute('data-entry-id')).toBe(activeEntry);
-  await row(page,2).getByRole('button',{name:'Remove Long Road Home',exact:true}).focus();
+  await row(page,2).getByRole('button',{name:/Actions for Long Road Home/}).focus();
   await page.keyboard.press('Escape'); await expect(panel(page)).not.toHaveClass(/open/);
   await expect(page.locator('#btn-play')).toBeFocused();
   await page.keyboard.press('Q');
-  await row(page,2).getByRole('button',{name:'Remove Long Road Home',exact:true}).click();
+  await openQueueRowMenuAction(page,2,/Remove Long Road Home/);
   expect(await titles(page)).toEqual(['First Light','Harbour']);
-  await panel(page).getByRole('button',{name:'Undo',exact:true}).click();
+  await openQueueMoreAction(page,'Undo');
   expect(await titles(page)).toEqual(['First Light','Harbour','Long Road Home']);
   // Desktop library remains navigable beside the queue; typing must stay text.
   await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await page.keyboard.press('/');
@@ -76,17 +79,18 @@ test('M13 queue keyboard and buttons preserve entry/focus, source edits and Undo
    }
    const shot=evidence.path(`m13-queue-${theme}-${width}.png`);await page.screenshot({path:shot,fullPage:true,animations:'disabled'});artifacts.push(shot);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-   expect(await row(page,0).getByRole('button',{name:'Remove First Light'}).isVisible()).toBe(true);
+   expect(await row(page,0).getByRole('button',{name:/Actions for First Light/}).isVisible()).toBe(true);
+   expect(await row(page,0).locator('[data-queue-action="remove"]').isHidden()).toBe(true);
   }
   await row(page,1).getByRole('button',{name:'Play Harbour',exact:true}).click();proof.push(await audible(page,c,'m13-jump-harbour'));artifacts.push(proof.at(-1).wav);
-  await row(page,1).getByRole('button',{name:'Remove Harbour',exact:true}).click();
+  await openQueueRowMenuAction(page,1,/Remove Harbour/);
   await expect.poll(async()=> (await audioState(page)).paused).toBe(true);
   expect(await titles(page)).toEqual(['First Light','Long Road Home']);
-  await panel(page).getByRole('button',{name:'Undo',exact:true}).click();
+  await openQueueMoreAction(page,'Undo');
   expect((await audioState(page)).paused).toBe(true);
-  await panel(page).getByRole('button',{name:'Clear queue',exact:true}).click();
+  await openQueueMoreAction(page,'Clear queue');
   await expect(panel(page)).toContainText('Queue is empty');
-  await panel(page).getByRole('button',{name:'Undo',exact:true}).click();
+  await openQueueMoreAction(page,'Undo');
   expect((await audioState(page)).paused).toBe(true);
   await row(page,2).getByRole('button',{name:'Play Long Road Home',exact:true}).click();proof.push(await audible(page,b,'m13-clear-undo-explicit-resume'));artifacts.push(proof.at(-1).wav);
   evidence.record({feature:'M13',scenario:'keyboard/pointer/focus/typing/themes/current removal/Clear Undo/explicit jump',result:'pass',data:{proof},artifacts});
@@ -131,8 +135,8 @@ test('M13 retained queue cannot edit unrelated Sets source; real ACL denial and 
   if((await page.locator('#player').getAttribute('class')||'').includes('minimized')) await page.getByRole('button',{name:'Restore player',exact:true}).click();
   await page.locator('#btn-play').click();
   await page.keyboard.press('Q');await expect(panel(page)).toContainText('Queue paused');
-  await row(page,0).getByRole('button',{name:'Remove First Light',exact:true}).click();await panel(page).getByRole('button',{name:'Undo',exact:true}).click();
-  await panel(page).getByRole('button',{name:'Clear queue',exact:true}).click();await panel(page).getByRole('button',{name:'Undo',exact:true}).click();
+  await openQueueRowMenuAction(page,0,/Remove First Light/);await openQueueMoreAction(page,'Undo');
+  await openQueueMoreAction(page,'Clear queue');await openQueueMoreAction(page,'Undo');
   expect((await audioState(page)).src).toContain(`/media/${source.id}/`);
   await page.keyboard.press('Escape');await page.locator('#btn-next').click();proof.push(await audible(page,next,'m13-retained-sets-next'));artifacts.push(proof.at(-1).wav);await page.locator('#btn-play').click();
   await page.keyboard.press('Q');await row(page,0).getByRole('button',{name:'Play First Light',exact:true}).click();proof.push(await audible(page,a,'m13-retained-queue-reclaim'));artifacts.push(proof.at(-1).wav);await page.locator('#btn-play').click();
@@ -145,7 +149,7 @@ test('M13 retained queue cannot edit unrelated Sets source; real ACL denial and 
   await admin.post('/api/v1/admin/permissions',{data:{set_id:fixture.setIds.Music,user_id:userId,role:'viewer'}});
   await row(page,1).getByRole('button',{name:'Play Long Road Home',exact:true}).click();proof.push(await audible(page,b,'m13-permission-retry'));artifacts.push(proof.at(-1).wav);await page.locator('#btn-play').click();
   await page.context().setOffline(true);
-  await row(page,2).getByRole('button',{name:'Remove Harbour',exact:true}).click();await panel(page).getByRole('button',{name:'Undo',exact:true}).click();
+  await openQueueRowMenuAction(page,2,/Remove Harbour/);await openQueueMoreAction(page,'Undo');
   expect(await titles(page)).toEqual(['First Light','Long Road Home','Harbour']);
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   // History-only query URLs were never fetched; the existing PWA caches exact

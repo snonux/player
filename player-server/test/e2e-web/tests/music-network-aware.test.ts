@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, openFolder, playCard, audioState, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { keyboardLogin, openFolder, playCard, audioState, expectPlaying, captureOutput, assertValidCapture, mainSegment, openQueueMoreAction} from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires an isolated disposable music fixture');
 let fixture: MusicFixture;
@@ -263,7 +263,7 @@ test('M52 prefetch policy and Wi-Fi-only saved-session sync defer durable edits 
     expect((await queueState(page)).entries.map((entry: any) => entry.media.id)).toEqual([first.id, second.id, third.id]);
     await expect.poll(async () => (await syncStatus(page)).pending.length).toBeGreaterThan(0);
     page.once('dialog', dialog => dialog.accept());
-    await queue.getByRole('button', { name: 'Continue session', exact: true }).click();
+    await openQueueMoreAction(page, 'Continue session');
     await expect(queue).toContainText('Continue session waits for Wi-Fi');
     expect(queueRequests.filter(method => method === 'PUT')).toHaveLength(0);
     await queue.getByRole('button', { name: 'Close queue', exact: true }).click();

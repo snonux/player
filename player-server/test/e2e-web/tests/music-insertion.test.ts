@@ -1,7 +1,7 @@
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, openSidebarMusic, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress, playCard } from './helpers/music-ui';
+import { keyboardLogin, openSidebarMusic, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress, playCard, openQueueMoreAction, openQueueRowMenuAction} from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local music fixture');
 let fixture:MusicFixture, evidence:Evidence;
@@ -13,9 +13,9 @@ test.beforeAll(async({browser},info)=>{fixture=loadFixture();evidence=new Eviden
 test.beforeEach(async({page})=>{
  await page.addInitScript(installAudioTap);await keyboardLogin(page,fixture.user);
  await page.keyboard.press('Q');await expect(panel(page)).toHaveClass(/open/);
- await panel(page).getByRole('button',{name:'Continue session',exact:true}).click();
+ await openQueueMoreAction(page,'Continue session');
  await expect.poll(async()=>page.evaluate(async()=>{const q=await import('/js/queue.js' as string);return q.queueState().status;})).toContain('Session continued');
- if(await panel(page).locator('.queue-row').count())await panel(page).getByRole('button',{name:'Clear queue',exact:true}).click();
+ if(await panel(page).locator('.queue-row').count())await openQueueMoreAction(page,'Clear queue');
  await expect(panel(page).locator('.queue-row')).toHaveCount(0);
  await panel(page).getByRole('button',{name:'Close queue',exact:true}).click();
 });
@@ -182,7 +182,7 @@ test('M14 batch Append and Play now preserve source, displayed order and retaine
  const close=async()=>{await panel(page).getByRole('button',{name:'Close queue',exact:true}).click();await expect(panel(page)).not.toHaveClass(/open/);};
  try{
   const [a,b,c]=songs();for(const song of [a,b,c])await resetProgress(page,song.id);
-  await album(page);await show();await panel(page).locator('[data-queue-index="2"]').getByRole('button',{name:'Remove Harbour',exact:true}).click();
+  await album(page);await show();await openQueueRowMenuAction(page,2,/Remove Harbour/);
   expect(await order(page)).toEqual(['First Light','Long Road Home']);const original=await panel(page).locator('[data-entry-id]').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('data-entry-id')));await close();
   await page.getByRole('checkbox',{name:'Select Harbour',exact:true}).check();await page.getByRole('checkbox',{name:'Select First Light',exact:true}).check();
   await rows(page).first().focus();await page.keyboard.press('p');await expectPlaying(page,a.id);const before=await audioState(page);

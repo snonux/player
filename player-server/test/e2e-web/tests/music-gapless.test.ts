@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, captureOutput, assertValidCapture, audioState, openFolder, playCard } from './helpers/music-ui';
+import { keyboardLogin, captureOutput, assertValidCapture, audioState, openFolder, playCard, openQueueRowMenuAction} from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires a disposable local music fixture');
 let fixture: MusicFixture;
@@ -130,7 +130,7 @@ test('M21 seek, queue edit, speed and source fallback, themes and account scope'
     await page.locator('#player [data-queue-toggle]').click();
     const list = page.locator('#queue-panel');
     await expect(list).toBeVisible();
-    await list.locator('[data-queue-index="1"] [data-queue-action="down"]').click();
+    await openQueueRowMenuAction(page,1,/Move .+ down/);
     expect((await queue(page)).entries.map((entry: any) => entry.media.id)).toEqual([songs[0].id, songs[2].id, songs[1].id]);
     await list.getByRole('button', { name: 'Close queue' }).click();
     const seek = page.locator('#progress-track');

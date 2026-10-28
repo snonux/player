@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, openQueueMoreAction, openQueueRowMenuAction } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local music fixture');
 let f:MusicFixture,e:Evidence;
@@ -114,9 +114,9 @@ test('M20 edited queue mode survives paused reload, account isolation and empty 
   await page.keyboard.press('/');const search=page.getByRole('searchbox',{name:'Search media'});await search.fill('Y j/k Q');await expect(search).toHaveValue('Y j/k Q');expect((await q(page)).repeat).toBe('all');await page.keyboard.press('Escape');
   await logout(page);await keyboardLogin(page,f.admin);await openQueue(page);expect((await q(page)).repeat).toBe('off');expect((await q(page)).entries).toHaveLength(0);
   await closeQueue(page);await logout(page);await keyboardLogin(page,f.user);await openQueue(page);expect((await q(page)).repeat).toBe('all');
-  const selected=(await q(page)).index;await row(page,selected).locator('[data-queue-action="remove"]').click();expect((await audioState(page)).paused).toBe(true);await panel(page).getByRole('button',{name:'Undo',exact:true}).click();
-  await panel(page).getByRole('button',{name:'Clear queue',exact:true}).click();await panel(page).getByRole('button',{name:'Undo',exact:true}).click();expect((await q(page)).repeat).toBe('all');
-  await panel(page).getByRole('button',{name:'Clear queue',exact:true}).click();await page.reload();await openQueue(page);expect((await q(page)).entries).toHaveLength(0);expect((await q(page)).repeat).toBe('all');
+  const selected=(await q(page)).index;await openQueueRowMenuAction(page,selected,/^Remove /);expect((await audioState(page)).paused).toBe(true);await openQueueMoreAction(page,'Undo');
+  await openQueueMoreAction(page,'Clear queue');await openQueueMoreAction(page,'Undo');expect((await q(page)).repeat).toBe('all');
+  await openQueueMoreAction(page,'Clear queue');await page.reload();await openQueue(page);expect((await q(page)).entries).toHaveLength(0);expect((await q(page)).repeat).toBe('all');
   e.record({feature:'M20',scenario:'edited occurrence mode recovery paused, explicit Resume, Y native focus/typing, theme/narrow screenshots, account isolation and Clear reload',result:'pass',data:{before,recovered},artifacts});
  }catch(error){e.record({feature:'M20',scenario:'repeat recovery and UI',result:'fail',detail:String(error),artifacts});throw error;}
  finally {if(pid)await page.request.delete('/api/playlists/'+pid);}
