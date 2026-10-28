@@ -136,6 +136,8 @@ async function refreshSets() {
   }
 }
 
+const downloadControllers = new WeakMap();
+
 export function renderPodcastEpisodes(grid, episodes, options = {}) {
   if (!episodes || !episodes.length) return;
   const append = (node) => {
@@ -162,89 +164,125 @@ export function renderPodcastEpisodes(grid, episodes, options = {}) {
 }
 
 function renderEpisodeCard(card, ep) {
-  card.innerHTML = renderEpisodeHtml(ep);
+  const focusedAction = card.contains(document.activeElement) ? document.activeElement?.dataset.action : null;
+  const downloading = Boolean(downloadControllers.get(card));
+  card.innerHTML = episodeSetFolderCardHtml(ep, { downloading });
 
   const playBtn = card.querySelector('[data-action="play"]');
   const downloadBtn = card.querySelector('[data-action="download-episode"]');
-  const completeBtn = card.querySelector('.btn-complete');
+  const cancelBtn = card.querySelector('[data-action="cancel-download"]');
+  const completeBtn = card.querySelector('[data-action="complete"]');
+  const moreBtn = card.querySelector('[data-action="more"]');
 
-  // Episode cards only exist for episodes not yet on the server, so Play
-  // downloads first and then asks the grid to start the new media.
+  // Set-folder episode cards are undownloaded rows: Play downloads first,
+  // then the grid reloads the new media card.
   playBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
-    downloadEpisode(card, ep, [playBtn, downloadBtn], true);
+    downloadEpisode(card, ep, true);
   });
-
   downloadBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
-    downloadEpisode(card, ep, [playBtn, downloadBtn], false);
+    downloadEpisode(card, ep, false);
   });
-
+  cancelBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    downloadControllers.get(card)?.abort();
+  });
   completeBtn?.addEventListener('click', async (e) => {
     e.stopPropagation();
     try {
       const requested = !ep.is_completed;
       const result = await setEpisodeCompleted(ep, requested);
       ep.is_completed = result?.completion?.completed ?? ep.is_completed;
-      updateCompleteButton(completeBtn, ep.is_completed);
-      toast(ep.is_completed === requested ? (ep.is_completed ? 'Marked completed' : 'Marked uncompleted') : 'A newer completion change was kept');
+      toast(ep.is_completed === requested
+        ? (ep.is_completed ? 'Marked completed' : 'Marked uncompleted')
+        : 'A newer completion change was kept');
+      renderEpisodeCard(card, ep);
     } catch (err) {
       toast(err.message || 'Toggle failed', 'error');
     }
   });
+  moreBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.dispatchEvent(new CustomEvent('media:actions', { detail: card }));
+  });
+  if (focusedAction) {
+    (card.querySelector(`[data-action="${focusedAction}"]`) || cancelBtn || playBtn || downloadBtn)?.focus();
+  }
 }
 
-// downloadEpisode stores the episode on the server. On success the grid
-// reloads (the episode becomes a normal media card) and, when play is set,
-// starts that media. Buttons stay disabled while the request runs so a
-// double click cannot start two downloads.
-async function downloadEpisode(card, ep, buttons, play) {
-  buttons.forEach((b) => { if (b) b.disabled = true; });
+// Stores the episode on the server. Cancel uses AbortController; More keeps
+// completion reachable while Cancel is the primary control.
+async function downloadEpisode(card, ep, play) {
+  if (downloadControllers.get(card)) return;
+  const controller = new AbortController();
+  downloadControllers.set(card, controller);
+  renderEpisodeCard(card, ep);
   if (play) toast('Downloading episode…', 'info');
   try {
-    const media = await API.downloadEpisode(ep.id);
+    const media = await API.downloadEpisode(ep.id, { signal: controller.signal });
     ep.is_downloaded = true;
     ep.media_id = media.id;
     ep.file_name = media.file_name;
     toast('Episode downloaded');
+    downloadControllers.delete(card);
     card.dispatchEvent(new CustomEvent('podcast:episode-downloaded', { bubbles: true, detail: { media, play } }));
     renderEpisodeCard(card, ep);
   } catch (err) {
-    buttons.forEach((b) => { if (b) b.disabled = false; });
+    downloadControllers.delete(card);
+    renderEpisodeCard(card, ep);
+    if (err?.name === 'AbortError' || controller.signal.aborted) {
+      toast('Download canceled', 'info');
+      return;
+    }
     toast(err.message || 'Download failed', 'error');
   }
 }
 
-function updateCompleteButton(button, completed) {
-  const label = completed ? 'Mark uncompleted' : 'Mark completed';
-  button.classList.toggle('active', completed);
-  button.title = label;
-  button.setAttribute('aria-label', label);
-  button.setAttribute('aria-pressed', String(completed));
-}
-
-function renderEpisodeHtml(ep) {
-  const completed = ep.is_completed;
+// Compact set-folder episode card: matches subscription cards — title/status,
+// Play/Download (+ Cancel while transferring), More for completion (and
+// restart/delete once downloaded), expandable description.
+export function episodeSetFolderCardHtml(ep, { downloading = false } = {}) {
+  const completed = Boolean(ep.is_completed);
+  const downloaded = Boolean(ep.is_downloaded);
   const dateStr = ep.published_at ? new Date(ep.published_at).toLocaleDateString() : '';
   const duration = ep.duration_seconds ? fmtDur(ep.duration_seconds) : '';
-  const downloadButton = ep.is_downloaded
-    ? '<span class="text-xs text-muted">Downloaded</span>'
-    : '<button class="icon-btn btn-sm btn-download-episode" data-action="download-episode" title="Download episode" aria-label="Download episode">↓</button>';
+  const hasProgress = Number(ep.position_seconds) > 0;
+  const canResume = downloaded && hasProgress;
+  const position = hasProgress
+    ? (canResume ? `Resume ${fmtDur(ep.position_seconds)}` : `In progress · ${fmtDur(ep.position_seconds)}`)
+    : '';
+  const downloadState = downloading
+    ? 'Downloading…'
+    : downloaded ? 'Downloaded on server' : 'Not downloaded';
   const completeLabel = completed ? 'Mark uncompleted' : 'Mark completed';
+  const metaBits = [dateStr, duration, position, downloadState].filter(Boolean).join(' · ');
+  const playLabel = !downloaded ? 'Download and play' : canResume ? 'Resume' : 'Play';
+  const description = (ep.description || '').trim();
+  const descriptionBlock = description
+    ? `<details class="episode-description"><summary>Description</summary><p class="subtitle">${escapeHtml(description)}</p></details>`
+    : '';
+  const primary = downloading
+    ? '<button type="button" class="icon-btn btn-sm" data-action="cancel-download" title="Cancel download" aria-label="Cancel download">✕</button>'
+    : `${downloaded ? '' : '<button type="button" class="icon-btn btn-sm btn-download-episode" data-action="download-episode" title="Download episode" aria-label="Download episode">↓</button>'}
+        <button type="button" class="icon-btn btn-sm" data-action="play" title="${playLabel}" aria-label="${playLabel} episode">▶</button>`;
+  const extras = `
+        <button type="button" class="icon-btn btn-sm card-action-extra btn-complete${completed ? ' active' : ''}" data-action="complete"
+          title="${completeLabel}" aria-label="${completeLabel}" aria-pressed="${completed}">✓</button>
+        ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="play-beginning" title="Play from beginning" aria-label="Play from beginning">↺</button>' : ''}
+        ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="delete-download" title="Delete downloaded file" aria-label="Delete downloaded file">🗑</button>' : ''}`;
   return `
     <div class="thumb-wrap">
       <span class="placeholder">🎙️</span>
-      <span class="badge">${dateStr}${duration ? ' • ' + duration : ''}</span>
+      <span class="badge">${escapeHtml(metaBits)}</span>
       <div class="card-actions">
-        ${ep.is_downloaded ? '' : downloadButton}
-        <button class="icon-btn btn-sm" data-action="play" title="Download and play" aria-label="Download and play episode">▶</button>
-        <button class="icon-btn btn-sm btn-complete${completed ? ' active' : ''}" title="${completeLabel}" aria-label="${completeLabel}" aria-pressed="${completed}">✓</button>
+        ${primary}
+        <button type="button" class="icon-btn btn-sm card-more" data-action="more" title="More episode actions" aria-label="More episode actions" aria-haspopup="menu">⋯</button>
+        ${extras}
       </div>
     </div>
     <div class="meta">
-      <div class="title">${escapeHtml(ep.title || 'Untitled')}</div>
-      <div class="subtitle">${escapeHtml(ep.description || 'Podcast episode')}</div>
-      ${ep.is_downloaded ? downloadButton : ''}
-    </div>
-  `;
+      <div class="title" title="${escapeHtml(ep.title || 'Untitled')}">${escapeHtml(ep.title || 'Untitled')}</div>
+      ${descriptionBlock}
+    </div>`;
 }

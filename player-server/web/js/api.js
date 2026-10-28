@@ -209,7 +209,7 @@ export const API = {
   removePodcastFromServer: (feedId) => api(`/api/podcasts/${feedId}`, { method: 'DELETE' }),
   syncPodcast: (body) => api('/api/podcasts/sync', { method: 'POST', quietAuth: true, body }),
   syncPodcastSubscriptions: (subscriptions) => api('/api/podcasts/sync', { method: 'POST', quietAuth: true, body: { subscriptions } }),
-  downloadEpisode: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/download`, { method: 'POST' }),
+  downloadEpisode: (episodeId, { signal } = {}) => api(`/api/podcasts/episodes/${episodeId}/download`, { method: 'POST', signal }),
   toggleEpisodeComplete: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/complete`, { method: 'POST' }),
   radioStations: (filters) => api(`/api/radio/stations${radioSearchQuery(filters)}`),
   radioTags: (limit = 100) => api(`/api/radio/tags?limit=${limit}`),

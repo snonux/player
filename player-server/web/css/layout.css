@@ -914,6 +914,34 @@ body {
   margin-top: 0.2rem;
 }
 
+.episode-card .episode-description {
+  margin-top: 0.25rem;
+}
+
+.episode-card .episode-description > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  min-height: var(--control-height-sm);
+  display: inline-flex;
+  align-items: center;
+}
+
+.episode-card .episode-description > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.episode-card .episode-description[open] > summary {
+  color: var(--text-secondary, var(--text-muted));
+}
+
+.episode-card .episode-description > p {
+  margin: 0.35rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Music uses the library card grid and row selection vocabulary. */
 .album-cover { width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--bg-surface); }
 .album-placeholder { display: grid; place-items: center; font-size: 3rem; color: var(--text-muted); }

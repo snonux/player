@@ -295,22 +295,27 @@ function bindPager(grid, pageInfo) {
   });
 }
 
+const downloadControllers = new WeakMap();
+
 function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
   const focusedAction = card.contains(document.activeElement) ? document.activeElement?.dataset.action : null;
-  card.innerHTML = episodeCardHtml(ep, { showFeed });
+  const downloading = Boolean(downloadControllers.get(card));
+  card.innerHTML = episodeCardHtml(ep, { showFeed, downloading });
   const playBtn = card.querySelector('[data-action="play"]');
   const downloadBtn = card.querySelector('[data-action="download-episode"]');
+  const cancelBtn = card.querySelector('[data-action="cancel-download"]');
   const completeBtn = card.querySelector('[data-action="complete"]');
   const beginningBtn = card.querySelector('[data-action="play-beginning"]');
   const deleteBtn = card.querySelector('[data-action="delete-download"]');
+  const moreBtn = card.querySelector('[data-action="more"]');
 
   playBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
-    playEpisode(card, ep, [playBtn, downloadBtn].filter(Boolean));
+    playEpisode(card, ep);
   });
   beginningBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
-    playEpisode(card, ep, [playBtn, beginningBtn, downloadBtn].filter(Boolean), true);
+    playEpisode(card, ep, true);
   });
   deleteBtn?.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -318,52 +323,109 @@ function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
   });
   downloadBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
-    downloadEpisodeOnly(card, ep, [playBtn, downloadBtn].filter(Boolean));
+    downloadEpisodeOnly(card, ep);
+  });
+  cancelBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    downloadControllers.get(card)?.abort();
   });
   completeBtn?.addEventListener('click', async (e) => {
     e.stopPropagation();
     await markCompletion(card, ep, !ep.completed);
   });
-  if (focusedAction) (card.querySelector(`[data-action="${focusedAction}"]`) || playBtn)?.focus();
+  moreBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.dispatchEvent(new CustomEvent('media:actions', { detail: card }));
+  });
+  if (focusedAction) {
+    (card.querySelector(`[data-action="${focusedAction}"]`) || cancelBtn || playBtn || downloadBtn)?.focus();
+  }
 }
 
-function episodeCardHtml(ep, { showFeed } = {}) {
+// Compact card HTML: title, status badge, Play/Download (+ Cancel while
+// transferring), More for completion/restart/delete; description expands.
+// More stays available during transfer so completion remains reachable;
+// Cancel is the primary control. Progress shows without a server copy
+// (Android 1t3 parity).
+export function episodeCardHtml(ep, { showFeed, downloading = false } = {}) {
   const completed = Boolean(ep.completed);
   const downloaded = Boolean(ep.server_copy?.media_id);
   const dateStr = ep.published_at ? new Date(ep.published_at).toLocaleDateString() : '';
   const duration = ep.duration_seconds ? fmtDur(ep.duration_seconds) : '';
-  const position = ep.position_seconds > 0 ? `Resume ${fmtDur(ep.position_seconds)}` : '';
-  const downloadState = downloaded ? 'Downloaded on server' : 'Not downloaded';
+  const hasProgress = Number(ep.position_seconds) > 0;
+  const canResume = downloaded && hasProgress;
+  const position = hasProgress
+    ? (canResume ? `Resume ${fmtDur(ep.position_seconds)}` : `In progress · ${fmtDur(ep.position_seconds)}`)
+    : '';
+  const downloadState = downloading
+    ? 'Downloading…'
+    : downloaded ? 'Downloaded on server' : 'Not downloaded';
   const completeLabel = completed ? 'Mark uncompleted' : 'Mark completed';
   const feedLine = showFeed && ep.feed_title
     ? `<div class="subtitle">${escapeHtml(ep.feed_title)}</div>`
     : '';
   const metaBits = [dateStr, duration, position, downloadState].filter(Boolean).join(' · ');
-  const downloadBtn = downloaded
-    ? ''
-    : '<button type="button" class="icon-btn btn-sm btn-download-episode" data-action="download-episode" title="Download to server" aria-label="Download episode to server">↓</button>';
-  const playLabel = downloaded ? 'Play' : 'Download and play';
+  const playLabel = !downloaded ? 'Download and play' : canResume ? 'Resume' : 'Play';
+  const description = (ep.description || '').trim();
+  const descriptionBlock = description
+    ? `<details class="episode-description"><summary>Description</summary><p class="subtitle">${escapeHtml(description)}</p></details>`
+    : '';
+  const primary = downloading
+    ? '<button type="button" class="icon-btn btn-sm" data-action="cancel-download" title="Cancel download" aria-label="Cancel download">✕</button>'
+    : `${downloaded ? '' : '<button type="button" class="icon-btn btn-sm btn-download-episode" data-action="download-episode" title="Download to server" aria-label="Download episode to server">↓</button>'}
+        <button type="button" class="icon-btn btn-sm" data-action="play" title="${playLabel}" aria-label="${playLabel} episode">▶</button>`;
+  const extras = `
+        <button type="button" class="icon-btn btn-sm card-action-extra btn-complete${completed ? ' active' : ''}" data-action="complete"
+          title="${completeLabel}" aria-label="${completeLabel}" aria-pressed="${completed}">✓</button>
+        ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="play-beginning" title="Play from beginning" aria-label="Play from beginning">↺</button>' : ''}
+        ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="delete-download" title="Delete downloaded file" aria-label="Delete downloaded file">🗑</button>' : ''}`;
   return `
     <div class="thumb-wrap">
       <span class="placeholder">🎙️</span>
       <span class="badge">${escapeHtml(metaBits)}</span>
       <div class="card-actions">
-        ${downloadBtn}
-        <button type="button" class="icon-btn btn-sm" data-action="play" title="${playLabel}" aria-label="${playLabel} episode">▶</button>
-        <button type="button" class="icon-btn btn-sm btn-complete${completed ? ' active' : ''}" data-action="complete"
-          title="${completeLabel}" aria-label="${completeLabel}" aria-pressed="${completed}">✓</button>
+        ${primary}
+        <button type="button" class="icon-btn btn-sm card-more" data-action="more" title="More episode actions" aria-label="More episode actions" aria-haspopup="menu">⋯</button>
+        ${extras}
       </div>
     </div>
     <div class="meta">
-      <div class="title">${escapeHtml(ep.title || 'Untitled')}</div>
+      <div class="title" title="${escapeHtml(ep.title || 'Untitled')}">${escapeHtml(ep.title || 'Untitled')}</div>
       ${feedLine}
-      <div class="subtitle">${escapeHtml(ep.description || '')}</div>
-      <button type="button" class="btn btn-sm" data-action="play-beginning">Play from beginning</button>
-      ${downloaded ? '<button type="button" class="btn btn-sm" data-action="delete-download">Delete downloaded file</button>' : ''}
+      ${descriptionBlock}
     </div>`;
 }
 
-async function playEpisode(card, ep, buttons, fromBeginning = false) {
+async function runEpisodeDownload(card, ep, { play = false, fromBeginning = false } = {}) {
+  if (downloadControllers.get(card)) return;
+  const index = parseInt(card.dataset.index, 10);
+  const controller = new AbortController();
+  downloadControllers.set(card, controller);
+  renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
+  if (play) toast('Downloading episode…', 'info');
+  try {
+    const media = await API.downloadEpisode(ep.id, { signal: controller.signal });
+    ep.server_copy = { media_id: media.id };
+    rememberEpisodeMedia(index, episodePlayableMedia(ep, media));
+    card.dataset.id = String(media.id);
+    toast('Episode downloaded');
+    downloadControllers.delete(card);
+    renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
+    if (play && !(await playMediaById(media.id, { fromBeginning }))) {
+      toast('Episode downloaded; select it to play', 'info');
+    }
+  } catch (err) {
+    downloadControllers.delete(card);
+    renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
+    if (err?.name === 'AbortError' || controller.signal.aborted) {
+      toast('Download canceled', 'info');
+      return;
+    }
+    toast(err.message || 'Download failed', 'error');
+  }
+}
+
+async function playEpisode(card, ep, fromBeginning = false) {
   const index = parseInt(card.dataset.index, 10);
   let media = Number.isInteger(index) ? state.media[index] : null;
   if (media?.id) {
@@ -385,36 +447,11 @@ async function playEpisode(card, ep, buttons, fromBeginning = false) {
     if (!(await playMediaById(media.id, { fromBeginning }))) toast('Select the episode to play', 'info');
     return;
   }
-  buttons.forEach((b) => { b.disabled = true; });
-  toast('Downloading episode…', 'info');
-  try {
-    media = await API.downloadEpisode(ep.id);
-    ep.server_copy = { media_id: media.id };
-    rememberEpisodeMedia(index, episodePlayableMedia(ep, media));
-    card.dataset.id = String(media.id);
-    toast('Episode downloaded');
-    renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
-    if (!(await playMediaById(media.id, { fromBeginning }))) toast('Episode downloaded; select it to play', 'info');
-  } catch (err) {
-    buttons.forEach((b) => { b.disabled = false; });
-    toast(err.message || 'Download failed', 'error');
-  }
+  await runEpisodeDownload(card, ep, { play: true, fromBeginning });
 }
 
-async function downloadEpisodeOnly(card, ep, buttons) {
-  const index = parseInt(card.dataset.index, 10);
-  buttons.forEach((b) => { b.disabled = true; });
-  try {
-    const media = await API.downloadEpisode(ep.id);
-    ep.server_copy = { media_id: media.id };
-    rememberEpisodeMedia(index, episodePlayableMedia(ep, media));
-    card.dataset.id = String(media.id);
-    toast('Episode downloaded');
-    renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
-  } catch (err) {
-    buttons.forEach((b) => { b.disabled = false; });
-    toast(err.message || 'Download failed', 'error');
-  }
+async function downloadEpisodeOnly(card, ep) {
+  await runEpisodeDownload(card, ep, { play: false });
 }
 
 async function markCompletion(card, ep, completed) {
