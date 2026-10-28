@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { Evidence, loadFixture, track } from './helpers/music-fixture';
-import { keyboardLogin, openFolder, selectByKeys } from './helpers/music-ui';
+import { keyboardLogin, openFolder, selectByKeys, openCollectionMoreAction } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_M65_ISOLATED, 'Requires fresh disposable M65 fixture');
 test.use({ serviceWorkers: 'block' });
@@ -170,7 +170,7 @@ test('M65 album share applies one policy to collection item playback and downloa
   const album = albums.find((item: any) => item.title === 'Night Transit');
   expect(album).toBeTruthy();
   await page.goto(`/?music=album&id=${encodeURIComponent(album.album_key)}`);
-  await page.locator('[data-collection-share]').click();
+  await openCollectionMoreAction(page, 'Share…');
   const dialog = page.getByRole('dialog', { name: 'Share music' });
   await expect(dialog).toContainText('songs');
   await dialog.locator('summary').click();

@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { audioState, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { audioState, expectPlaying, captureOutput, assertValidCapture, mainSegment, openCollectionMoreAction } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local Music fixture');
 test.use({ serviceWorkers: 'block' });
@@ -99,8 +99,7 @@ async function album(p: Page) {
  return { ...entry, songs: detail.songs };
 }
 async function openDialog(p: Page) {
- const opener = grid(p).getByRole('button', { name: 'Download…', exact: true });
- await opener.focus(); await p.keyboard.press('Enter');
+ const opener = await openCollectionMoreAction(p, 'Download…');
  await expect(dialog(p)).toBeVisible();
  await expect(dialog(p).getByRole('combobox', { name: 'Download quality', exact: true })).toBeEnabled();
  await dialog(p).getByRole('combobox', { name: 'Download quality', exact: true }).selectOption('original');

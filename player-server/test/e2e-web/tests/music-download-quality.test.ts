@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { captureOutput, assertValidCapture, mainSegment, openCollectionMoreAction } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local music fixture');
 test.use({ serviceWorkers: 'block' });
@@ -44,7 +44,7 @@ test('M51 download quality is independent, encoded truthfully and playable offli
   const album = albums.find((a: any) => a.title === 'Night Transit');
   expect(album).toBeTruthy();
   await page.goto(f.origin + '/?music=album&id=' + encodeURIComponent(album.album_key));
-  const opener = page.locator('#media-grid').getByRole('button', { name: 'Download…', exact: true });
+  let opener = page.locator('#media-grid').getByRole('button', { name: 'More', exact: true });
   const streamBefore = await page.evaluate(() => localStorage.getItem('player-stream-quality'));
   const results: any[] = [];
   await page.evaluate(() => {
@@ -66,8 +66,7 @@ test('M51 download quality is independent, encoded truthfully and playable offli
   });
   for (const [profile, codec, ext] of [['aac128', 'aac', '.m4a'], ['opus96', 'opus', '.ogg']] as const) {
     await page.evaluate(() => { (window as any).__m51Archive = null; });
-    await opener.focus();
-    await page.keyboard.press('Enter');
+    opener = await openCollectionMoreAction(page, 'Download…');
     await expect(dialog(page)).toBeVisible();
     const select = dialog(page).getByRole('combobox', { name: 'Download quality' });
     await expect.poll(() => select.locator(`option[value="${profile}"]`).count()).toBe(1);
@@ -125,7 +124,7 @@ test('M51 download quality is independent, encoded truthfully and playable offli
     await expect(opener).toBeFocused();
   }
   expect(await page.evaluate(() => localStorage.getItem('player-stream-quality'))).toBe(streamBefore);
-  await opener.focus(); await page.keyboard.press('Enter');
+  opener = await openCollectionMoreAction(page, 'Download…');
   await expect(dialog(page).getByRole('combobox', { name: 'Download quality' })).toHaveValue('opus96');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: e.path('dialog-narrow-dark.png') });
@@ -141,8 +140,7 @@ test('M51 selected conversion reports access denial and retries after restoratio
   const albums = await (await page.request.get(f.origin + '/api/v1/music/albums')).json();
   const album = albums.find((a: any) => a.title === 'Night Transit');
   await page.goto(f.origin + '/?music=album&id=' + encodeURIComponent(album.album_key));
-  const opener = page.locator('#media-grid').getByRole('button', { name: 'Download…', exact: true });
-  await opener.click();
+  const opener = await openCollectionMoreAction(page, 'Download…');
   const select = dialog(page).getByRole('combobox', { name: 'Download quality' });
   await expect.poll(() => select.locator('option[value="aac128"]').count()).toBe(1);
   await select.selectOption('aac128');

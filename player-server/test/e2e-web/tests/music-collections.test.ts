@@ -47,8 +47,8 @@ async function audible(page:Page,id:number,name:string) {
 }
 async function enqueue(page:Page,action:string) {
  await ready(page);
- await grid(page).getByRole('button',{name:'Queue actions ▾',exact:true}).click();
- await page.getByRole('group',{name:'Collection queue actions',exact:true}).getByRole('button',{name:action,exact:true}).click();
+ await grid(page).getByRole('button',{name:'More',exact:true}).click();
+ await page.getByRole('menu',{name:'More collection actions',exact:true}).getByRole('button',{name:action,exact:true}).click();
  await expect(grid(page).locator('[data-collection-status]').filter({hasText:/Added/})).toBeVisible();
 }
 async function fixtures(page:Page) {

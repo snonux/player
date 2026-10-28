@@ -43,8 +43,8 @@ export function mountAlbumDiscovery(heading, albums, current, openCollection, op
   row.className='music-heading'; row.setAttribute('aria-label',title);
   row.innerHTML=`<h3>${title}</h3><p class="text-muted">${source}</p>${items.length?`<p>${items.length} albums</p><div class="playlist-actions">${items.slice(0,4).map(a=>`<button class="btn btn-ghost queue-track" data-preview="${esc(a.album_key)}">${esc(a.title)} · ${esc(a.artist)}</button>`).join('')}</div>`:`<p>${empty}</p>`}${collectionButtons(`Play all ${items.length} albums`)}<button class="btn" data-view-all>View all ${title.toLowerCase()}</button>`;
   const actions=row.querySelector('[data-collection-actions]');
-  actions.querySelectorAll('button:not([data-collection-play])').forEach(button=>button.hidden=true);
   actions.querySelector('[data-collection-play]').disabled=!items.length;
+  if(!items.length)actions.querySelectorAll('[data-collection-shuffle], [data-collection-menu]').forEach(button=>button.disabled=true);
   bindCollectionActions(actions,()=>items.map(a=>({kind:'album',key:a.album_key})),current,title);
   row.querySelector('[data-view-all]').onclick=()=>openCollection(key,items);
   row.querySelectorAll('[data-preview]').forEach(button=>button.onclick=()=>openAlbum(button.dataset.preview));

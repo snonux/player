@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, openCollectionMoreAction } from './helpers/music-ui';
 
 test.skip(process.env.PLAYER_M47_ISOLATED !== '1', 'Requires an isolated disposable music fixture');
 const attempt = `${Date.now()}-${process.pid}`;
@@ -40,9 +40,7 @@ async function playbackRows(page: Page): Promise<any[]> {
 }
 
 async function openPin(page: Page, name: string): Promise<void> {
-  const button = page.locator('#media-grid').getByRole('button', { name: /Pin offline|Manage…/ });
-  await button.focus();
-  await page.keyboard.press('Enter');
+  await openCollectionMoreAction(page, /Pin offline|Manage…/);
   await expect(page.getByRole('dialog', { name, exact: true })).toBeVisible();
   await expect(page.getByRole('dialog', { name, exact: true }).locator('h2')).toBeFocused();
 }
@@ -106,9 +104,13 @@ test('M47 album and playlist pins survive cache eviction, restart and offline au
     const albumShot = e.path('m47-album-pinned.png'); await page.screenshot({ path: albumShot, fullPage: true }); artifacts.push(albumShot);
     for (const media of albumSongs) expect(await savedHash(page, media.id)).toBe(expected.get(media.id));
     await page.keyboard.press('Escape');
-    await expect(page.locator('#media-grid').getByRole('button', { name: /Pinned 3\/3 · Manage…/ })).toBeFocused();
+    await expect(page.locator('#media-grid').getByRole('button', { name: 'More', exact: true })).toBeFocused();
+    await expect(page.locator('#media-grid [data-collection-pin]')).toHaveText(/Pinned 3\/3 · Manage…/);
     await page.reload();
-    await expect(page.locator('#media-grid').getByRole('button', { name: /Pinned 3\/3 · Manage…/ })).toBeVisible();
+    await expect(page.locator('#media-grid [data-collection-pin]')).toHaveText(/Pinned 3\/3 · Manage…/);
+    await page.locator('#media-grid').getByRole('button', { name: 'More', exact: true }).click();
+    await expect(page.getByRole('menu', { name: 'More collection actions' }).getByRole('button', { name: /Pinned 3\/3 · Manage…/ })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     await page.goto(`/?music=playlist&id=${encodeURIComponent(playlistId)}`);
     await expect(page.getByRole('heading', { name: playlistName, exact: true })).toBeVisible();
@@ -233,7 +235,10 @@ test('M47 saved collections stay account scoped and server denial cannot play ol
     await page.waitForURL(url => url.pathname === '/login.html');
     await keyboardLogin(page, f.user);
     await page.goto(`/?music=album&id=${encodeURIComponent(album.album_key)}`);
-    await expect(page.locator('#media-grid').getByRole('button', { name: /Pinned 3\/3 · Manage…/ })).toBeVisible();
+    await expect(page.locator('#media-grid [data-collection-pin]')).toHaveText(/Pinned 3\/3 · Manage…/);
+    await page.locator('#media-grid').getByRole('button', { name: 'More', exact: true }).click();
+    await expect(page.getByRole('menu', { name: 'More collection actions' }).getByRole('button', { name: /Pinned 3\/3 · Manage…/ })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     await openPin(page, title);
     expect((await admin.delete('/api/v1/admin/permissions', {

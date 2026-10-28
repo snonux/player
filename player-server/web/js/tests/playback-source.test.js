@@ -1245,6 +1245,41 @@ async function testCanceledCollectionSelectionReleasesOnlyItsOwnBusyState() {
   } finally { document.createElement=oldCreate;API.album=oldAlbum; }
 }
 
+async function testCollectionMoreMenuExposesSecondaryActions() {
+  setup();
+  const {bindCollectionActions} = await import('../collection-actions.js');
+  const play={}, shuffle={}, menu={}, status={}, download={}, share={};
+  const pin={textContent:'Pin offline…', disabled:false, clicked:false, click(){this.clicked=true;}};
+  const root={isConnected:true,querySelector:selector=>({'[data-collection-play]':play,'[data-collection-shuffle]':shuffle,'[data-collection-menu]':menu,'[data-collection-download]':download,'[data-collection-share]':share,'[data-collection-pin]':pin,'[data-collection-status]':status})[selector],querySelectorAll:()=>[play,shuffle,menu,download,share]};
+  let popover;
+  const oldCreate=document.createElement, oldBody=document.body;
+  document.body={append(value){popover=value;}};
+  document.createElement=()=>{
+    const el=fakeElement();
+    el.buttons=[];
+    Object.defineProperty(el,'innerHTML',{set(value){el.buttons=[...String(value).matchAll(/data-action="([^"]+)"/g)].map(([,action])=>({dataset:{action},onclick:null,focus(){}}));},configurable:true});
+    el.querySelectorAll=()=>el.buttons; el.querySelector=()=>el.buttons[0];
+    el.showPopover=()=>{}; el.hidePopover=()=>{};
+    return el;
+  };
+  try {
+    bindCollectionActions(root,()=>[{kind:'album',key:'a'}],()=>true,'Album');
+    menu.onclick({currentTarget:menu});
+    assertEqual(popover.querySelectorAll().map(item=>item.dataset.action).join(','),'next,append,options,download,pin,share','More menu keeps every secondary collection action reachable');
+    popover.querySelectorAll().find(item=>item.dataset.action==='pin').onclick();
+    assert(pin.clicked,'Pin menu row triggers the bound pin control');
+    // Negative: empty collection must not resolve songs from More Download.
+    bindCollectionActions(root,()=>[],()=>true,'Empty');
+    let opened=0; const oldAlbum=API.album; API.album=()=>{opened++;return Promise.resolve({songs:[]});};
+    try {
+      menu.onclick({currentTarget:menu});
+      popover.querySelectorAll().find(item=>item.dataset.action==='download').onclick();
+      await settle();
+      assertEqual(opened,0,'More Download with no collection must not resolve songs');
+    } finally {API.album=oldAlbum;}
+  } finally {document.createElement=oldCreate;document.body=oldBody;}
+}
+
 async function testShuffleOptionsEscapeRestoresOpenerAndCancelsPending() {
   setup();
   const {bindCollectionActions} = await import('../collection-actions.js');
@@ -1426,6 +1461,7 @@ for (const test of [
   testVisiblePlayAfterFinalQueueCompletionGetsFreshListeningIdentity,
   testSearchSongsAndFilesKeepSeparatePlaybackOwnership,
   testCanceledCollectionSelectionReleasesOnlyItsOwnBusyState,
+  testCollectionMoreMenuExposesSecondaryActions,
   testShuffleOptionsEscapeRestoresOpenerAndCancelsPending,
   testPlaybackShufflePreservesOccurrenceAndCanonicalIntent,
   testSenderNaturalCompletionRetainsRepeatOneOccurrence,

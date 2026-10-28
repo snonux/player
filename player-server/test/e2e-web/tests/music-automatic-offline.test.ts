@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, openCollectionMoreAction } from './helpers/music-ui';
 
 test.skip(process.env.PLAYER_M48_ISOLATED !== '1', 'Requires an isolated disposable music fixture');
 const attempt = `${Date.now()}-${process.pid}`;
@@ -69,8 +69,7 @@ test('M48 updates a pinned playlist and starred songs, waits for Wi-Fi, then pla
 
     await page.goto(`/?music=playlist&id=${encodeURIComponent(playlistId)}`);
     await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
-    const pin = page.locator('#media-grid').getByRole('button', { name: /Pin offline|Manage…/ });
-    await pin.focus(); await page.keyboard.press('Enter');
+    await openCollectionMoreAction(page, /Pin offline|Manage…/);
     const dialog = page.getByRole('dialog', { name, exact: true });
     await dialog.getByRole('combobox', { name: 'Download quality' }).selectOption('original');
     await dialog.getByRole('button', { name: 'Pin offline', exact: true }).click();

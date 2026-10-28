@@ -43,6 +43,14 @@ const { collectionButtons } = await import('../collection-actions.js');
 const { musicArtistHeading } = await import('../views/music-catalog.js');
 select.value='de';select.change();
 const production = collectionButtons('Play album') + musicArtistHeading({roles:[]}, {artist:''});
+assert.match(production, /data-collection-play/);
+assert.match(production, /data-collection-shuffle/);
+assert.match(production, /data-collection-menu[^>]*>☰/);
+assert.match(production, /&quot;key&quot;:&quot;More&quot;/);
+assert.match(production, /data-collection-download hidden/);
+assert.match(production, /data-collection-pin hidden/);
+assert.match(production, /data-collection-share hidden/);
+assert(!production.includes('Queue actions'), 'queue/download/pin/share must not stay as always-visible primary buttons');
 function readBindings(markup) {
   return [...markup.matchAll(/data-i18n-text="([^"]+)"/g)].map(match=>{
     const data=match[1].replaceAll('&quot;','"').replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');

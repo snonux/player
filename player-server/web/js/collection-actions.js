@@ -1,4 +1,4 @@
-import { bindOfflinePinButton } from './offline-pin-dialog.js';
+import { bindOfflinePinButton, showOfflinePin } from './offline-pin-dialog.js';
 import { t, html, plural, ui } from './i18n.js';
 import { shareMusicCollection } from './collection-share.js';
 import { downloadMusic } from './music-downloads.js';
@@ -17,8 +17,10 @@ function activeContext() {
  const active = contexts.filter(owner => owner.current());
  return active.findLast(owner => owner.catalog) || active.at(-1) || null;
 }
+const ACTION_CONTROLS = '[data-collection-play], [data-collection-shuffle], [data-collection-menu], [data-collection-download], [data-collection-share]';
 export function collectionButtons(label) {
- return html`<span class="playlist-actions" data-collection-actions><button class="btn btn-primary" data-collection-play>▶ ${ui(label)}</button><button class="btn" data-collection-shuffle>Shuffle</button><button class="btn" data-collection-menu>Queue actions ▾</button><button class="btn" data-collection-download>Download…</button><button class="btn" data-collection-pin>Pin offline…</button><button class="btn" data-collection-share>Share…</button><span role="status" data-collection-status></span></span>`;
+ // Play and Shuffle stay visible; Download / Pin / Share stay in the DOM (hidden) for binders while More owns the visible entry point and focus restore.
+ return html`<span class="playlist-actions" data-collection-actions><button class="btn btn-primary" data-collection-play>▶ ${ui(label)}</button><button class="btn" data-collection-shuffle>Shuffle</button><button type="button" class="icon-btn" data-collection-menu aria-label="More" aria-haspopup="menu" title="More">☰</button><button class="btn" data-collection-download hidden>Download…</button><button class="btn" data-collection-pin hidden>Pin offline…</button><button class="btn" data-collection-share hidden>Share…</button><span role="status" data-collection-status></span></span>`;
 }
 export function bindCollectionActions(root, collections, current, sourceLabel = t('Selected collections')) {
  const owner = {root, collections, current, sourceLabel, busy:false, generation:0};
@@ -27,16 +29,32 @@ export function bindCollectionActions(root, collections, current, sourceLabel = 
  root.querySelector('[data-collection-shuffle]').onclick = () => run(owner, 'shuffle');
  root.querySelector('[data-collection-share]').onclick = () => run(owner, 'share');
  root.querySelector('[data-collection-download]').onclick = () => run(owner, 'download');
- root.querySelector('[data-collection-menu]').onclick = event => menu(event.currentTarget, owner);
- owner.pinUpdate = bindOfflinePinButton(root.querySelector('[data-collection-pin]'), collections, current, sourceLabel);
+ const more = root.querySelector('[data-collection-menu]');
+ more.onclick = event => menu(event.currentTarget, owner);
+ const pin = root.querySelector('[data-collection-pin]');
+ owner.pinUpdate = bindOfflinePinButton(pin, collections, current, sourceLabel);
+ // Restore focus to the visible More control after the pin dialog closes.
+ if (pin) pin.onclick = () => {
+  const selected = collections();
+  if (current() && selected.length === 1 && ['album', 'playlist'].includes(selected[0].kind)) showOfflinePin(selected[0], sourceLabel, more);
+ };
  return owner;
 }
 function menu(button, owner) {
+ const pin = owner.root.querySelector('[data-collection-pin]');
  const popover = document.createElement('div');
  popover.className = 'shortcut-picker'; popover.setAttribute('popover', 'auto');
- popover.setAttribute('role', 'group'); popover.setAttribute('aria-label', t('Collection queue actions'));
- popover.innerHTML = html`<button class="btn btn-ghost" data-action="next">Play next</button><button class="btn btn-ghost" data-action="append">Add to queue</button><button class="btn btn-ghost" data-action="options">Shuffle options…</button>`;
- popover.querySelectorAll('button').forEach(item => item.onclick = () => { popover.hidePopover(); if (item.dataset.action === 'options') shuffleOptions(owner, button); else void run(owner,item.dataset.action); });
+ popover.setAttribute('role', 'menu'); popover.setAttribute('aria-label', t('More collection actions'));
+ // Pin label is dynamic status text — escape it outside html`` so it is not treated as UI prose.
+ popover.innerHTML = html`<button class="btn btn-ghost" data-action="next">Play next</button><button class="btn btn-ghost" data-action="append">Add to queue</button><button class="btn btn-ghost" data-action="options">Shuffle options…</button><button class="btn btn-ghost" data-action="download">Download…</button>`
+  + `<button class="btn btn-ghost" data-action="pin"${pin?.disabled ? ' disabled' : ''}>${esc(pin?.textContent || t('Pin offline…'))}</button>`
+  + html`<button class="btn btn-ghost" data-action="share">Share…</button>`;
+ popover.querySelectorAll('button').forEach(item => item.onclick = () => {
+  popover.hidePopover();
+  if (item.dataset.action === 'options') shuffleOptions(owner, button);
+  else if (item.dataset.action === 'pin') pin?.click();
+  else void run(owner, item.dataset.action);
+ });
  popover.addEventListener('toggle', event => { if (event.newState === 'closed') { popover.remove(); if(button.isConnected)button.focus(); } });
  document.body.append(popover); popover.showPopover(); popover.querySelector('button').focus();
 }
@@ -49,15 +67,16 @@ async function run(owner, action, targets, settings = {}) {
  const current = () => owner.root.isConnected && owner.current() && request === collectionIntent && generation === owner.generation && state.user === user && (['download','share'].includes(action) || isPlaybackIntent(intent)) && (!settings.alive || settings.alive());
  owner.busy = true;
  const status = settings.status || owner.root.querySelector('[data-collection-status]');
- const buttons = [...owner.root.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu], [data-collection-download], [data-collection-share]')];
+ const buttons = [...owner.root.querySelectorAll(ACTION_CONTROLS)];
  buttons.forEach(button => button.disabled = true); status.textContent = t('Loading songs…');
  try {
   let songs = await resolveCollections(API, collections, current);
   if (action === 'shuffle') songs = selectShuffleSongs(songs, settings.options);
   if (!current()) return;
   if (!songs.length) { status.textContent = action === 'shuffle' ? t('No songs match these options.') : t('No songs available.'); return; }
-  if (action === 'share') { shareMusicCollection(songs, owner.sourceLabel, owner.root.querySelector('[data-collection-share]')); status.textContent = ''; return true; }
-  if (action === 'download') { downloadMusic(songs, owner.root.querySelector('[data-collection-download]')); status.textContent = ''; return true; }
+  const focus = owner.root.querySelector('[data-collection-menu]') || owner.root.querySelector(`[data-collection-${action}]`);
+  if (action === 'share') { shareMusicCollection(songs, owner.sourceLabel, focus); status.textContent = ''; return true; }
+  if (action === 'download') { downloadMusic(songs, focus); status.textContent = ''; return true; }
   if (await insertQueue(songs, ['replace', 'shuffle'].includes(action) ? 'now' : action, {replace:['replace', 'shuffle'].includes(action), shuffled:action === 'shuffle', source:owner.sourceLabel})) {
    const token = queueUndoToken();
    status.textContent = `Added ${songs.length} ${songs.length === 1 ? 'song' : 'songs'}.`;
@@ -123,7 +142,7 @@ export function bindCollectionCatalog(grid, items, kind, keyName, nameName, curr
   const count = selected().length;
   owner.pinUpdate?.();
   toolbar.querySelector('[data-batch-count]').textContent = `${count} selected`;
-  if (!owner.busy) toolbar.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu], [data-collection-download], [data-collection-share]').forEach(button => button.disabled=!count);
+  if (!owner.busy) toolbar.querySelectorAll(ACTION_CONTROLS).forEach(button => button.disabled=!count);
  };
  const setSelecting = value => {
   owner.selecting=value; toolbar.querySelector('[data-batch]').hidden=!value;
@@ -148,7 +167,7 @@ function shuffleOptions(owner, opener) {
    // Cancel ownership immediately; late completion cannot unlock a newer action.
    owner.generation++; owner.busy = false;
    if (owner.root.isConnected) {
-    owner.root.querySelectorAll('[data-collection-play], [data-collection-shuffle], [data-collection-menu], [data-collection-download], [data-collection-share]').forEach(button => button.disabled = !owner.collections().length);
+    owner.root.querySelectorAll(ACTION_CONTROLS).forEach(button => button.disabled = !owner.collections().length);
    }
   }
   if (opener?.isConnected) opener.focus();

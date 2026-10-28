@@ -328,6 +328,7 @@ export const german = {
   "Add to more playlists": "Zu weiteren Wiedergabelisten hinzufügen",
   "Check your connection and try again.": "Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
   "Collection queue actions": "Warteschlangenaktionen für Sammlungen",
+  "More collection actions": "Weitere Sammlungsaktionen",
   "Could not load songs. Check your connection and access, then retry.": "Titel konnten nicht geladen werden. Prüfen Sie Verbindung und Zugriff und versuchen Sie es erneut.",
   "Could not load songs. Check your connection and access, then try again.": "Titel konnten nicht geladen werden. Prüfen Sie Verbindung und Zugriff und versuchen Sie es erneut.",
   "Could not remember home. Check browser storage.": "Startansicht konnte nicht gespeichert werden. Prüfen Sie den Browserspeicher.",

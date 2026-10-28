@@ -25,7 +25,7 @@ async function fixture(p:Page){
  await p.goto('/?music=playlist&id='+pid);await expect(p.locator('.media-row')).toHaveCount(songs.length);
  return {pid,songs,album,detail,name};
 }
-async function options(p:Page){await close(p);await p.locator('#media-grid [data-collection-menu]').click();await p.getByRole('group',{name:'Collection queue actions'}).getByRole('button',{name:'Shuffle options…',exact:true}).click();const dialog=p.locator('#shuffle-options-modal');await expect(dialog).toBeVisible();return dialog;}
+async function options(p:Page){await close(p);await p.locator('#media-grid [data-collection-menu]').click();await p.getByRole('menu',{name:'More collection actions'}).getByRole('button',{name:'Shuffle options…',exact:true}).click();const dialog=p.locator('#shuffle-options-modal');await expect(dialog).toBeVisible();return dialog;}
 test.beforeAll(async({browser},info)=>{f=loadFixture();e=new Evidence(f.evidenceDir,info.project.name,{browser_version:browser.version(),server_version:f.serverVersion,server_build:f.buildRevision,checkout:f.checkout});});
 test.beforeEach(async({page})=>{await page.addInitScript(installAudioTap);await keyboardLogin(page,f.user);});
 

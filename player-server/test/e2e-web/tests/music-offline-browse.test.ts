@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, openFolder, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { keyboardLogin, openFolder, expectPlaying, captureOutput, assertValidCapture, mainSegment, openCollectionMoreAction } from './helpers/music-ui';
 
 test.skip(process.env.PLAYER_M49_ISOLATED !== '1', 'Requires an exclusively owned disposable music fixture');
 const attempt = `${Date.now()}-${process.pid}`;
@@ -26,7 +26,7 @@ test.beforeAll(async ({ browser }, info) => {
 async function pin(page: Page, kind: 'album' | 'playlist', key: string, title: string, expected: number) {
   await page.goto(`/?music=${kind}&id=${encodeURIComponent(key)}`);
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
-  await page.locator('#media-grid').getByRole('button', { name: /Pin offline|Manage…/ }).click();
+  await openCollectionMoreAction(page, /Pin offline|Manage…/);
   const dialog = page.getByRole('dialog', { name: title, exact: true });
   await dialog.getByRole('combobox', { name: 'Download quality' }).selectOption('original');
   await dialog.getByRole('button', { name: 'Pin offline', exact: true }).click();

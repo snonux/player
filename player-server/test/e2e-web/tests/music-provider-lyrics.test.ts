@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, openFolder, playCard, expectPlaying, audioState,
-  captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+  captureOutput, assertValidCapture, mainSegment, openCollectionMoreAction } from './helpers/music-ui';
 
 test.skip(process.env.PLAYER_A03C_ISOLATED !== '1', 'Requires an owned provider fixture');
 let fixture: MusicFixture, evidence: Evidence, media: { id: number; title: string };
@@ -76,7 +76,7 @@ test('A03c explicit provider and complete offline lyric snapshot', async ({ page
     expect(album).toBeTruthy();
     await page.goto(`/?music=album&id=${encodeURIComponent(album.album_key)}`);
     await expect(page.getByRole('heading', { name: 'A03c Provider' })).toBeVisible();
-    await page.locator('#media-grid').getByRole('button', { name: /Pin offline|Manage…/ }).click();
+    await openCollectionMoreAction(page, /Pin offline|Manage…/);
     const pin = page.getByRole('dialog', { name: 'A03c Provider' });
     await pin.getByRole('combobox', { name: 'Download quality' }).selectOption('original');
     await pin.getByRole('button', { name: 'Pin offline', exact: true }).click();

@@ -180,3 +180,11 @@ export async function playCard(page: Page, fileName: string, mediaId: number): P
   await card.getByRole('button', { name: 'Play', exact: true }).click();
   return expectPlaying(page, mediaId);
 }
+
+/** Open a collection secondary action from the shared hamburger More menu. Returns the More control (focus restore target). */
+export async function openCollectionMoreAction(page: Page, action: string | RegExp) {
+  const more = page.locator('#media-grid').getByRole('button', { name: 'More', exact: true });
+  await more.click();
+  await page.getByRole('menu', { name: 'More collection actions', exact: true }).getByRole('button', { name: action }).click();
+  return more;
+}
