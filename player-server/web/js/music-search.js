@@ -1,7 +1,7 @@
 import { t, html, plural, ui, uiCount } from './i18n.js';
 import { listeningDetails } from './music-listening.js';
-import { ratingControl, bindRatings, ratingFilters, ratingParams } from './music-ratings.js';
-import { readMusicLayout, sortMusic, musicColumns, musicColumnText, musicLayoutToolbar, bindMusicLayout } from './music-layout.js';
+import { ratingControl, bindRatings, ratingParams } from './music-ratings.js';
+import { readMusicLayout, writeMusicLayout, sortMusic, musicColumns, musicColumnText, musicLayoutToolbar, bindMusicLayout } from './music-layout.js';
 import { facetParams, hasFacets } from './music-facets.js';
 import { state } from './state.js';
 import { API } from './api.js';
@@ -60,11 +60,12 @@ export async function renderMusicSearch(grid, view, current, {openAlbum, openArt
  const query=view.query || '', artist=view.artistQuery || '', album=view.albumQuery || '';
  const header=html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-search-back>← Back</button><h1>Search results</h1><p>${esc([query,artist && `Artist: ${artist}`,album && `Album: ${album}`].filter(Boolean).join(' · '))}</p></div>`;
  const wire=()=>{grid.querySelector('[data-search-back]')?.addEventListener('click',back);};
- if(!query && !artist && !album && !hasFacets(view) && !view.rated && !view.ratingSort) {grid.innerHTML=header+html`<p class="grid-full" role="status">Search songs, albums and artists.</p>`;wire();return;}
- const [data, media]=await Promise.all([API.musicSearch({...ratingParams(view),q:query,artist,album,...facetParams(view.facets)}), query && !artist && !album && !hasFacets(view) && !view.rated ? searchFiles(query,current) : []]);
+ if(!query && !artist && !album && !hasFacets(view) && !view.rated && !view.favorites && !view.ratingSort) {grid.innerHTML=header+html`<p class="grid-full" role="status">Search songs, albums and artists.</p>`;wire();return;}
+ const [data, media]=await Promise.all([API.musicSearch({...ratingParams(view),favorite:view.favorites||false,q:query,artist,album,...facetParams(view.facets)}), query && !artist && !album && !hasFacets(view) && !view.rated && !view.favorites ? searchFiles(query,current) : []]);
  if(!current()) return;
  const layout=readMusicLayout('songs');
- const songs=view.ratingSort ? data.songs || [] : sortMusic(data.songs || [],layout,'songs'), ids=new Set(songs.map(song=>song.id));
+ if(view.ratingSort){layout.sort='rating';layout.descending=true;writeMusicLayout('songs',layout);delete state.music.ratingSort;view.ratingSort='';}
+ const songs=sortMusic(data.songs || [],layout,'songs'), ids=new Set(songs.map(song=>song.id));
  const needle=query.toLocaleLowerCase();
  const files=(Array.isArray(media)?media:media?.media || []).filter(item=>!ids.has(item.id) && [item.file_name,item.rel_path].some(text=>(text || '').toLocaleLowerCase().includes(needle)));
  state.searchSongs=songs;state.searchFiles=files;state.media=[...songs,...files];
@@ -77,7 +78,7 @@ export async function renderMusicSearch(grid, view, current, {openAlbum, openArt
  grid.innerHTML=header+(total ? '' : html`<p class="grid-full" role="status">Nothing matches these filters. <button class="btn" data-clear-search>Clear filters</button></p>`)+musicLayoutToolbar('songs',layout)+group('Songs',songs,songRows)+group('Albums',data.albums,albumRows)+group('Artists',data.artists,artistRows)+group('Files',files,fileRows);
  grid.classList.add('music-detail');
  document.getElementById('result-count').innerHTML=`${ui('Search')} · ${ui('{count} results', {count:total})}`;
- wire();bindSongActions(grid);bindRatings(grid,current);ratingFilters(grid,view,reload);
+ wire();bindSongActions(grid);bindRatings(grid,current);
  grid.querySelector('[data-clear-search]')?.addEventListener('click',()=>{state.music={search:true,query:''}; const input=document.getElementById('search-input');if(input){input.value='';input.focus();}reload();});
  grid.querySelectorAll('[data-album]').forEach(row=>row.onclick=()=>openAlbum(row.dataset.album));
  grid.querySelectorAll('[data-artist-card]').forEach(row=>row.onclick=()=>openArtist(row.dataset.artistCard));

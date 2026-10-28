@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const search = readFileSync(join(root, 'music-search.js'), 'utf8');
+const catalog = readFileSync(join(root, 'views/music-catalog.js'), 'utf8');
+assert.match(search, /favorite:view\.favorites/);
+assert.doesNotMatch(search, /ratingFilters\(/);
+assert.match(search, /writeMusicLayout\('songs'/);
+assert.match(catalog, /view\.search[\s\S]*favoriteFilter\(grid,view,reload\); ratingFilters/);
+console.log('music-search-filters source checks passed');

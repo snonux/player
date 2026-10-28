@@ -179,6 +179,11 @@ func (s *Server) handleMusicSearch(w http.ResponseWriter, r *http.Request) {
 		handleError(w, err)
 		return
 	}
+	albumFavorites, err := s.musicFavorites(r.Context(), userIDFromContext(r), "album")
+	if err != nil {
+		handleError(w, err)
+		return
+	}
 	artistStars, err := s.rateMusic(r.Context(), userIDFromContext(r), albums)
 	if err != nil {
 		handleError(w, err)
@@ -191,7 +196,21 @@ func (s *Server) handleMusicSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	albums = service.FilterMusic(albums, filter)
-	if (len(filter) > 0 || query.Get("rated") == "true" || query.Get("sort") == "rating") && query.Get("q") == "" && query.Get("artist") == "" && query.Get("album") == "" {
+	if query.Get("favorite") == "true" {
+		favoritesOnly := albums[:0]
+		for _, album := range albums {
+			album.IsFavorite = albumFavorites[album.Key]
+			if album.IsFavorite {
+				favoritesOnly = append(favoritesOnly, album)
+			}
+		}
+		albums = favoritesOnly
+	} else {
+		for i := range albums {
+			albums[i].IsFavorite = albumFavorites[albums[i].Key]
+		}
+	}
+	if (len(filter) > 0 || query.Get("rated") == "true" || query.Get("favorite") == "true" || query.Get("sort") == "rating") && query.Get("q") == "" && query.Get("artist") == "" && query.Get("album") == "" {
 		result := service.MusicSearchResult{Songs: []model.Media{}, Albums: []service.Album{}, Artists: service.MusicArtists(albums)}
 		for _, album := range albums {
 			result.Songs = append(result.Songs, album.Songs...)

@@ -122,7 +122,12 @@ export async function renderMusic(grid, isCurrent) {
  try {
   await mountMusicFacets(grid,view,current,reload,true);
   if(!current())return;
-  if (view.search) { await renderMusicSearch(grid,view,current,{openAlbum,openArtist,back:backMusic,reload});await mountMusicFacets(grid,view,current,reload);return; }
+  if (view.search) {
+   await renderMusicSearch(grid,view,current,{openAlbum,openArtist,back:backMusic,reload});
+   await mountMusicFacets(grid,view,current,reload);
+   favoriteFilter(grid,view,reload); ratingFilters(grid,view,reload);
+   return;
+  }
   if (view.playlists) { await renderPlaylists(grid,view,current,positions.get(viewKey(view)));return; }
   if (view.artists && !view.album) {
    await renderArtists(grid, view, current);
