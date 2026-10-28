@@ -30,6 +30,21 @@ async function openRadio(page: Page) {
   await expect(page.locator('#radio-results .radio-row')).toHaveCount(5);
 }
 
+async function openRadioFilters(page: Page) {
+  const panel = page.locator('#radio-filters-panel');
+  if (await panel.isHidden()) {
+    await page.locator('#radio-filters-toggle').click();
+  }
+  await expect(panel).toBeVisible();
+}
+
+async function bookmarkNowPlaying(page: Page) {
+  await page.locator('#radio-now-more').click();
+  const menu = page.locator('[popover]:popover-open[aria-label="More station actions"]');
+  await expect(menu).toBeVisible();
+  await menu.getByRole('button', { name: /Bookmark/ }).click();
+}
+
 async function audioProgresses(page: Page) {
   const audio = page.locator('#radio-audio');
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.currentTime), { timeout: 20_000 }).toBeGreaterThan(1.5);
@@ -52,14 +67,17 @@ test('explore, filter, play and bookmark a station with the keyboard', async ({ 
   await expect(page.locator('#radio-results')).toContainText('Fake Rock Radio');
   await expect(page.locator('#radio-results')).toContainText('France · MP3 64 kbit/s · rock');
 
-  // Genre and country filters.
+  // Genre and country filters (advanced panel behind Filters).
   await page.locator('#radio-q').fill('');
+  await openRadioFilters(page);
   await page.locator('#radio-tag').selectOption('jazz');
   await expect(page.locator('#radio-results .radio-row')).toHaveCount(3);
   await page.locator('#radio-country').selectOption('DE');
   await expect(page.locator('#radio-results .radio-row')).toHaveCount(2);
   await page.locator('#radio-order').selectOption('name');
   await expect(page.locator('#radio-results .radio-row-name')).toHaveText(['Fake Jazz One', 'Fake Jazz Two']);
+  await expect(page.locator('#radio-filters-summary')).toContainText('jazz');
+  await expect(page.locator('#radio-filters-summary')).toContainText('Germany');
 
   // j/k move between stations, Enter plays.
   await page.locator('#radio-search').focus();
@@ -127,11 +145,14 @@ test('auto explore moves through the stations of a genre and skips dead ones', a
 
   // Jazz: two live stations and the dead one.
   await page.locator('#radio-q').fill('');
+  await openRadioFilters(page);
   await page.locator('#radio-tag').selectOption('jazz');
   await expect(page.locator('#radio-results .radio-row')).toHaveCount(3);
   await page.locator('#radio-dwell').selectOption('15');
   await page.locator('#radio-explore').click();
   await expect(page.locator('#radio-explore-controls')).toBeVisible();
+  await expect(page.locator('#radio-explore')).toBeHidden();
+  await expect(page.locator('#radio-search')).toBeHidden();
   const name = page.locator('#radio-now-name');
   const live = /^Fake Jazz (One|Two)$/;
   await expect(name).toHaveText(live, { timeout: 20_000 });
@@ -151,10 +172,12 @@ test('auto explore moves through the stations of a genre and skips dead ones', a
   await expect(name).toHaveText(live, { timeout: 20_000 });
 
   // Bookmark while exploring, then keep the station.
-  await page.locator('#radio-now-bookmark').click();
+  await bookmarkNowPlaying(page);
   await expect(page.locator('#radio-now-bookmark')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#radio-explore-keep').click();
   await expect(page.locator('#radio-explore-controls')).toBeHidden();
+  await expect(page.locator('#radio-explore')).toBeVisible();
+  await expect(page.locator('#radio-search')).toBeVisible();
   const kept = await name.textContent();
   await page.waitForTimeout(16_000);
   await expect(name).toHaveText(kept!);

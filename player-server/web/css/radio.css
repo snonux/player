@@ -13,7 +13,22 @@
 }
 .radio-now-text { min-width: 0; }
 .radio-now-name { font-weight: 600; overflow-wrap: anywhere; }
-.radio-now-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-end; }
+.radio-now-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+  align-items: center;
+}
+.radio-now-actions .btn,
+.radio-now-actions .icon-btn,
+.radio-explore-controls .btn,
+.radio-explore-toolbar .btn,
+.radio-explore-toolbar .icon-btn,
+#radio-more {
+  min-height: var(--control-height);
+  min-width: var(--control-height);
+}
 .radio-status { color: var(--text-secondary); min-height: 1.2em; }
 .radio-explore-controls {
   grid-column: 1 / -1;
@@ -43,12 +58,29 @@
 .radio-tab { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
 .radio-tab.active { color: var(--accent); background: var(--accent-soft); }
 
+.radio-search-form { display: flex; flex-direction: column; gap: 0.5rem; }
+.radio-explore-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
 .radio-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem; }
+.radio-filters-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+.radio-filters-panel.hidden { display: none; }
+.radio-filters-summary { min-height: 1.2em; }
 .radio-field { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 9rem; min-width: 0; }
 .radio-field-wide { flex: 2 1 14rem; }
-.radio-explore-start { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
 .radio-dwell { display: inline-flex; align-items: center; gap: 0.35rem; }
-.radio-dwell select { width: auto; }
+.radio-dwell select { width: auto; min-height: var(--control-height); }
 
 .radio-list { list-style: none; padding: 0; margin: 0; }
 .radio-row { display: flex; align-items: center; gap: 0.25rem; border-top: 1px solid var(--border); }
@@ -68,7 +100,7 @@
 .radio-row-text { display: flex; flex-direction: column; min-width: 0; }
 .radio-row-name { color: var(--text-primary); overflow-wrap: anywhere; }
 .radio-row-details { overflow-wrap: anywhere; }
-.radio-bookmark { font-size: 1.1rem; }
+.radio-bookmark { font-size: 1.1rem; min-height: var(--control-height); min-width: var(--control-height); }
 .radio-bookmark.active { color: var(--warn); background: transparent; }
 
 .radio-bar {
@@ -89,6 +121,7 @@
 }
 .radio-bar-title { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .radio-bar-status { white-space: nowrap; }
+.radio-bar .btn { min-height: var(--control-height); }
 
 @media (max-width: 40rem) {
   .radio-now { grid-template-columns: auto 1fr; }

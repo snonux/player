@@ -111,11 +111,12 @@
   </div>
 </div>
 
-<div id="radio-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="radio-title">
- <div class="modal"><div class="modal-header"><h3 id="radio-title">Internet radio</h3><div class="spacer"></div><button id="radio-close" class="icon-btn" aria-label="Close internet radio">✕</button></div>
- <input id="radio-search" type="search" aria-label="Search stations" placeholder="Search stations">
- <button id="radio-refresh" class="btn btn-ghost">Refresh</button><button id="radio-add" class="btn" hidden>Add station</button>
- <p id="radio-status" role="status"></p><div id="radio-list" aria-label="Stations"></div></div>
+<!-- M61 custom stations: IDs must not collide with Web radio (#radio-modal). -->
+<div id="internet-radio-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="internet-radio-title">
+ <div class="modal"><div class="modal-header"><h3 id="internet-radio-title">Internet radio</h3><div class="spacer"></div><button id="internet-radio-close" class="icon-btn" aria-label="Close internet radio">✕</button></div>
+ <input id="internet-radio-search" type="search" aria-label="Search stations" placeholder="Search stations">
+ <button id="internet-radio-refresh" class="btn btn-ghost">Refresh</button><button id="internet-radio-add" class="btn" hidden>Add station</button>
+ <p id="internet-radio-status" role="status"></p><div id="internet-radio-list" aria-label="Stations"></div></div>
 </div>
 <div id="radio-editor" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="radio-editor-title">
  <div class="modal"><div class="modal-header"><h3 id="radio-editor-title">Add station</h3><div class="spacer"></div><button id="radio-editor-close" class="icon-btn" aria-label="Cancel station editing">✕</button></div>
@@ -288,51 +289,57 @@
         <div id="radio-status" class="radio-status text-xs" role="status" aria-live="polite"></div>
       </div>
       <div class="radio-now-actions">
-        <button id="radio-toggle-play" class="btn btn-sm" type="button">Stop</button>
-        <button id="radio-now-bookmark" class="btn btn-sm" type="button" aria-pressed="false">Bookmark</button>
-        <a id="radio-now-homepage" class="btn btn-ghost btn-sm hidden" target="_blank" rel="noopener noreferrer">Homepage</a>
+        <button id="radio-toggle-play" class="btn" type="button">Stop</button>
+        <button id="radio-now-more" class="icon-btn" type="button" aria-label="More station actions" aria-haspopup="menu" title="More">☰</button>
+        <button id="radio-now-bookmark" class="btn" type="button" aria-pressed="false" hidden>Bookmark</button>
+        <a id="radio-now-homepage" class="btn btn-ghost" target="_blank" rel="noopener noreferrer" hidden>Homepage</a>
       </div>
       <div id="radio-explore-controls" class="radio-explore-controls hidden" role="group" aria-label="Auto explore">
         <span id="radio-countdown" class="radio-countdown text-xs" aria-live="off"></span>
-        <button id="radio-explore-keep" class="btn btn-primary btn-sm" type="button">Keep this station</button>
-        <button id="radio-explore-next" class="btn btn-sm" type="button">Next station</button>
-        <button id="radio-explore-stop" class="btn btn-ghost btn-sm" type="button">Stop exploring</button>
+        <button id="radio-explore-keep" class="btn btn-primary" type="button" aria-label="Keep this station">Keep</button>
+        <button id="radio-explore-next" class="btn" type="button" aria-label="Next station">Next</button>
       </div>
     </section>
     <div class="radio-tabs" role="tablist" aria-label="Web radio views">
-      <button id="radio-tab-explore" class="btn btn-ghost btn-sm radio-tab active" type="button" role="tab" aria-selected="true" aria-controls="radio-panel-explore">Explore</button>
-      <button id="radio-tab-bookmarks" class="btn btn-ghost btn-sm radio-tab" type="button" role="tab" aria-selected="false" aria-controls="radio-panel-bookmarks">Bookmarks</button>
+      <button id="radio-tab-explore" class="btn btn-ghost radio-tab active" type="button" role="tab" aria-selected="true" aria-controls="radio-panel-explore">Explore</button>
+      <button id="radio-tab-bookmarks" class="btn btn-ghost radio-tab" type="button" role="tab" aria-selected="false" aria-controls="radio-panel-bookmarks">Bookmarks</button>
     </div>
     <div id="radio-panel-explore" class="radio-panel" role="tabpanel" aria-labelledby="radio-tab-explore">
-      <form id="radio-search-form" class="radio-filters" role="search">
-        <label class="radio-field radio-field-wide"><span class="text-xs text-muted">Station name</span>
-          <input id="radio-q" type="search" placeholder="Search stations…" autocomplete="off"></label>
-        <label class="radio-field"><span class="text-xs text-muted">Genre</span>
-          <select id="radio-tag"><option value="">Any genre</option></select></label>
-        <label class="radio-field"><span class="text-xs text-muted">Country</span>
-          <select id="radio-country"><option value="">Any country</option></select></label>
-        <label class="radio-field"><span class="text-xs text-muted">Order</span>
-          <select id="radio-order">
-            <option value="popular">Most popular</option>
-            <option value="votes">Most votes</option>
-            <option value="name">Name</option>
-            <option value="random">Random</option>
-          </select></label>
-        <button id="radio-search" class="btn btn-primary btn-sm" type="submit">Search</button>
+      <form id="radio-search-form" class="radio-search-form" role="search">
+        <div class="radio-explore-toolbar">
+          <label class="radio-field radio-field-wide"><span class="text-xs text-muted">Station name</span>
+            <input id="radio-q" type="search" placeholder="Search stations…" autocomplete="off"></label>
+          <button id="radio-search" class="btn btn-primary" type="submit">Search</button>
+          <button id="radio-explore" class="btn" type="button">Auto explore</button>
+          <button id="radio-filters-toggle" class="icon-btn" type="button" aria-label="Filters and explore options" aria-expanded="false" aria-controls="radio-filters-panel" title="Filters">☰</button>
+        </div>
+        <p id="radio-filters-summary" class="radio-filters-summary text-xs text-muted" aria-live="polite"></p>
+        <div id="radio-filters-panel" class="radio-filters-panel hidden">
+          <div class="radio-filters">
+            <label class="radio-field"><span class="text-xs text-muted">Genre</span>
+              <select id="radio-tag"><option value="">Any genre</option></select></label>
+            <label class="radio-field"><span class="text-xs text-muted">Country</span>
+              <select id="radio-country"><option value="">Any country</option></select></label>
+            <label class="radio-field"><span class="text-xs text-muted">Order</span>
+              <select id="radio-order">
+                <option value="popular">Most popular</option>
+                <option value="votes">Most votes</option>
+                <option value="name">Name</option>
+                <option value="random">Random</option>
+              </select></label>
+            <label class="radio-dwell text-xs text-muted">Next station after
+              <select id="radio-dwell" aria-label="Auto explore: seconds per station">
+                <option value="15">15 s</option>
+                <option value="30" selected>30 s</option>
+                <option value="60">60 s</option>
+              </select></label>
+          </div>
+          <p class="text-xs text-muted">Auto explore plays random stations of these filters, one after another.</p>
+        </div>
       </form>
-      <div class="radio-explore-start">
-        <button id="radio-explore" class="btn btn-sm" type="button">Auto explore</button>
-        <label class="radio-dwell text-xs text-muted">Next station after
-          <select id="radio-dwell" aria-label="Auto explore: seconds per station">
-            <option value="15">15 s</option>
-            <option value="30" selected>30 s</option>
-            <option value="60">60 s</option>
-          </select></label>
-        <span class="text-xs text-muted">Plays random stations of the filters above, one after another.</span>
-      </div>
       <p id="radio-results-status" class="text-muted text-sm" role="status" aria-live="polite"></p>
       <ul id="radio-results" class="radio-list" aria-label="Stations"></ul>
-      <button id="radio-more" class="btn btn-sm hidden" type="button">Load more stations</button>
+      <button id="radio-more" class="btn hidden" type="button">Load more stations</button>
     </div>
     <div id="radio-panel-bookmarks" class="radio-panel hidden" role="tabpanel" aria-labelledby="radio-tab-bookmarks">
       <p id="radio-bookmarks-status" class="text-muted text-sm" role="status" aria-live="polite"></p>

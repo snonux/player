@@ -41,17 +41,22 @@ export function initRadio() {
     bookmarks: byId('radio-bookmarks'),
     bookmarksStatus: byId('radio-bookmarks-status'),
     form: byId('radio-search-form'),
+    search: byId('radio-search'),
     q: byId('radio-q'),
     tag: byId('radio-tag'),
     country: byId('radio-country'),
     order: byId('radio-order'),
     dwell: byId('radio-dwell'),
+    filtersPanel: byId('radio-filters-panel'),
+    filtersToggle: byId('radio-filters-toggle'),
+    filtersSummary: byId('radio-filters-summary'),
     now: byId('radio-now'),
     nowIcon: byId('radio-now-icon'),
     nowName: byId('radio-now-name'),
     nowDetails: byId('radio-now-details'),
     nowHomepage: byId('radio-now-homepage'),
     nowBookmark: byId('radio-now-bookmark'),
+    nowMore: byId('radio-now-more'),
     status: byId('radio-status'),
     togglePlay: byId('radio-toggle-play'),
     exploreControls: byId('radio-explore-controls'),
@@ -81,7 +86,12 @@ export function initRadio() {
     onTick: (remaining) => { el.countdown.textContent = `Next station in ${remaining} s`; },
     onChange: (exp, err) => {
       el.exploreControls.classList.toggle('hidden', !exp.active);
-      el.explore.textContent = exp.active ? 'Restart auto explore' : 'Auto explore';
+      // While exploring: Stop, station More, Keep, Next, Filters ☰ (≤5). Hide Search + Auto explore.
+      el.explore.classList.toggle('hidden', exp.active);
+      el.explore.textContent = 'Auto explore';
+      el.explore.disabled = exp.active;
+      el.search?.classList.toggle('hidden', exp.active);
+      el.search && (el.search.disabled = exp.active);
       if (exp.active) el.countdown.textContent = 'Tuning in…';
       if (err) {
         setStatus(err.message || 'Auto explore stopped');
@@ -259,12 +269,69 @@ export function initRadio() {
     }
   }
 
+  function optionLabel(select) {
+    return select?.selectedOptions?.[0]?.textContent?.replace(/\s*\(\d+\)\s*$/, '')?.trim() || '';
+  }
+
+  function updateFiltersSummary() {
+    if (!el.filtersSummary) return;
+    const parts = [];
+    if (el.tag?.value) parts.push(optionLabel(el.tag));
+    if (el.country?.value) parts.push(optionLabel(el.country));
+    parts.push(optionLabel(el.order) || 'Most popular');
+    parts.push(`${el.dwell?.value || 30} s`);
+    el.filtersSummary.textContent = parts.join(' · ');
+  }
+
+  function setFiltersOpen(open) {
+    el.filtersPanel?.classList.toggle('hidden', !open);
+    el.filtersToggle?.setAttribute('aria-expanded', String(open));
+  }
+
+  function openStationMenu() {
+    if (!el.nowMore || !station) return;
+    const menu = document.createElement('div');
+    menu.className = 'shortcut-picker';
+    menu.setAttribute('popover', 'auto');
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', 'More station actions');
+    const on = isBookmarked(station);
+    const bookmark = document.createElement('button');
+    bookmark.type = 'button';
+    bookmark.className = 'btn btn-ghost';
+    bookmark.textContent = on ? '★ Bookmarked' : '☆ Bookmark';
+    bookmark.setAttribute('aria-pressed', String(on));
+    bookmark.addEventListener('click', () => { menu.hidePopover(); toggleBookmark(station); });
+    menu.appendChild(bookmark);
+    const homepage = safeHomepage(station.homepage);
+    if (homepage) {
+      const link = document.createElement('a');
+      link.className = 'btn btn-ghost';
+      link.href = homepage;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Homepage';
+      link.addEventListener('click', () => menu.hidePopover());
+      menu.appendChild(link);
+    }
+    menu.addEventListener('toggle', (e) => {
+      if (e.newState === 'closed') {
+        menu.remove();
+        if (el.nowMore.isConnected) el.nowMore.focus();
+      }
+    });
+    document.body.append(menu);
+    menu.showPopover();
+    menu.querySelector('button, a')?.focus();
+  }
+
   function render() {
     renderList(el.results, results);
     renderList(el.bookmarks, [...bookmarked.values()]);
     if (bookmarksLoaded) {
       el.bookmarksStatus.textContent = bookmarked.size ? '' : 'No bookmarked stations yet. Use ☆ next to a station to add one.';
     }
+    updateFiltersSummary();
     const has = Boolean(station);
     el.now.classList.toggle('hidden', !has);
     el.bar.classList.toggle('hidden', !has || !playing);
@@ -274,12 +341,13 @@ export function initRadio() {
     el.nowName.textContent = station.name;
     el.nowDetails.textContent = stationDetails(station);
     const homepage = safeHomepage(station.homepage);
-    el.nowHomepage.classList.toggle('hidden', !homepage);
     if (homepage) el.nowHomepage.href = homepage;
     else el.nowHomepage.removeAttribute('href');
+    el.nowHomepage.hidden = true;
     const on = isBookmarked(station);
     el.nowBookmark.textContent = on ? '★ Bookmarked' : '☆ Bookmark';
     el.nowBookmark.setAttribute('aria-pressed', String(on));
+    el.nowBookmark.hidden = true;
     el.togglePlay.textContent = playing ? 'Stop' : 'Play';
     el.barToggle.textContent = playing ? 'Stop' : 'Play';
     el.barTitle.textContent = station.name;
@@ -416,23 +484,34 @@ export function initRadio() {
   byId('radio-tab-explore')?.addEventListener('click', () => showTab('explore'));
   byId('radio-tab-bookmarks')?.addEventListener('click', () => showTab('bookmarks'));
   el.form.addEventListener('submit', (e) => { e.preventDefault(); search(); });
-  for (const select of [el.tag, el.country, el.order]) select.addEventListener('change', () => search());
+  for (const select of [el.tag, el.country, el.order]) {
+    select.addEventListener('change', () => { updateFiltersSummary(); search(); });
+  }
   el.more.addEventListener('click', () => search({ append: true }));
   el.togglePlay.addEventListener('click', togglePlayback);
   el.barToggle.addEventListener('click', togglePlayback);
   el.nowBookmark.addEventListener('click', () => { if (station) toggleBookmark(station); });
+  el.nowMore?.addEventListener('click', openStationMenu);
+  el.filtersToggle?.addEventListener('click', () => {
+    const open = el.filtersPanel?.classList.contains('hidden');
+    setFiltersOpen(Boolean(open));
+    if (open) el.tag?.focus();
+  });
   el.explore.addEventListener('click', () => {
     setStatus('Starting auto explore…');
     explorer.setDwell(Number(el.dwell.value));
     explorer.start(filters());
   });
-  el.dwell.addEventListener('change', () => explorer.setDwell(Number(el.dwell.value)));
+  el.dwell.addEventListener('change', () => {
+    updateFiltersSummary();
+    explorer.setDwell(Number(el.dwell.value));
+  });
   byId('radio-explore-keep')?.addEventListener('click', () => {
     explorer.keep();
     setStatus(playing ? 'Playing' : 'Stopped');
   });
   byId('radio-explore-next')?.addEventListener('click', () => explorer.next());
-  byId('radio-explore-stop')?.addEventListener('click', stop);
+  updateFiltersSummary();
 
   // j/k and the arrow keys move between station rows; the dialog otherwise
   // owns letter keys through keyboard-access.js, which leaves j/k alone.

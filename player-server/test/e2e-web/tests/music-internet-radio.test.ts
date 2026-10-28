@@ -11,8 +11,8 @@ async function openRadio(page: Page) {
   const shortcut = page.getByRole('button', { name: 'Internet radio', exact: true });
   if (!await shortcut.isVisible()) await page.getByRole('button', { name: 'Toggle sets sidebar' }).click();
   await shortcut.click();
-  await expect(page.locator('#radio-modal')).toHaveClass(/open/);
-  await expect.poll(() => page.locator('#radio-modal').evaluate(el => getComputedStyle(el).opacity)).toBe('1');
+  await expect(page.locator('#internet-radio-modal')).toHaveClass(/open/);
+  await expect.poll(() => page.locator('#internet-radio-modal').evaluate(el => getComputedStyle(el).opacity)).toBe('1');
 }
 test.beforeAll(async ({ browser }, info) => {
   fixture = loadFixture();
@@ -33,7 +33,7 @@ test('M61 station editor, permissions, live output, reconnect and keyboard', asy
     await admin.bringToFront();
     await keyboardLogin(admin, fixture.admin);
     await openRadio(admin);
-    const modal = admin.locator('#radio-modal');
+    const modal = admin.locator('#internet-radio-modal');
     await expect(modal).toHaveClass(/open/);
     await expect(modal).toContainText('No stations yet');
     await modal.getByRole('button', { name: 'Add station' }).click();
@@ -70,7 +70,7 @@ test('M61 station editor, permissions, live output, reconnect and keyboard', asy
     await viewer.bringToFront();
     await keyboardLogin(viewer, fixture.user);
     await openRadio(viewer);
-    const viewerModal = viewer.locator('#radio-modal');
+    const viewerModal = viewer.locator('#internet-radio-modal');
     const viewerStation = viewerModal.locator('.radio-station').first();
     await expect(viewerStation).toContainText('Fixture Radio Live');
     await expect(viewerModal.getByRole('button', { name: 'Add station' })).toBeHidden();
@@ -113,10 +113,10 @@ test('M61 station editor, permissions, live output, reconnect and keyboard', asy
     await expect(viewerModal.locator('.radio-station').first().locator('.radio-state')).toHaveText('Live', { timeout: 20_000 });
     await viewer.context().setOffline(true);
     await viewerModal.getByRole('button', { name: 'Refresh' }).click();
-    await expect(viewerModal.locator('#radio-status')).toContainText('Could not reach stations');
+    await expect(viewerModal.locator('#internet-radio-status')).toContainText('Could not reach stations');
     await viewer.context().setOffline(false);
     await viewerModal.getByRole('button', { name: 'Refresh' }).click();
-    await expect(viewerModal.locator('#radio-status')).toContainText('Live stations');
+    await expect(viewerModal.locator('#internet-radio-status')).toContainText('Live stations');
     const reconnect = viewerModal.locator('.radio-station').first().getByRole('button', { name: /^(Retry|Play)$/ });
     if (await reconnect.isVisible()) await reconnect.click();
     await expect(viewerModal.locator('.radio-station').first().locator('.radio-state')).toHaveText('Live', { timeout: 20_000 });
