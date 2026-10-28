@@ -802,6 +802,20 @@ void main() {
       );
     });
 
+    testWidgets('favorite heart touch target is at least 48px', (tester) async {
+      final fakeClient = _FakeApiClientWithToggle(
+        initialMedia: [_kVideo], // favorite: false
+      );
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      final size =
+          tester.getSize(find.byKey(const Key('media_card_favorite_1')));
+      expect(size.width, greaterThanOrEqualTo(48));
+      expect(size.height, greaterThanOrEqualTo(48));
+    });
+
     testWidgets('shows filled heart on a favourite item', (tester) async {
       final fakeClient = _FakeApiClientWithToggle(
         initialMedia: [_kFavorite], // favorite: true

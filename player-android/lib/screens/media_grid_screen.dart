@@ -723,20 +723,23 @@ class _FavoriteIconButton extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: ExcludeSemantics(
-            child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Icon(
-            isFavorite ? Icons.favorite : Icons.favorite_border,
-            size: 20,
-            color: isFavorite ? Colors.redAccent : Colors.white70,
-            shadows: const [
-              Shadow(
-                color: Colors.black54,
-                blurRadius: 4,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            child: Center(
+              child: Icon(
+                isFavorite ? Icons.favorite : Icons.favorite_border,
+                size: 24,
+                color: isFavorite ? Colors.redAccent : Colors.white70,
+                shadows: const [
+                  Shadow(
+                    color: Colors.black54,
+                    blurRadius: 4,
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        )),
+        ),
       ),
     );
   }
@@ -809,8 +812,8 @@ class _InfoOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      // The right inset keeps text clear of the favorite button.
-      padding: const EdgeInsets.fromLTRB(8, 6, 36, 6),
+      // The right inset keeps text clear of the >=48px favorite button.
+      padding: const EdgeInsets.fromLTRB(8, 6, 48, 6),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,

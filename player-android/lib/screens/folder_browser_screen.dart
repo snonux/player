@@ -227,15 +227,61 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
 
   /// Navigates to a breadcrumb [crumbPath].
   ///
-  /// For the root ('') we pop until the route matching the root path; for
-  /// intermediate paths we push the new screen. This keeps the navigator
-  /// stack correct in all navigation directions.
+  /// Ancestor crumbs prefer [Navigator.popUntil] so system Back does not walk
+  /// every intermediate folder again. When the ancestor is missing from the
+  /// stack (e.g. a deep link), falls back to [GoRouter.go] so the destination
+  /// stays reachable without leaving a duplicate folder entry on the stack.
   void _navigateToBreadcrumb(String crumbPath) {
-    if (crumbPath == (widget.path ?? '')) return; // already here
-    context.push(
-      AppRoutes.folderBrowserPath(widget.setId, path: crumbPath),
-      extra: widget.setName,
-    );
+    final currentPath = widget.path ?? '';
+    if (crumbPath == currentPath) return; // already here
+
+    final target =
+        AppRoutes.folderBrowserPath(widget.setId, path: crumbPath);
+
+    if (_isFolderPathAncestor(currentPath, crumbPath)) {
+      if (_popToFolderBrowserAncestor(crumbPath)) return;
+      // Ancestor missing from the stack (deep link / shallow stack).
+      context.go(target, extra: widget.setName);
+      return;
+    }
+
+    context.push(target, extra: widget.setName);
+  }
+
+  /// Whether [ancestorPath] is a strict ancestor of [currentPath].
+  bool _isFolderPathAncestor(String currentPath, String ancestorPath) {
+    if (ancestorPath.isEmpty) return currentPath.isNotEmpty;
+    return currentPath.startsWith('$ancestorPath/');
+  }
+
+  /// Pops until the folder-browser route for [crumbPath] is on top.
+  ///
+  /// Returns `true` when that ancestor was found on the stack. go_router
+  /// stores path parameters and query parameters on [RouteSettings.arguments],
+  /// so matching uses `setId` plus the optional `path` query value.
+  bool _popToFolderBrowserAncestor(String crumbPath) {
+    var found = false;
+    Navigator.of(context).popUntil((route) {
+      if (_routeMatchesFolderBrowser(route, widget.setId, crumbPath)) {
+        found = true;
+        return true;
+      }
+      return route.isFirst;
+    });
+    return found;
+  }
+
+  /// Whether [route] is this set's folder browser at [folderPath].
+  static bool _routeMatchesFolderBrowser(
+    Route<dynamic> route,
+    int setId,
+    String folderPath,
+  ) {
+    final args = route.settings.arguments;
+    if (args is! Map) return false;
+    if (args['setId']?.toString() != '$setId') return false;
+    final routePath = args['path']?.toString() ?? '';
+    return routePath == folderPath;
   }
 
   /// Opens [item]'s player directly; Next/Previous follow this folder.
@@ -446,12 +492,12 @@ class _BreadcrumbBar extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
               )
-            // Ancestor folder: tappable TextButton.
+            // Ancestor folder: tappable TextButton with >=44px touch target.
             : TextButton(
                 key: Key('breadcrumb_${crumb.label}'),
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(44, 44),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 onPressed: () => onTap(crumb.path),

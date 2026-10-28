@@ -478,6 +478,81 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets('ancestor crumb touch targets are at least 44px',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..browseResult = {
+          'current_path': 'FolderA/SubFolderA1',
+          'folders': <Map<String, dynamic>>[],
+          'media': <Map<String, dynamic>>[],
+        };
+
+      await _pumpScreen(tester, fakeClient, path: 'FolderA/SubFolderA1');
+      await tester.pumpAndSettle();
+
+      for (final key in [
+        const Key('breadcrumb_Home'),
+        const Key('breadcrumb_FolderA'),
+      ]) {
+        final size = tester.getSize(find.byKey(key));
+        expect(size.width, greaterThanOrEqualTo(44),
+            reason: '$key width');
+        expect(size.height, greaterThanOrEqualTo(44),
+            reason: '$key height');
+      }
+    });
+
+    testWidgets(
+        'tapping an ancestor crumb pops back so Back skips intermediates',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..browseResult = Map<String, dynamic>.from(_kRootBrowseResult);
+
+      await _pumpScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      fakeClient.browseResult =
+          Map<String, dynamic>.from(_kFolderABrowseResult);
+      await tester.tap(find.byKey(const Key('folder_tile_FolderA')));
+      await tester.pumpAndSettle();
+
+      fakeClient.browseResult = {
+        'current_path': 'FolderA/SubFolderA1',
+        'folders': <Map<String, dynamic>>[],
+        'media': <Map<String, dynamic>>[],
+      };
+      await tester.tap(find.byKey(const Key('folder_tile_SubFolderA1')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('breadcrumb_current_SubFolderA1')),
+        findsOneWidget,
+      );
+
+      // Pop to FolderA via breadcrumb — must not push a duplicate.
+      fakeClient.browseResult =
+          Map<String, dynamic>.from(_kFolderABrowseResult);
+      await tester.tap(find.byKey(const Key('breadcrumb_FolderA')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('breadcrumb_current_FolderA')),
+        findsOneWidget,
+      );
+
+      // One further Back should land on root Home, not SubFolderA1.
+      fakeClient.browseResult =
+          Map<String, dynamic>.from(_kRootBrowseResult);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('breadcrumb_current_Home')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('breadcrumb_current_SubFolderA1')),
+        findsNothing,
+      );
+    });
   });
 
   // --------------------------------------------------------------------------
