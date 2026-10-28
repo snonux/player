@@ -7,6 +7,7 @@ import 'standalone_podcasts_screen.dart';
 import '../models/local_media.dart';
 import '../providers/local_library_provider.dart';
 import '../providers/personal_media_provider.dart';
+import '../widgets/overflow_menu.dart';
 import '../widgets/personal_media_actions.dart';
 import '../widgets/server_switch_button.dart';
 import '../providers/settings_provider.dart';
@@ -33,35 +34,42 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
         title: const Text('On this device'),
         actions: [
           IconButton(
-            tooltip: 'Podcasts on this device',
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => const StandalonePodcastsScreen(),
-            )),
-            icon: const Icon(Icons.podcasts),
-          ),
-          IconButton(
-            tooltip: 'Downloads',
-            onPressed: () => context.push(AppRoutes.offlineDownloads),
-            icon: const Icon(Icons.download_outlined),
-          ),
-          IconButton(
             key: const Key('local_add_files'),
             tooltip: 'Add files',
             onPressed: _busy ? null : _addFiles,
             icon: const Icon(Icons.add),
           ),
           const ServerSwitchButton(),
-          IconButton(
-            tooltip: 'Connect to server',
-            onPressed: () => context.push(AppRoutes.server),
-            icon: const Icon(Icons.cloud_outlined),
-          ),
-          IconButton(
-            key: const Key('local_settings_button'),
-            tooltip: 'Settings',
-            onPressed: () => context.push(AppRoutes.settings),
-            icon: const Icon(Icons.settings_outlined),
-          ),
+          OverflowMenuButton(items: (_) => [
+                OverflowMenuItem(
+                  key: const Key('local_podcasts'),
+                  icon: Icons.podcasts,
+                  label: 'Podcasts on this device',
+                  onSelected: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const StandalonePodcastsScreen(),
+                    ),
+                  ),
+                ),
+                OverflowMenuItem(
+                  key: const Key('local_downloads'),
+                  icon: Icons.download_outlined,
+                  label: 'Downloads',
+                  onSelected: () => context.push(AppRoutes.offlineDownloads),
+                ),
+                OverflowMenuItem(
+                  key: const Key('local_connect_server_menu'),
+                  icon: Icons.cloud_outlined,
+                  label: 'Connect to server',
+                  onSelected: () => context.push(AppRoutes.server),
+                ),
+                OverflowMenuItem(
+                  key: const Key('local_settings_button'),
+                  icon: Icons.settings_outlined,
+                  label: 'Settings',
+                  onSelected: () => context.push(AppRoutes.settings),
+                ),
+              ]),
         ],
       ),
       body: library.when(

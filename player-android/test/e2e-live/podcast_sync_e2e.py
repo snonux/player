@@ -519,11 +519,16 @@ class Run:
         self.root()
         if adrv.find('^Welcome back$'):
             self.login()
-        # Account library exposes the drawer; local-only mode uses the home tile.
+        # Account library exposes the drawer; local-only mode uses the
+        # overflow menu (or a leftover direct tile on older builds).
         if adrv.find('^Open navigation menu$'):
             self.touch('^Open navigation menu$')
             self.touch('^Podcasts$')
         elif adrv.find('^Podcasts on this device$'):
+            # Older builds still place Podcasts on this device on the toolbar.
+            self.touch('^Podcasts on this device$')
+        elif adrv.find('^More options$'):
+            self.touch('^More options$')
             self.touch('^Podcasts on this device$')
         else:
             raise AssertionError('No podcasts entry from the established root')

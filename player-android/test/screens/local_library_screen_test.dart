@@ -164,6 +164,23 @@ void main() {
     expect(find.text('Your device library is empty'), findsOneWidget);
     expect(find.text('Add files'), findsOneWidget);
     expect(find.text('Connect to server'), findsOneWidget);
+    expect(find.byTooltip('Add files'), findsOneWidget);
+    expect(find.byKey(const Key('overflow_menu_button')), findsOneWidget);
+    expect(find.byTooltip('Podcasts on this device'), findsNothing);
+    expect(find.byTooltip('Downloads'), findsNothing);
+    expect(find.byTooltip('Settings'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('overflow_menu_button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('overflow_menu_sheet')), findsOneWidget);
+    expect(find.text('Podcasts on this device'), findsOneWidget);
+    expect(find.text('Downloads'), findsOneWidget);
+    expect(
+        find.descendant(
+            of: find.byKey(const Key('overflow_menu_sheet')),
+            matching: find.text('Connect to server')),
+        findsOneWidget);
+    expect(find.byKey(const Key('local_settings_button')), findsOneWidget);
   });
 
   testWidgets('adds picked documents and exposes relink and remove actions',
