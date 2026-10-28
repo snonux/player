@@ -386,26 +386,49 @@ func TestCompatStream_HeadProbesDoNotConsumeShareUses(t *testing.T) {
 	}
 }
 
-// abandoned sends a request and gives up after a moment, leaving its
-// transcode job in flight. It returns the status the handler recorded.
-func (e *e2e) abandoned(path, user string) int {
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+// abandonedAfterStart cancels only after the runner starts the request's job,
+// leaving that job in flight. The timeout only guards against a stuck test.
+func (e *e2e) abandonedAfterStart(path, user string, runner *fakeRunner) int {
+	e.t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	return e.request(ctx, http.MethodGet, path, user, "").Code
+	done := make(chan int, 1)
+	go func() { done <- e.request(ctx, http.MethodGet, path, user, "").Code }()
+	timer := time.NewTimer(30 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-runner.started:
+		cancel()
+	case code := <-done:
+		e.t.Fatalf("request %s returned %d before its job started", path, code)
+	case <-timer.C:
+		e.t.Fatalf("request %s did not start its job", path)
+	}
+	select {
+	case code := <-done:
+		return code
+	case <-timer.C:
+		e.t.Fatalf("request %s did not return after cancellation", path)
+		return 0
+	}
 }
 
 // All anonymous share requests share one job budget (two jobs), so share
 // links cannot fill the transcode queue and lock out signed-in users.
 func TestCompatStream_SharesHaveOneCommonJobBudget(t *testing.T) {
 	runner := &fakeRunner{started: make(chan struct{}, 8), release: make(chan struct{})}
-	e := newE2E(t, runner)
+	e := newE2EWith(t, runner, func(cfg *internal.Config) {
+		// Run all accepted jobs so their start signals are observable while
+		// they block; the shared requester budget remains at its default two.
+		cfg.TranscodeMaxJobs = 3
+	})
 	defer close(runner.release)
 	first := e.share("clip.avi", "alice", "")
 	second := e.share("other.wmv", "bob", "")
 	third := e.share("third.flv", "alice", "")
 
 	for i, token := range []string{first, second} {
-		if code := e.abandoned("/s/"+token+"/compat", ""); code != 499 {
+		if code := e.abandonedAfterStart("/s/"+token+"/compat", "", runner); code != 499 {
 			t.Fatalf("share request %d = %d, want it accepted (499 after giving up)", i+1, code)
 		}
 	}
@@ -414,7 +437,7 @@ func TestCompatStream_SharesHaveOneCommonJobBudget(t *testing.T) {
 		t.Fatalf("third share = %d %v, want 503 busy", rr.Code, rr.Header())
 	}
 	// A signed-in user asking for the very same file is still served.
-	if code := e.abandoned(e.compatPath("third.flv"), "alice"); code != 499 {
+	if code := e.abandonedAfterStart(e.compatPath("third.flv"), "alice", runner); code != 499 {
 		t.Errorf("signed-in user = %d, want the job accepted while shares are at their limit", code)
 	}
 }
