@@ -956,6 +956,16 @@ body {
   white-space: normal;
 }
 
+/* Sidebar feed rows keep their own touch area when long URLs need scrolling. */
+.podcast-nav-list .podcast-nav-feed {
+  display: block;
+  flex-shrink: 0;
+  min-height: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .podcast-view-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1159,3 +1169,13 @@ body {
 .local-files-list { list-style: none; padding: 0; margin: 1rem 0; }
 .local-files-row { display: flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; }
 .local-files-row .btn-ghost { flex: 1 1 auto; text-align: left; min-height: 2.75rem; }
+
+/* Native dialog supplies focus trapping; retain the app theme and touch size. */
+.podcast-discovery-dialog { color: var(--text-primary); margin: auto; }
+.podcast-discovery-dialog form { margin-block: 0.75rem; }
+.podcast-discovery-dialog button,
+.podcast-discovery-dialog input,
+.podcast-discovery-dialog select,
+.podcast-discovery-dialog summary { min-height: 44px; }
+.podcast-discovery-dialog .podcast-feed-row > span { min-width: 0; overflow-wrap: anywhere; }
+.podcast-discovery-dialog .podcast-feed-row > button { flex-shrink: 0; }

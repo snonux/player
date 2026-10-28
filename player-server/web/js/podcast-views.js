@@ -1,3 +1,6 @@
+import { openPodcastDiscovery } from './podcast-discovery.js';
+import { setSubscribed, listAccountPodcastSubscriptions } from './podcast-subscriptions.js';
+import { podcastFeedKey } from './podcast-identity.js';
 // podcast-views.js — subscription folders and All podcast episodes (§6.3).
 // Uses feed_key identity, completion filters, and server pagination. Keeps
 // downloaded episodes as podcast cards (server_copy) instead of dropping
@@ -124,7 +127,12 @@ export async function refreshPodcastSidebar({ background = false } = {}) {
   const revision = ++sidebarRefreshRevision;
   const generation = podcastSyncStatus().generation;
   try {
-    const podcasts = await API.podcasts({ quietAuth: background }) || [];
+    // Catalog metadata is optional: subscriptions confer no set permissions.
+    const catalog = await API.podcasts({ quietAuth: background }).catch(error => {
+      if (error.status === 401) throw error;
+      return [];
+    }) || [];
+    const podcasts = await listAccountPodcastSubscriptions(catalog);
     if (revision !== sidebarRefreshRevision || generation !== podcastSyncStatus().generation) return;
     sidebarFeeds = podcasts.filter((p) => p.subscribed);
     const fingerprint = JSON.stringify(sidebarFeeds);
@@ -134,7 +142,7 @@ export async function refreshPodcastSidebar({ background = false } = {}) {
     list.innerHTML = sidebarFeeds.length
       ? sidebarFeeds.map((p) => {
         const name = escapeHtml(p.title || p.feed_url || p.feed_key);
-        return `<button type="button" class="btn btn-ghost podcast-nav-feed" data-feed-key="${escapeHtml(p.feed_key || '')}" aria-label="Podcast ${name}">${name}</button>`;
+        return `<button type="button" class="btn btn-ghost podcast-nav-feed" data-feed-key="${escapeHtml(p.feed_key || '')}" aria-label="Podcast ${name}" title="${name}">${name}</button>`;
       }).join('')
       : '<p class="text-muted text-sm">No subscriptions yet.</p>';
     list.querySelectorAll('[data-feed-key]').forEach((btn) => {
@@ -169,11 +177,25 @@ function ensureSidebar() {
   section.innerHTML = `
     <div class="sidebar-header"><h2>Podcasts</h2></div>
     <button id="podcast-all-episodes" type="button" class="btn btn-ghost" aria-label="All podcast episodes">All podcast episodes</button>
+    <button id="podcast-explore" type="button" class="btn btn-ghost">Explore podcasts</button>
     <div id="podcast-nav-list" class="podcast-nav-list" aria-label="Subscribed podcasts"></div>`;
   const setList = document.getElementById('set-list');
   if (setList) sidebar.insertBefore(section, setList);
   else sidebar.appendChild(section);
   document.getElementById('podcast-all-episodes')?.addEventListener('click', openAllPodcastEpisodes);
+  document.getElementById('podcast-explore')?.addEventListener('click', () => openPodcastDiscovery({
+    subscribe: async (url, title) => {
+      const key = podcastFeedKey(url);
+      const result = await setSubscribed({ feed_key: key, feed_url: url, title }, true);
+      if (!result) throw new Error('Account changed. Reopen Explore podcasts.');
+      return { feedKey: (result.resolved || []).find(row => row.kind === 'feed' && row.from === key)?.to || key };
+    },
+    refreshFeed: subscription => API.refreshPodcastFeed(subscription.feedKey),
+    onSubscribed: () => {
+      document.dispatchEvent(new Event('podcast:subscriptions-changed'));
+      if (isPodcastVirtualView()) loadMediaCallback();
+    },
+  }));
 }
 
 export async function renderPodcastVirtualView(grid, { revision, alive, pageSize: size } = {}) {
@@ -219,7 +241,8 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
 
   grid.innerHTML = filterBarHtml(title, filter)
     + pagerHtml(pageInfo, 'top')
-    + (episodes.length ? '' : `<p class="text-muted text-sm grid-full">No episodes.</p>`)
+    + (episodes.length ? '' : `<p class="text-muted text-sm grid-full">${feedKey ? 'No episodes match this filter, or the feed has not refreshed yet. Use Refresh feed to fetch its latest episodes.' : 'No episodes match this filter.'}</p>`)
+    + (feedKey ? '<button type="button" class="btn grid-full" data-reload-podcast>Refresh feed</button><p class="text-muted text-sm grid-full" role="status" data-podcast-refresh-status></p>' : '')
     + pagerHtml(pageInfo, 'bottom');
 
   // Align state.media with episode card indices so Play / Space / Enter can
@@ -245,6 +268,22 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
     else grid.appendChild(card);
   });
 
+  grid.querySelector('[data-reload-podcast]')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    const status = grid.querySelector('[data-podcast-refresh-status]');
+    button.disabled = true; status.textContent = 'Fetching latest episodes…';
+    try {
+      const result = await API.refreshPodcastFeed(feedKey);
+      if (podcastSyncStatus().generation !== generation || state.podcastFeedKey !== feedKey) return;
+      state.podcastFeedKey = result?.feed_key || feedKey;
+      void refreshPodcastSidebar({ background: true });
+      loadMediaCallback();
+    } catch (error) {
+      if (!button.isConnected || podcastSyncStatus().generation !== generation) return;
+      status.textContent = error.message || 'Could not refresh this feed. Retry.';
+      button.disabled = false;
+    }
+  });
   bindFilterBar(grid);
   bindPager(grid, pageInfo);
   clearSelection();

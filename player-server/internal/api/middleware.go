@@ -203,7 +203,7 @@ func (mw *Middleware) RequireAdmin(next http.Handler) http.Handler {
 // all that's required — there is no separate whitelist to keep in sync.
 func (mw *Middleware) BootstrapRedirect(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if mw.isPublic(r.URL.Path) {
+		if mw.isPublic(r.URL.Path) || isPublicDeviceShell(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -222,6 +222,23 @@ func (mw *Middleware) BootstrapRedirect(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isPublicDeviceShell permits only the exact entry points whose client code
+// reads device data. Extra query parameters and every API remain protected.
+func isPublicDeviceShell(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	if r.URL.Path != "/" && r.URL.Path != "/index.html" {
+		return false
+	}
+	switch r.URL.RawQuery {
+	case "offline=music", "local=podcasts", "local=files":
+		return true
+	default:
+		return false
+	}
 }
 
 // Only library pages carry a return destination. Never forward private stream

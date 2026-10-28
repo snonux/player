@@ -100,3 +100,16 @@ per-stage evidence. Redirect, GUID collision and old-schema migration edges
 were checked by focused SQLite/HTTP tests; they were not recreated through
 each installed client's UI. No standalone podcast implementation changed
 after the integrated run, so its passing journeys were reused for `xh3`.
+
+Explore podcasts is available from the podcast list's Explore icon. It supports
+explicit Apple Podcasts search and loading popular shows for a selected chart
+country, then Subscribe through the existing device podcast repository. Manual
+RSS remains in the **Podcast options → Add feed URL** menu on both screens.
+Opening discovery makes no network request. Apple receives entered queries,
+the chosen chart country and the device IP address; explicit requests use the
+current network, including mobile data. No search artwork is downloaded. A
+separate, unauthenticated HTTP client prevents Player tokens from reaching the
+directory. Requests time out, cap responses at 2 MiB and expose a retry/URL path
+when the directory is unavailable. Existing subscriptions and cached episodes
+remain available offline. Browser discovery has the same functions, through a
+fixed-host Player proxy; browser-only RSS subscriptions still depend on feed CORS.

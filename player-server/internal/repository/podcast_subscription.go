@@ -35,6 +35,8 @@ type PodcastSyncRepo interface {
 
 // PodcastSubscriptionRepo stores the per-account subscription registers.
 type PodcastSubscriptionRepo interface {
+	// GetSubscribedPodcastFeed resolves key only when the caller owns an active register.
+	GetSubscribedPodcastFeed(ctx context.Context, userID int64, key string) (*model.PodcastFeed, error)
 	// SetPodcastSubscription writes a server-side edit of the user's
 	// register for feed at server time (advanced by 1 ms past the stored
 	// clock when needed, so the edit always wins).
@@ -204,4 +206,28 @@ func (s *SQLite) HasActivePodcastSubscription(ctx context.Context, feedKey strin
 		return false, fmt.Errorf("count subscriptions: %w", err)
 	}
 	return n > 0, nil
+}
+
+// GetSubscribedPodcastFeed resolves aliases and applies the same latest-register
+// ordering as PodcastSubscriptionStates, including unsubscribe tombstones.
+func (s *SQLite) GetSubscribedPodcastFeed(ctx context.Context, userID int64, key string) (*model.PodcastFeed, error) {
+	canonical, err := canonicalFeedKey(ctx, s.db, key)
+	if err != nil || canonical == "" {
+		return nil, err
+	}
+	var active bool
+	err = s.db.QueryRowContext(ctx, `SELECT s.subscribed FROM podcast_subscriptions s
+ LEFT JOIN podcast_feed_aliases a ON a.alias_key = s.feed_key
+ WHERE s.user_id = ? AND COALESCE(a.feed_key, s.feed_key) = ?
+ ORDER BY s.subscription_ms DESC, s.feed_key <> COALESCE(a.feed_key, s.feed_key) ASC LIMIT 1`, userID, canonical).Scan(&active)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get owned subscription: %w", err)
+	}
+	if !active {
+		return nil, nil
+	}
+	return s.GetFeedByKey(ctx, canonical)
 }

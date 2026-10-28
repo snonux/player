@@ -866,6 +866,7 @@ class Run:
         self.login()
         self.touch('^Sync now$')
         self.podcasts()
+        self.touch('^Podcast options$')
         self.touch('^Refresh feeds$')
         self.episodes()
         # Prior resume attempts may already have left B's independent copy.
@@ -932,6 +933,7 @@ class Run:
         # Feed-scoped All: combined Uncompleted can be empty after other clients.
         self.login()
         self.podcasts()
+        self.touch('^Podcast options$')
         self.touch('^Refresh feeds$')
         if not adrv.wait(feed_label_pattern('Acceptance Alpha'), timeout=30):
             raise AssertionError('Acceptance Alpha missing after Refresh in account podcasts')

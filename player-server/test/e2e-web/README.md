@@ -1339,3 +1339,44 @@ disconnects/restores the media root for an actionable watch error. Projects
 must run serially against the shared fixture. The Android runner below reuses
 the same fixture before teardown.
 
+
+## Podcast discovery acceptance
+
+Use a marked, disposable music or podcast fixture with a Player server running
+the current binary (`state.json` supplies the origin and `auth.json` supplies
+fixture-only credentials). Run from `player-server/test/e2e-web`:
+
+```sh
+PLAYER_DISCOVERY_FIXTURE=/absolute/disposable-fixture \
+PLAYER_DISCOVERY_FEED_URL=https://isolated-public-test.example/discovery.xml \
+  npx --no-install playwright test -c playwright.discovery.config.ts --workers=1
+```
+
+The config runs installed Google Chrome and Mozilla Firefox. The device test
+intercepts directory and publisher responses while exercising the real device
+subscription UI and IndexedDB. It checks no request on opening Explore, popular
+charts, search, RSS subscription, manual URL submission, Escape/focus
+restoration, narrow layout and directory failure.
+
+The account test signs in through the real login form using the fixture's
+ordinary user when available, intercepts only directory results, then subscribes
+through visible controls for both a directory result and a manually entered RSS
+URL. Real subscription POST acknowledgements, own-register readback and the sidebar
+after reload must agree on each canonical feed key. It creates two fixture
+account subscriptions per browser run; never point this test at production.
+A bounded metadata refresh must then return real publisher episodes; the test
+opens that feed, checks the episode title and uses its Refresh feed control.
+`PLAYER_DISCOVERY_FEED_URL` selects the controlled public RSS publisher; if
+omitted it uses NPR's public Planet Money feed. Never relax private-address
+policy for acceptance. Each run creates four catalog identities across the two
+browsers, subject to the normal per-user hourly quota; use a fresh fixture for
+repeated acceptance runs. The actual manual URL exercises query preservation and fragment removal. The
+shared identity vectors additionally cover host case, zero-padded default ports
+and Unicode/path rules. The controlled publisher must accept its own host
+spelling; no ingress-policy bypass is part of this test. Unit tests additionally use the exact Go/Dart identity vector fixture
+for canonical URL bytes and rejection rules; existing browser-device IDs remain
+unchanged.
+
+Also smoke-test a live directory search/chart (the deterministic test does not
+verify Apple's availability), and native Android Explore/search/chart/
+subscription on a device or emulator before release.

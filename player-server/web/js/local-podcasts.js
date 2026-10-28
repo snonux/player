@@ -1,3 +1,4 @@
+import { openPodcastDiscovery } from './podcast-discovery.js';
 import { t, html } from './i18n.js';
 import { initPlayer } from './player.js';
 import { initQueue, insertQueue, advanceQueue } from './queue.js';
@@ -23,7 +24,8 @@ export function initLocalPodcastsApp() {
     <h1>Podcasts on this device</h1>
     <p>Subscribe without signing in. Subscriptions and episode lists stay in this browser. Feeds must allow CORS; blocked feeds need the signed-in server workflow.</p>
     <div class="playlist-actions">
-      <button class="btn btn-primary" type="button" data-subscribe>Subscribe</button>
+      <button class="btn btn-primary" type="button" data-explore>Explore podcasts</button>
+      <button class="btn" type="button" data-subscribe>Add feed URL</button>
       <button class="btn" type="button" data-refresh-all>Refresh feeds</button>
       <a class="btn" href="/index.html?local=files">On this device files</a>
     </div>
@@ -167,6 +169,11 @@ export function initLocalPodcastsApp() {
       busy = false;
     }
   }
+
+  host.querySelector('[data-explore]').onclick = () => openPodcastDiscovery({
+    subscribe: async url => { const feed = await fetchPodcastFeed(url); await saveLocalPodcastFeed(feed); },
+    onSubscribed: render,
+  });
 
   host.querySelector('[data-subscribe]').onclick = async () => {
     const url = prompt('Podcast feed URL');

@@ -424,22 +424,37 @@ func TestServer_StaticPages(t *testing.T) {
 		}
 	})
 
-	t.Run("only the exact offline music shell is public", func(t *testing.T) {
-		srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-		for _, path := range []string{"/?offline=music", "/index.html?offline=music"} {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
-			rr := httptest.NewRecorder()
-			srv.ServeHTTP(rr, req)
-			if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "index") {
-				t.Fatalf("%s: expected public app shell, got %d %q", path, rr.Code, rr.Body.String())
+	t.Run("only exact device shells are public before and after bootstrap", func(t *testing.T) {
+		for _, count := range []int{0, 1} {
+			authSvc := &service.MockAuthService{CountUsersFunc: func(context.Context) (int, error) { return count, nil }}
+			srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				for _, path := range []string{"/?offline=music", "/index.html?offline=music", "/?local=podcasts", "/index.html?local=podcasts", "/?local=files", "/index.html?local=files"} {
+					rr := httptest.NewRecorder()
+					srv.ServeHTTP(rr, httptest.NewRequest(method, path, nil))
+					if rr.Code != http.StatusOK || (method == http.MethodGet && !strings.Contains(rr.Body.String(), "index")) {
+						t.Fatalf("users=%d %s %s expected public shell, got %d %q", count, method, path, rr.Code, rr.Body.String())
+					}
+				}
 			}
-		}
-		for _, path := range []string{"/?music=album", "/index.html?offline=music&set=1", "/other?offline=music"} {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
-			rr := httptest.NewRecorder()
-			srv.ServeHTTP(rr, req)
-			if rr.Code != http.StatusUnauthorized {
-				t.Fatalf("%s: expected session requirement, got %d", path, rr.Code)
+			cases := []struct{ method, path string }{
+				{http.MethodGet, "/?music=album"}, {http.MethodGet, "/index.html?offline=music&set=1"},
+				{http.MethodGet, "/other?offline=music"}, {http.MethodGet, "/other?local=podcasts"},
+				{http.MethodGet, "/index.html?local=podcasts&set=1"}, {http.MethodGet, "/index.html?local=files&local=podcasts"},
+				{http.MethodGet, "/index.html?local=unknown"}, {http.MethodGet, "/index.html?local=podcasts&"},
+				{http.MethodGet, "/api/sets?local=podcasts"}, {http.MethodGet, "/api/v1/sets?local=files"},
+				{http.MethodPost, "/index.html?local=podcasts"}, {http.MethodPost, "/?local=files"},
+			}
+			for _, item := range cases {
+				rr := httptest.NewRecorder()
+				srv.ServeHTTP(rr, httptest.NewRequest(item.method, item.path, nil))
+				want := http.StatusUnauthorized
+				if count == 0 {
+					want = http.StatusTemporaryRedirect
+				}
+				if rr.Code != want {
+					t.Fatalf("users=%d %s %s expected protected status %d, got %d", count, item.method, item.path, want, rr.Code)
+				}
 			}
 		}
 	})
@@ -2357,4 +2372,8 @@ func (m *mockPingStore) UpdatePlaylistDetails(ctx context.Context, user int64, i
 
 func (m *mockPingStore) AddPlaylistSongs(ctx context.Context, user int64, targets map[string][]model.PlaylistEntry, skip bool) (bool, error) {
 	return m.store.AddPlaylistSongs(ctx, user, targets, skip)
+}
+
+func (m *mockPingStore) GetSubscribedPodcastFeed(ctx context.Context, userID int64, key string) (*model.PodcastFeed, error) {
+	return m.store.GetSubscribedPodcastFeed(ctx, userID, key)
 }

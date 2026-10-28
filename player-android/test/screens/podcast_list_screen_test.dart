@@ -41,7 +41,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Podcasts on this device'), findsOneWidget);
     expect(find.text('All podcast episodes'), findsOneWidget);
-    await tester.tap(find.byTooltip('Subscribe to podcast'));
+    await tester.tap(find.byTooltip('Podcast options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add feed URL'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'not a feed');
     await tester.tap(find.text('Subscribe'));

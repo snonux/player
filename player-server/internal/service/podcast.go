@@ -110,6 +110,8 @@ type podcastService struct {
 	// nor block scheduling time for the other feeds. Guarded by hostFailuresMu.
 	hostFailures   map[string]time.Time
 	hostFailuresMu sync.Mutex
+	refreshMu      sync.Mutex
+	refreshing     map[int64]bool
 
 	*podcastSubscriptionService
 	*podcastEpisodeService
@@ -234,6 +236,7 @@ func NewPodcastServiceWithLogger(store PodcastServiceStore, clk clock.Clock, med
 		logger:                   logger,
 		fetchPolicy:              DefaultFeedFetchPolicy(),
 		hostFailures:             make(map[string]time.Time),
+		refreshing:               make(map[int64]bool),
 	}
 	// Wire package-level helpers so tests can inject fakes.
 	s.parseFeed = podcast.ParseFeed

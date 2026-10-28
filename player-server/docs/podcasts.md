@@ -151,3 +151,47 @@ A background goroutine (`CheckFeeds`) refreshes subscribed feeds every hour (con
 | `GET` | `/api/podcasts/{id}/episodes` | List episodes by set id (legacy) |
 | `POST` | `/api/podcasts/episodes/{id}/download` | Server-side download |
 | `POST` | `/api/podcasts/episodes/{id}/complete` | Toggle completion (legacy; prefer sync) |
+
+## Explore available podcasts
+
+Open **Explore podcasts** in the Podcasts sidebar or **Podcasts on this device**.
+Search Apple Podcasts by name, author or topic, or choose a chart country and
+press **Load popular podcasts** to browse up to 20 current chart shows. Search
+returns up to 30 shows. Each result has one Subscribe action; it uses the same
+account subscription or browser device feed workflow as adding an RSS URL.
+**Add by feed URL** remains available for feeds outside Apple's directory.
+The native Android Podcasts screen has the same Explore action and an
+**Add feed URL** menu, and saves subscriptions through its device repository.
+
+Loading is explicit: opening Explore sends no directory request, and search
+results load no artwork. Browser searches and chart requests go through the
+Player server, which sends the query or chosen country and its own IP address
+to Apple. Native Android contacts Apple directly, so Apple also sees the
+device IP address. Explicit searches use the current connection, including
+mobile data; they do not enable background fetching. Subscribing contacts the
+publisher under the existing feed/network policy. Browser device feeds still
+need publisher CORS permission; if blocked, use a signed-in account or native
+Android. Unavailable directories show a retry message and keep URL entry usable.
+
+The directory needs no API key. Search uses Apple's documented iTunes Search
+API; charts use Apple's public `/{country}/rss/toppodcasts/limit=20/json` feed
+and a bounded ID lookup for RSS addresses. The server only contacts
+`https://itunes.apple.com`, checks public destination addresses and same-host
+HTTPS redirects, limits each response to 2 MiB and each request to 15 seconds,
+caches up to 32 searches/charts for 15 minutes, and spaces uncached searches by
+3 seconds (charts reserve 6 seconds for two requests). Directory outages do not
+affect saved subscriptions or playback.
+
+Provider references: [AntennaPod's subscription guide](https://antennapod.org/documentation/getting-started/subscribe),
+[AntennaPod discovery privacy](https://antennapod.org/privacy/),
+[Apple iTunes Search API](https://performance-partners.apple.com/search-api),
+and [Apple Podcast Charts](https://podcasters.apple.com/support/3146-apple-podcasts-charts).
+
+
+Account discovery saves the subscription before fetching episode metadata, so
+browsing stays available during publisher requests. A failed metadata refresh
+keeps the subscription and offers **Retry fetching episodes**; each feed's
+episode view also has **Refresh feed**. Subscribed feeds appear in the sidebar
+from the user's own sync registers even when the user has no permission to the
+server's shared podcast set. Subscription and metadata refresh grant no access
+to server audio copies or folders.

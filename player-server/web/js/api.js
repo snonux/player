@@ -215,6 +215,7 @@ export const API = {
   // catalog feed once nobody is subscribed. Not an unsubscribe.
   removePodcastFromServer: (feedId) => api(`/api/podcasts/${feedId}`, { method: 'DELETE' }),
   syncPodcast: (body) => api('/api/podcasts/sync', { method: 'POST', quietAuth: true, body }),
+  refreshPodcastFeed: (feedKey) => api('/api/podcasts/refresh', { method: 'POST', quietAuth: true, body: { feed_key: feedKey } }),
   syncPodcastSubscriptions: (subscriptions) => api('/api/podcasts/sync', { method: 'POST', quietAuth: true, body: { subscriptions } }),
   downloadEpisode: (episodeId, { signal } = {}) => api(`/api/podcasts/episodes/${episodeId}/download`, { method: 'POST', signal }),
   toggleEpisodeComplete: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/complete`, { method: 'POST' }),

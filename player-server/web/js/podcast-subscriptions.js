@@ -90,3 +90,31 @@ export async function setSubscribed(feed, subscribed) {
 export function pendingEdit(feedKey) {
   return pending.get(feedKey);
 }
+
+// The catalog endpoint is permission-filtered server media. A subscription
+// grants no set access, so ordinary listeners also need their own registers.
+// Read every pull page without sending edits, retaining the account lease.
+export async function listAccountPodcastSubscriptions(catalog = []) {
+  const owner = generation;
+  const registers = new Map();
+  let epoch = '', since = 0;
+  do {
+    const page = await API.syncPodcast({ epoch, since, limit: 500 });
+    if (owner !== generation) throw new Error('Account changed');
+    if (!Array.isArray(page.subscriptions) || typeof page.epoch !== 'string' ||
+        !Number.isSafeInteger(page.next_since) || typeof page.has_more !== 'boolean') {
+      throw new Error('Could not read podcast subscriptions. Retry.');
+    }
+    if (epoch && page.epoch !== epoch) throw new Error('Podcast library changed. Retry.');
+    for (const row of page.subscriptions) registers.set(row.feed_key, row);
+    if (!page.has_more) break;
+    if (page.epoch === epoch && page.next_since <= since) throw new Error('Could not finish reading podcast subscriptions. Retry.');
+    epoch = page.epoch; since = page.next_since;
+  } while (true);
+  const byKey = new Map(catalog.map(feed => [feed.feed_key, feed]));
+  return [...registers.values()].filter(row => row.subscribed).map(row => {
+    const feed = byKey.get(row.feed_key) || {};
+    return { ...feed, ...row, title: row.title || feed.title || row.fetch_url || row.feed_key,
+      feed_url: row.fetch_url || feed.feed_url || '' };
+  });
+}

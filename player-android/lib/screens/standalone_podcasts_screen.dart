@@ -1,3 +1,4 @@
+import 'podcast_discovery_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/podcast_library_provider.dart';
@@ -72,6 +73,25 @@ class _StandalonePodcastsScreenState
     });
   }
 
+  void _refreshFeeds() => run(() async {
+        final repository = ref.read(podcastRepositoryProvider);
+        final refreshScope = await ref.read(podcastScopeProvider.future);
+        final subscriptions = await repository.subscriptions(refreshScope);
+        var failed = 0;
+        for (final feed in subscriptions) {
+          try {
+            await repository.refreshSubscription(
+                refreshScope, feed['feed_key'] as String);
+          } catch (_) {
+            failed++;
+          }
+        }
+        if (mounted && failed > 0) {
+          setState(() => error =
+              '$failed feed refreshes failed. Other feeds were refreshed; cached episodes remain available.');
+        }
+      });
+
   @override
   Widget build(BuildContext context) {
     final feeds = ref.watch(podcastSubscriptionsProvider);
@@ -79,34 +99,29 @@ class _StandalonePodcastsScreenState
     return Scaffold(
         appBar: AppBar(title: const Text('Podcasts on this device'), actions: [
           IconButton(
-              tooltip: 'Subscribe to podcast',
-              onPressed: busy ? null : subscribe,
-              icon: const Icon(Icons.add)),
-          IconButton(
-              tooltip: 'Refresh feeds',
+              tooltip: 'Explore podcasts',
               onPressed: busy
                   ? null
-                  : () => run(() async {
-                        final repository = ref.read(podcastRepositoryProvider);
-                        final refreshScope =
-                            await ref.read(podcastScopeProvider.future);
-                        final subscriptions =
-                            await repository.subscriptions(refreshScope);
-                        var failed = 0;
-                        for (final feed in subscriptions) {
-                          try {
-                            await repository.refreshSubscription(
-                                refreshScope, feed['feed_key'] as String);
-                          } catch (_) {
-                            failed++;
-                          }
-                        }
-                        if (mounted && failed > 0) {
-                          setState(() => error =
-                              '$failed feed refreshes failed. Other feeds were refreshed; cached episodes remain available.');
-                        }
-                      }),
-              icon: const Icon(Icons.refresh))
+                  : () => Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => const PodcastDiscoveryScreen())),
+              icon: const Icon(Icons.explore_outlined)),
+          PopupMenuButton<String>(
+              tooltip: 'Podcast options',
+              icon: const Icon(Icons.menu),
+              style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+              enabled: !busy,
+              onSelected: (action) {
+                if (action == 'refresh') {
+                  _refreshFeeds();
+                } else {
+                  subscribe();
+                }
+              },
+              itemBuilder: (_) => const [
+                    PopupMenuItem(
+                        value: 'refresh', child: Text('Refresh feeds')),
+                    PopupMenuItem(value: 'url', child: Text('Add feed URL')),
+                  ])
         ]),
         body: Column(children: [
           if (busy) const LinearProgressIndicator(),

@@ -55,16 +55,17 @@ type Server struct {
 	handler http.Handler
 	// media groups all media-domain services (browse, write, share, tags,
 	// favorites, notes, progress, playback hints) into a single vertical slice.
-	media         MediaServices
-	authSvc       service.AuthService
-	adminSvc      service.AdminService
-	pluginSvc     service.PluginService
-	jukeboxSvc    service.JukeboxService
-	podcastSvc    service.PodcastEpisodeService
-	podcastSync   service.PodcastSyncService
-	musicLibs     *service.MusicLibraryService
-	musicIdentity *service.MusicIdentityService
-	pathRoots     *service.PathRoots
+	media            MediaServices
+	authSvc          service.AuthService
+	adminSvc         service.AdminService
+	pluginSvc        service.PluginService
+	jukeboxSvc       service.JukeboxService
+	podcastSvc       service.PodcastEpisodeService
+	podcastSync      service.PodcastSyncService
+	podcastDiscovery *service.PodcastDiscovery
+	musicLibs        *service.MusicLibraryService
+	musicIdentity    *service.MusicIdentityService
+	pathRoots        *service.PathRoots
 	// subsonicSvc adapts the music catalog for optional /rest clients (A01a).
 	subsonicSvc   *service.SubsonicService
 	radio         service.RadioService
@@ -99,7 +100,7 @@ type ServerServices struct {
 	MusicIdentity *service.MusicIdentityService
 	// PathRoots is the streaming allowlist shared with MediaStreamer.
 	PathRoots *service.PathRoots
-	Radio   service.RadioService
+	Radio     service.RadioService
 }
 
 // ServerDeps contains the dependencies needed to construct a Server.
@@ -175,30 +176,31 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 	// Populate the media vertical-slice sub-struct directly from the nested
 	// ServerServices.Media group so the Server never sees the flat list.
 	s := &Server{
-		store:         deps.Store,
-		hasher:        deps.Hasher,
-		sm:            deps.SessionManager,
-		cfg:           deps.Config,
-		clk:           deps.Clock,
-		mux:           http.NewServeMux(),
-		media:         deps.Services.Media,
-		authSvc:       deps.Services.Auth,
-		adminSvc:      deps.Services.Admin,
-		pluginSvc:     deps.Services.Plugins,
-		jukeboxSvc:    deps.Services.Jukebox,
-		podcastSvc:    deps.Services.Podcast,
-		podcastSync:   deps.Services.PodcastSync,
-		musicLibs:     deps.Services.MusicLibraries,
-		musicIdentity: deps.Services.MusicIdentity,
-		pathRoots:     deps.Services.PathRoots,
-		subsonicSvc:   subsonicSvc,
-		radio:         deps.Services.Radio,
-		streamer:      deps.MediaStreamer,
-		staticFS:      deps.StaticFS,
-		shareRenderer: web.NewSharePageRenderer(deps.StaticFS),
-		castTickets:   deps.CastTickets,
-		logger:        logger,
-		mw:            NewMiddleware(deps.Services.Auth, deps.SessionManager, deps.Config.ProxyAuth),
+		store:            deps.Store,
+		hasher:           deps.Hasher,
+		sm:               deps.SessionManager,
+		cfg:              deps.Config,
+		clk:              deps.Clock,
+		mux:              http.NewServeMux(),
+		media:            deps.Services.Media,
+		authSvc:          deps.Services.Auth,
+		adminSvc:         deps.Services.Admin,
+		pluginSvc:        deps.Services.Plugins,
+		jukeboxSvc:       deps.Services.Jukebox,
+		podcastSvc:       deps.Services.Podcast,
+		podcastSync:      deps.Services.PodcastSync,
+		podcastDiscovery: service.NewPodcastDiscovery(),
+		musicLibs:        deps.Services.MusicLibraries,
+		musicIdentity:    deps.Services.MusicIdentity,
+		pathRoots:        deps.Services.PathRoots,
+		subsonicSvc:      subsonicSvc,
+		radio:            deps.Services.Radio,
+		streamer:         deps.MediaStreamer,
+		staticFS:         deps.StaticFS,
+		shareRenderer:    web.NewSharePageRenderer(deps.StaticFS),
+		castTickets:      deps.CastTickets,
+		logger:           logger,
+		mw:               NewMiddleware(deps.Services.Auth, deps.SessionManager, deps.Config.ProxyAuth),
 	}
 	s.routes()
 	s.handler = withCORS(s.cfg.CORSAllowedOrigins, s.mw.BootstrapRedirect(s.mux))
@@ -277,6 +279,8 @@ func apiV1Path(path string) string {
 // straight /api/v1/<rest> shape that apiV1Path() generates, so they are
 // registered explicitly here instead of via a "both" helper.
 func (s *Server) routesPublic() {
+	s.handlePublicFunc("/api/podcast-discovery", publicMethod(http.MethodGet, s.handlePodcastDiscovery))
+	s.handlePublicFunc("/api/v1/podcast-discovery", publicMethod(http.MethodGet, s.handlePodcastDiscovery))
 	s.handlePublicFunc("/api/server-identity", publicMethod(http.MethodGet, s.handleServerIdentity))
 	s.handlePublicFunc("/api/v1/server-identity", publicMethod(http.MethodGet, s.handleServerIdentity))
 	s.handlePublicFunc("/api/bootstrap", publicMethod(http.MethodPost, s.handleBootstrap))
@@ -367,16 +371,15 @@ func (s *Server) routesStatic() {
 
 // routesHTML wires the SPA HTML page routes.
 // /login.html and /bootstrap.html are public (the user reaches them before
-// authenticating). The exact offline music URL may also serve the app shell
-// without a session; its JavaScript reads only local downloads. Other app
-// navigations still require a session.
+// authenticating). Exact device-only URLs may also serve the app shell
+// without a session; their JavaScript reads device downloads/subscriptions.
+// Other app navigations still require a session.
 func (s *Server) routesHTML() {
 	s.handlePublic("/login.html", http.HandlerFunc(s.serveLogin))
 	s.handlePublic("/bootstrap.html", http.HandlerFunc(s.serveBootstrap))
 	protectedIndex := s.mw.RequireSession(http.HandlerFunc(s.serveIndex))
 	index := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
-			(r.URL.Path == "/" || r.URL.Path == "/index.html") && r.URL.RawQuery == "offline=music" {
+		if isPublicDeviceShell(r) {
 			s.serveIndex(w, r)
 			return
 		}
@@ -566,6 +569,7 @@ func (s *Server) routesSubsonic() {
 
 // routesPodcast wires the podcast API routes.
 func (s *Server) routesPodcast() {
+	s.handleBoth(http.MethodPost, "/api/podcasts/refresh", s.requireSession(s.handlePodcastRefresh))
 	s.handleBoth(http.MethodGet, "/api/podcasts", s.requireSession(s.handleListPodcasts))
 	s.handleBoth(http.MethodPost, "/api/podcasts", s.requireAdmin(s.handleSubscribePodcast))
 	// Account sync is open to every user and touches only the caller's

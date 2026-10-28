@@ -2232,3 +2232,37 @@ server changes, and synchronizes only under that matching unlocked account.
 Older download resume positions without edit timestamps remain local until
 the next playback save or a server snapshot is available; migrated bookmarks
 keep their original creation timestamps.
+
+### Public podcast discovery
+
+`GET /api/podcast-discovery?q=<2–100 character search>` (also under
+`/api/v1/podcast-discovery`) searches Apple Podcasts, returning up to 30
+`{title, author, feed_url}` records. Alternatively, use
+`?popular=true&country=US` with a two-letter country code to retrieve up to 20
+popular chart shows with their RSS feed URLs. The UI offers common chart
+countries; unsupported store codes can produce an upstream error or empty list.
+No session is required, supporting browser device-only subscriptions. The
+server sends only an explicit search/country request to the fixed Apple host,
+never fetches result feeds or artwork, and never forwards user credentials.
+Responses use `Cache-Control: no-store`; bounded upstream result caching stays
+in server memory for 15 minutes. Invalid queries return 400, temporary upstream
+failures 502, and uncached requests inside the shared upstream rate limit 429
+with `Retry-After: 3`. An unavailable directory does not prevent manual RSS entry.
+
+### Refresh an account podcast subscription
+
+`POST /api/podcasts/refresh` (also `/api/v1/podcasts/refresh`) requires a
+session or bearer token and JSON `{"feed_key":"feed:example.com/rss"}`. Only
+an active subscription owned by the caller can be refreshed. The server
+resolves aliases and fetches the stored catalog URL; callers cannot supply a
+fetch URL. Success returns `{"feed_key":"feed:example.com/rss","status":"refreshed"}`,
+or `"status":"fresh"` when checked within the last minute. Fetches have a
+20-second deadline, two concurrent slots per server instance, duplicate-feed
+suppression, and existing feed/host failure backoff. A busy or backed-off
+refresh returns 429 with `Retry-After: 60`; clients should retain the current
+list and offer retry. Invalid keys return 400, missing or inactive own
+subscriptions/catalog rows 404, and publisher/policy/parse failures 502.
+Refresh stores feed and episode metadata only, without artwork, media downloads
+or set permission grants. Public outbound address and response-size restrictions
+apply even when an administrator created the catalog feed. Browsing can continue
+while a client awaits this optional refresh and then reloads its episode list.

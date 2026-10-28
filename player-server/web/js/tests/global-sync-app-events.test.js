@@ -7,6 +7,7 @@ import { setPodcastAccount } from '../podcast-episode-state.js';
 import { initPodcastViews, renderPodcastVirtualView } from '../podcast-views.js';
 import { syncPodcastsForGlobal } from '../podcast-global-sync.js';
 const requestPodcasts = API.podcasts;
+const requestPodcastSync = API.syncPodcast;
 
 class Node {
   constructor(tag = 'div') {
@@ -65,7 +66,7 @@ API.podcasts = async () => subscriptions;
 API.subscribedEpisodes = async () => [{ ...ep }];
 API.syncConfig = async () => ({ user_id: 1, podcast_sync: 1 });
 let changes = {};
-API.syncPodcast = async () => ({ epoch: 'one', next_since: 1, has_more: false, rejected: [], episodes: [], subscriptions: [], ...changes });
+API.syncPodcast = async body => ({ epoch: 'one', next_since: 1, has_more: false, rejected: [], episodes: [], subscriptions: body.since === 0 ? subscriptions : [], ...changes });
 setPodcastAccount(1);
 initPodcastViews();
 const settle = () => new Promise(resolve => setTimeout(resolve, 5));
@@ -108,13 +109,16 @@ assert.equal(currentElement(), card); assert.equal(libraryReloads, 0);
 // Exercise the actual API helper through the production sidebar event listener,
 // including quiet 401 handling and recovery with identical subscription rows.
 API.podcasts = requestPodcasts;
+API.syncPodcast = requestPodcastSync;
 globalThis.location = { pathname: '/', search: '', hash: '', href: 'playing' };
 let status = 200, heldResponse;
 const requests = [];
 globalThis.fetch = async url => {
   requests.push(url);
   if (heldResponse) return heldResponse;
-  return new Response(JSON.stringify(status === 200 ? subscriptions : { error: 'Expired session' }),
+  const payload = url.endsWith('/podcasts/sync')
+    ? { epoch: 'one', next_since: 1, has_more: false, subscriptions } : subscriptions;
+  return new Response(JSON.stringify(status === 200 ? payload : { error: 'Expired session' }),
     { status, headers: { 'Content-Type': 'application/json' } });
 };
 const sidebarEvent = async () => {

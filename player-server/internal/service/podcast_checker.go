@@ -72,8 +72,12 @@ func (s *podcastFeedChecker) CheckFeeds(ctx context.Context) error {
 // its creator is allowed), stores its metadata and episodes, follows
 // permanent moves, and refreshes its cover. It never downloads audio.
 func (s *podcastFeedChecker) checkFeed(ctx context.Context, feed model.PodcastFeed) error {
+	return s.checkFeedWithClient(ctx, feed, s.feedClient(ctx, &feed), true)
+}
+
+func (s *podcastFeedChecker) checkFeedWithClient(ctx context.Context, feed model.PodcastFeed, client *http.Client, cover bool) error {
 	moves := &redirectLog{}
-	client := moves.wrap(s.feedClient(ctx, &feed))
+	client = moves.wrap(client)
 	resp, err := s.fetchFeedWithRetry(ctx, &feed, client)
 	if err != nil {
 		// Host backoff bookkeeping happened inside fetchFeedWithRetry;
@@ -99,9 +103,6 @@ func (s *podcastFeedChecker) checkFeed(ctx context.Context, feed model.PodcastFe
 		return fmt.Errorf("feed check status %d", resp.StatusCode)
 	}
 	parsed, err := s.parseFeedReader(resp.Body)
-	if err == nil {
-		err = s.updateFeedFromParsed(ctx, &feed, parsed, resp.Header.Get("ETag"))
-	}
 	if err != nil {
 		s.recordFeedBackoff(ctx, &feed)
 		return err
@@ -110,9 +111,18 @@ func (s *podcastFeedChecker) checkFeed(ctx context.Context, feed model.PodcastFe
 		return nil
 	}
 	if err := s.upsertFeedEpisodes(ctx, &feed, parsed); err != nil {
-		s.logger.Warn("upsert feed episodes failed", "error", err, "feed", feed.FeedURL)
+		s.recordFeedBackoff(ctx, &feed)
+		return err
 	}
-	s.refreshCover(ctx, &feed, parsed, client)
+	// Accept conditional validators only after episode ingestion commits.
+	// A failed/cancelled ingest must be retried with the full document;
+	// otherwise a publisher's 304 could permanently hide missing episodes.
+	if err := s.updateFeedFromParsed(ctx, &feed, parsed, resp.Header.Get("ETag")); err != nil {
+		return err
+	}
+	if cover {
+		s.refreshCover(ctx, &feed, parsed, client)
+	}
 	return nil
 }
 
