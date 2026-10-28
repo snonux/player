@@ -174,7 +174,7 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
     final placeholder = ColoredBox(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         child: Center(
-            child: Icon(Icons.queue_music,
+            child: Icon(Icons.playlist_play,
                 semanticLabel: context.tr('No playlist artwork'))));
     return SizedBox(
         width: size,

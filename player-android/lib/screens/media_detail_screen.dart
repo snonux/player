@@ -15,6 +15,7 @@ import '../utils/error_mappers.dart';
 import '../widgets/authenticated_network_image.dart';
 import '../widgets/tag_picker.dart';
 import '../widgets/keep_offline_button.dart';
+import '../widgets/overflow_menu.dart';
 import 'create_share_dialog.dart';
 import 'media_playback_navigation.dart';
 
@@ -262,68 +263,45 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     );
   }
 
-  /// Builds the app bar with title and a three-dot overflow menu.
+  /// App bar with the shared hamburger overflow ([OverflowMenuButton]).
   ///
-  /// The overflow menu contains "Notes" and "Share" actions.  Using a
-  /// [PopupMenuButton] keeps the pattern open for future items without layout
-  /// changes.  The [onSelected] callback uses a [Map]-based dispatch so adding
-  /// a new action requires only a new enum value and one map entry — no
-  /// if/else chain to extend (Open-Closed Principle).  All actions are
-  /// disabled while media is still loading (null) to prevent calling the API
-  /// with a stale ID.
+  /// Queue inserts and Notes/Share live here; the visible Play button covers
+  /// Play now, so that action is not repeated in the menu.
   AppBar _buildAppBar() {
+    final audio = _media?.type == 'audio';
+    final ready = _media != null;
     return AppBar(
       title: Text(_media?.displayTitle ?? 'Media ${widget.mediaId}'),
       actions: [
-        PopupMenuButton<_MenuAction>(
-          key: const Key('media_detail_overflow_menu'),
-          onSelected: (action) {
-            // Map-based dispatch: adding a new menu action requires only a new
-            // enum value, a handler method, and one entry here — no if/else
-            // chain to extend (Open-Closed Principle).
-            final handlers = <_MenuAction, VoidCallback>{
-              _MenuAction.notes: _openNotes,
-              _MenuAction.share: _share,
-              _MenuAction.playNow: () => insertServerSongs(
-                  context, ref, [_media!], QueueInsertion.now),
-              _MenuAction.playNext: () => insertServerSongs(
-                  context, ref, [_media!], QueueInsertion.next),
-              _MenuAction.append: () => insertServerSongs(
-                  context, ref, [_media!], QueueInsertion.append),
-            };
-            handlers[action]?.call();
-          },
-          itemBuilder: (_) => [
-            for (final entry in {
-              _MenuAction.playNow: QueueInsertion.now,
-              _MenuAction.playNext: QueueInsertion.next,
-              _MenuAction.append: QueueInsertion.append
-            }.entries)
-              PopupMenuItem<_MenuAction>(
-                  value: entry.key,
-                  enabled: _media?.type == 'audio',
-                  child: Text(queueActionLabel(entry.value))),
-            PopupMenuItem<_MenuAction>(
-              key: const Key('media_detail_notes_menu_item'),
-              // Disable the item until media has loaded so the mediaId is valid.
-              enabled: _media != null,
-              value: _MenuAction.notes,
-              child: const ListTile(
-                leading: Icon(Icons.notes_outlined),
-                title: Text('Notes'),
-                contentPadding: EdgeInsets.zero,
-              ),
+        OverflowMenuButton(
+          items: (_) => [
+            OverflowMenuItem(
+              icon: Icons.playlist_play,
+              label: queueActionLabel(QueueInsertion.next),
+              onSelected: !audio
+                  ? null
+                  : () => insertServerSongs(
+                      context, ref, [_media!], QueueInsertion.next),
             ),
-            PopupMenuItem<_MenuAction>(
+            OverflowMenuItem(
+              icon: Icons.playlist_add,
+              label: queueActionLabel(QueueInsertion.append),
+              onSelected: !audio
+                  ? null
+                  : () => insertServerSongs(
+                      context, ref, [_media!], QueueInsertion.append),
+            ),
+            OverflowMenuItem(
+              key: const Key('media_detail_notes_menu_item'),
+              icon: Icons.notes_outlined,
+              label: 'Notes',
+              onSelected: ready ? _openNotes : null,
+            ),
+            OverflowMenuItem(
               key: const Key('media_detail_share_menu_item'),
-              // Disable the item until media has loaded so the mediaId is valid.
-              enabled: _media != null,
-              value: _MenuAction.share,
-              child: const ListTile(
-                leading: Icon(Icons.share),
-                title: Text('Share'),
-                contentPadding: EdgeInsets.zero,
-              ),
+              icon: Icons.share,
+              label: 'Share',
+              onSelected: ready ? _share : null,
             ),
           ],
         ),
@@ -389,17 +367,6 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// _MenuAction
-// ---------------------------------------------------------------------------
-
-/// Enum of available overflow-menu actions in [MediaDetailScreen].
-///
-/// Using a typed enum (rather than raw strings) makes [PopupMenuButton] type
-/// safe and avoids stringly-typed comparisons in [onSelected] (type safety /
-/// Open-Closed: add new actions here without touching the menu-builder switch).
-enum _MenuAction { notes, share, playNow, playNext, append }
-
-// ---------------------------------------------------------------------------
 // _MediaDetailContent
 // ---------------------------------------------------------------------------
 
@@ -451,16 +418,16 @@ class _MediaDetailContent extends StatelessWidget {
 
           _details(),
 
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: KeepOfflineButton(media: media),
-          ),
-
           if (const {'video', 'audio', 'image'}.contains(media.type))
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: _PlayButton(type: media.type, onPlay: onPlay),
             ),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: KeepOfflineButton(media: media),
+          ),
 
           if (media.type == 'audio') ...[
             const SizedBox(height: 24),

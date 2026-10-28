@@ -513,12 +513,12 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('MediaDetailScreen overflow menu', () {
-    testWidgets('three-dot menu contains Share item', (tester) async {
+    testWidgets('hamburger menu contains Share item', (tester) async {
       final fakeClient = _FakeApiClient()..mediaResult = _kMedia;
       await _pumpMediaDetailScreen(tester, fakeClient);
 
       // Open the overflow menu.
-      await tester.tap(find.byKey(const Key('media_detail_overflow_menu')));
+      await tester.tap(find.byKey(const Key('overflow_menu_button')));
       await tester.pumpAndSettle();
 
       expect(
@@ -536,7 +536,7 @@ void main() {
       await _pumpMediaDetailScreen(tester, fakeClient);
 
       // Open the overflow menu and tap Share.
-      await tester.tap(find.byKey(const Key('media_detail_overflow_menu')));
+      await tester.tap(find.byKey(const Key('overflow_menu_button')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('media_detail_share_menu_item')));

@@ -339,7 +339,7 @@ class _OfflineMusicBrowserState extends ConsumerState<OfflineMusicBrowser> {
                                   leading: Icon(_kind == 'Artists'
                                       ? Icons.person_outline
                                       : _kind == 'Playlists'
-                                          ? Icons.queue_music
+                                          ? Icons.playlist_play
                                           : Icons.library_music),
                                   title: Text(row.title,
                                       maxLines: 2,

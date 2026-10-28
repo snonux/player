@@ -439,7 +439,7 @@ void main() {
       await _pumpScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('media_detail_overflow_menu')));
+      await tester.tap(find.byKey(const Key('overflow_menu_button')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('media_detail_notes_menu_item')));
       await tester.pumpAndSettle();

@@ -210,14 +210,14 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
                   'Continue Watching',
                   AppRoutes.continueWatching
                 ),
-                (Icons.radio, 'Internet radio', AppRoutes.radio),
+                (Icons.radio, 'Web radio', AppRoutes.radio),
                 (
                   Icons.album_outlined,
                   context.tr('Music · Albums'),
                   AppRoutes.musicAlbums
                 ),
                 (
-                  Icons.queue_music,
+                  Icons.library_music,
                   context.tr('Music · Playlists'),
                   AppRoutes.musicPlaylists
                 ),
@@ -227,7 +227,6 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
                   AppRoutes.musicArtists
                 ),
                 (Icons.podcasts, 'Podcasts', AppRoutes.podcasts),
-                (Icons.radio, 'Web radio', AppRoutes.radio),
                 (Icons.share_outlined, 'My Shares', AppRoutes.shares),
                 (
                   Icons.settings_outlined,
