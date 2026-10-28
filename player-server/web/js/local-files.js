@@ -20,6 +20,7 @@ export function initLocalFilesApp() {
       <button class="btn btn-primary" type="button" data-add-files>Add files</button>
       <input hidden type="file" data-file-input multiple accept="audio/*,video/*,.mp3,.m4a,.flac,.ogg,.opus,.wav,.aac,.mp4,.webm,.mkv,.mov">
       <button class="btn" type="button" data-refresh>Refresh</button>
+      <a class="btn" href="/index.html?local=podcasts">Podcasts</a>
     </div>
     <p role="status" aria-live="polite" data-status></p>
     <ul data-results class="local-files-list"></ul>

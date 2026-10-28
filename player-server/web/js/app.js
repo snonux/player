@@ -1,6 +1,7 @@
-import { offlineMusicMode, localFilesMode } from './offline-context.js';
+import { offlineMusicMode, localFilesMode, localPodcastsMode } from './offline-context.js';
 import { initOfflineMusicApp } from './offline-browse.js';
 import { initLocalFilesApp } from './local-files.js';
+import { initLocalPodcastsApp } from './local-podcasts.js';
 import { initLanguage } from './i18n.js';
 import { initOfflinePinLibrary } from './offline-pin-library.js';
 import { mountMusicPresence } from './music-presence.js';
@@ -133,6 +134,7 @@ function main() {
   else if (page === 'bootstrap') initBootstrap();
   else if (offlineMusicMode()) initOfflineMusicApp();
   else if (localFilesMode()) initLocalFilesApp();
+  else if (localPodcastsMode()) initLocalPodcastsApp();
   else initApp();
   initThemes();
   initLanguage();

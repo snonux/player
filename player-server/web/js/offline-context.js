@@ -7,8 +7,11 @@ export function offlineMusicMode() {
 export function localFilesMode() {
  return new URLSearchParams(globalThis.location?.search || '').get('local') === 'files';
 }
+export function localPodcastsMode() {
+ return new URLSearchParams(globalThis.location?.search || '').get('local') === 'podcasts';
+}
 export function deviceLibraryMode() {
- return offlineMusicMode() || localFilesMode();
+ return offlineMusicMode() || localFilesMode() || localPodcastsMode();
 }
 export function offlineMusicAccount() { return offlineMusicMode() ? account : null; }
 export function selectOfflineMusicAccount(id) {
