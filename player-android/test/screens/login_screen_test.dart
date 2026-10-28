@@ -1,3 +1,4 @@
+import 'package:player_android/providers/saved_account_validation_provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 // Widget tests for LoginScreen.
 //
@@ -209,6 +210,7 @@ void main() {
         (tester) async {
       final storage = _FakeTokenStorage();
       final biometric = _BiometricChoice(accepted);
+      var validationCalls = 0;
       const user = User(id: 1, username: 'alice', isAdmin: false);
       final api = _FakeApiClient()..loginResult = user;
       late ProviderContainer container;
@@ -219,6 +221,10 @@ void main() {
           tokenStorageProvider.overrideWithValue(storage),
           apiClientProvider.overrideWithValue(api),
           serverBiometricUnlockProvider.overrideWithValue(biometric),
+          savedAccountValidationProvider.overrideWithValue((_) async {
+            validationCalls++;
+            return true;
+          }),
         ]);
         await container.read(settingsProvider.future);
         await container
@@ -248,6 +254,7 @@ void main() {
       });
       await tester.pumpAndSettle();
       expect(biometric.calls, 1);
+      expect(validationCalls, accepted ? 1 : 0);
       if (accepted) {
         expect(storage._token, 'saved-token');
         expect(container.read(authStateProvider).requireValue.isAuthenticated,
