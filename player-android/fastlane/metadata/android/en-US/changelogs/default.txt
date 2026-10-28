@@ -1,5 +1,3 @@
-Decluttered web and Android screens behind a shared More menu.
-Tapping media plays it directly; details live behind a Details button.
-Card actions trimmed to Play, Favorite and More, with a minimal header and player chrome.
-Played videos are cached automatically and the cache trims itself by least-recent use.
-Fixed duplicated web radio routes breaking login.
+Compact music, podcast, radio, admin and settings chrome behind More menus.
+Browser On this device files and standalone podcasts without signing in.
+Web Account API tokens, clearer admin sections, and quieter video fullscreen.
