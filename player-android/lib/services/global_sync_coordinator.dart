@@ -55,6 +55,20 @@ class GlobalSyncCoordinator extends ChangeNotifier {
   String? _authBlockedScope;
   int _failures = 0;
   int _statusGeneration = 0;
+  String? _manualScope;
+  GlobalSyncState? _manualSyncResult;
+
+  /// Preserve the manual outcome even if an automatic rerun starts immediately.
+  GlobalSyncState? get manualSyncResult =>
+      _manualSyncResult?.scope == state.scope ? _manualSyncResult : null;
+  int _manualSyncRevision = 0;
+
+  /// Also records requests that finish between two UI frames.
+  int get manualSyncRevision => _manualSyncRevision;
+
+  /// Presentation only: automatic attempts never request the global footer.
+  bool get manualSyncActive =>
+      _manualScope != null && _manualScope == state.scope;
 
   /// Drop the previous account's presentation before reading durable status.
   Future<void> refreshStatus() async {
@@ -125,6 +139,12 @@ class GlobalSyncCoordinator extends ChangeNotifier {
     if (lease == null || _authBlockedScope == lease.scope) {
       return Future.value();
     }
+    if (explicit) {
+      _manualSyncRevision++;
+      _manualSyncResult = null;
+      _manualScope = lease.scope;
+      notifyListeners();
+    }
     if (_running != null) {
       _again = true;
       _explicitAgain = _explicitAgain || explicit;
@@ -144,7 +164,14 @@ class GlobalSyncCoordinator extends ChangeNotifier {
       _timer?.cancel();
       _timer = Timer(const Duration(seconds: 15), () => trigger(reset: false));
     }).whenComplete(() {
+      if (_manualScope == lease.scope &&
+          state.scope == lease.scope &&
+          !_explicitAgain) {
+        _manualSyncResult = state;
+      }
       _running = null;
+      _manualScope = null;
+      if (!_disposed) notifyListeners();
       if (_again && !_disposed) {
         _again = false;
         final explicit = _explicitAgain;

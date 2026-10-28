@@ -264,6 +264,111 @@ void main() {
     expect(PodcastSyncStore.editIds(await store.payload(scope, limit: 1)),
         PodcastSyncStore.editIds(await store.payload(scope, limit: 1)));
   });
+  test('only manual sync requests activate transient footer feedback',
+      () async {
+    var entered = Completer<void>();
+    var release = Completer<void>();
+    var fail = false;
+    final coordinator = GlobalSyncCoordinator(
+        PodcastSync(store),
+        () => GlobalSyncAccount(
+            podcast: PodcastSyncAccount(
+                scope: scope,
+                current: () => true,
+                supported: () async => true,
+                send: (_) async => reply()),
+            syncMedia: (_) async {
+              entered.complete();
+              await release.future;
+              if (fail) throw const SocketException('offline');
+            },
+            flushProgress: () async {},
+            pendingOther: () async => 0));
+    addTearDown(coordinator.dispose);
+    final automatic = coordinator.syncNow(explicit: false);
+    await entered.future;
+    expect(coordinator.state.active, isTrue);
+    expect(coordinator.manualSyncActive, isFalse);
+    expect(coordinator.manualSyncRevision, 0);
+    release.complete();
+    await automatic;
+    expect(coordinator.state.lastFullSuccessMs, isNotNull);
+    expect(coordinator.manualSyncActive, isFalse);
+    for (final failure in [false, true]) {
+      fail = failure;
+      entered = Completer<void>();
+      release = Completer<void>();
+      final manual = coordinator.syncNow();
+      await entered.future;
+      expect(coordinator.state.active, isTrue);
+      expect(coordinator.manualSyncActive, isTrue);
+      expect(coordinator.manualSyncRevision, failure ? 2 : 1);
+      release.complete();
+      await manual;
+      expect(coordinator.manualSyncActive, isFalse);
+      expect(coordinator.state.errorKind, failure ? 'offline' : isNull);
+    }
+  });
+  for (final queuedManual in [false, true]) {
+    test(
+        'manual outcome survives queued ${queuedManual ? 'manual' : 'automatic'} sync',
+        () async {
+      final entered = [Completer<void>(), Completer<void>()];
+      final release = [Completer<void>(), Completer<void>()];
+      var runs = 0;
+      final explicitRuns = <bool>[];
+      final coordinator = GlobalSyncCoordinator(
+          PodcastSync(store),
+          () => GlobalSyncAccount(
+              podcast: PodcastSyncAccount(
+                  scope: scope,
+                  current: () => true,
+                  supported: () async => true,
+                  send: (_) async => reply()),
+              syncMedia: (explicit) async {
+                final run = runs++;
+                explicitRuns.add(explicit);
+                entered[run].complete();
+                await release[run].future;
+                if (explicit) throw const SocketException('offline');
+              },
+              flushProgress: () async {},
+              pendingOther: () async => 0));
+      addTearDown(coordinator.dispose);
+      final first = coordinator.syncNow(explicit: !queuedManual);
+      await entered[0].future;
+      coordinator.trigger(explicit: queuedManual);
+      release[0].complete();
+      await first;
+      await entered[1].future;
+      expect(coordinator.state.active, isTrue);
+      expect(coordinator.manualSyncActive, queuedManual);
+      if (queuedManual) {
+        expect(coordinator.manualSyncResult, isNull,
+            reason: 'the queued explicit attempt has not completed');
+      } else {
+        expect(coordinator.manualSyncResult?.active, isFalse);
+        expect(coordinator.manualSyncResult?.errorKind, 'offline');
+      }
+      final finished = Completer<void>();
+      coordinator.addListener(() {
+        if (!coordinator.state.active &&
+            !coordinator.manualSyncActive &&
+            !finished.isCompleted) {
+          finished.complete();
+        }
+      });
+      release[1].complete();
+      await finished.future;
+      expect(explicitRuns, queuedManual ? [false, true] : [true, false]);
+      expect(coordinator.manualSyncResult?.active, isFalse);
+      expect(coordinator.manualSyncResult?.errorKind, 'offline');
+      if (!queuedManual) {
+        expect(coordinator.state.errorKind, isNull,
+            reason: 'automatic success must not replace the manual failure');
+      }
+    });
+  }
   test(
       'global partial failure preserves full success timestamp and stale clock',
       () async {
@@ -328,9 +433,11 @@ void main() {
     final coordinator = GlobalSyncCoordinator(PodcastSync(store), capture);
     final running = coordinator.syncNow();
     await entered.future;
+    expect(coordinator.manualSyncActive, isTrue);
     selected = other;
     final refreshing = coordinator.refreshStatus();
     expect(coordinator.state.scope, other);
+    expect(coordinator.manualSyncActive, isFalse);
     expect(coordinator.state.lastFullSuccessMs, isNull);
     await refreshing;
     expect(coordinator.state.lastFullSuccessMs, 123);

@@ -146,16 +146,15 @@ for focused checks and the remaining installed-client verification gaps.
 
 ## Synchronize this account
 
-The global **Sync now** control below the app synchronizes podcasts, supported
+Open the library menu and choose **Sync now** to synchronize podcasts, supported
 offline progress/bookmarks, queued listening progress and the saved music
-session for the unlocked account. Its quiet status shows activity, pending
-changes, **Not synced yet**, or **Last synced 2 days ago** after 48 hours without
-full success. **Retry** keeps playback running; authentication instead asks you
-to sign in again. Session conflicts are resolved in Now Playing. Standalone use
-shows no sync hint. Pending Android edits survive restart; switching accounts
-loads that account's own saved status. Implementation checks pass; installed
-48-hour, partial-failure and authentication acceptance remains pending in
-[4i3 notes](../docs/podcast-global-sync-feedback-implementation.md).
+session for the unlocked account. The bottom status bar appears only for a
+manual sync, with its result shown briefly afterward. Automatic syncing keeps
+running quietly, including retries and pending changes. Open the library menu
+to inspect the current sync status, retry a failed sync, or see when signing in
+again is required. Session conflicts are resolved in Now Playing. Standalone
+use shows no sync hint. Pending Android edits survive restart; switching
+accounts loads that account's own saved status.
 
 ## Keep server files offline
 

@@ -34,16 +34,6 @@ String globalSyncMessage(GlobalSyncState state, int nowMs) {
   return parts.join(' · ');
 }
 
-/// True when the footer has something to report beyond "Synced"; a healthy
-/// sync stays out of the way and Sync now lives in the library menu.
-bool globalSyncNeedsAttention(GlobalSyncState state, int nowMs) =>
-    state.configured &&
-    (state.active ||
-        state.errorKind != null ||
-        state.neverSynced ||
-        state.staleAt(nowMs) ||
-        state.pending > 0);
-
 /// Label for the manual sync action in the footer and the library menu.
 String globalSyncActionLabel(GlobalSyncState state, int nowMs) => state.active
     ? 'Syncing…'
@@ -53,19 +43,62 @@ String globalSyncActionLabel(GlobalSyncState state, int nowMs) => state.active
             ? 'Retry'
             : 'Sync now';
 
-/// Pure presentation, also used by focused widget checks.
-class GlobalSyncStatus extends StatelessWidget {
+/// Transient manual sync feedback; menu status remains available at any time.
+class GlobalSyncStatus extends StatefulWidget {
   const GlobalSyncStatus(
       {super.key,
       required this.state,
       required this.nowMs,
-      required this.onSync});
+      required this.onSync,
+      this.manualSyncActive = false,
+      this.manualSyncRevision = 0,
+      this.manualSyncResult});
   final GlobalSyncState state;
   final int nowMs;
   final VoidCallback onSync;
+  final bool manualSyncActive;
+  final int manualSyncRevision;
+  final GlobalSyncState? manualSyncResult;
+
+  @override
+  State<GlobalSyncStatus> createState() => _GlobalSyncStatusState();
+}
+
+class _GlobalSyncStatusState extends State<GlobalSyncStatus> {
+  Timer? _feedbackTimer;
+  GlobalSyncState? _result;
+
+  @override
+  void didUpdateWidget(GlobalSyncStatus oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final sameScope = widget.state.scope == oldWidget.state.scope;
+    if (!sameScope || widget.manualSyncActive) {
+      _feedbackTimer?.cancel();
+      _result = null;
+    }
+    if (!widget.manualSyncActive &&
+        ((sameScope && oldWidget.manualSyncActive) ||
+            widget.manualSyncRevision != oldWidget.manualSyncRevision)) {
+      // Freeze the requested result: a later background attempt stays quiet.
+      _feedbackTimer?.cancel();
+      final result = widget.manualSyncResult;
+      _result = result?.scope == widget.state.scope ? result : null;
+      _feedbackTimer = Timer(const Duration(seconds: 4), () {
+        if (mounted) setState(() => _result = null);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _feedbackTimer?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (!globalSyncNeedsAttention(state, nowMs)) {
+    final state = widget.manualSyncActive ? widget.state : _result;
+    if (state == null || !state.configured) {
       return const SizedBox.shrink();
     }
     return Material(
@@ -76,12 +109,13 @@ class GlobalSyncStatus extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Row(children: [
               Expanded(
-                  child: Text(globalSyncMessage(state, nowMs),
+                  child: Text(globalSyncMessage(state, widget.nowMs),
                       style: Theme.of(context).textTheme.bodySmall)),
               TextButton(
-                  onPressed:
-                      state.active || state.errorKind == 'auth' ? null : onSync,
-                  child: Text(globalSyncActionLabel(state, nowMs))),
+                  onPressed: state.active || state.errorKind == 'auth'
+                      ? null
+                      : widget.onSync,
+                  child: Text(globalSyncActionLabel(state, widget.nowMs))),
             ]),
           )),
     );
@@ -146,6 +180,9 @@ class _GlobalSyncChromeState extends ConsumerState<GlobalSyncChrome> {
           explicitChildNodes: true,
           child: GlobalSyncStatus(
               state: sync.state,
+              manualSyncActive: sync.manualSyncActive,
+              manualSyncRevision: sync.manualSyncRevision,
+              manualSyncResult: sync.manualSyncResult,
               nowMs: DateTime.now().millisecondsSinceEpoch,
               onSync: () => unawaited(sync.syncNow())),
         ),

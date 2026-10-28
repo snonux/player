@@ -14,8 +14,18 @@ class _VisibleSync extends GlobalSyncCoordinator {
       : super(PodcastSync(PodcastSyncStore(PodcastRepository())), () => null);
 
   void Function()? onSyncNow;
+  bool manual = false;
+  int revision = 0;
+  GlobalSyncState? result;
+  @override
+  GlobalSyncState? get manualSyncResult => result;
+  @override
+  int get manualSyncRevision => revision;
+  @override
+  bool get manualSyncActive => manual;
 
   void show(GlobalSyncState next) {
+    if (!manual && !next.active) result = next;
     state = next;
     notifyListeners();
   }
@@ -28,7 +38,55 @@ void main() {
   const last = 100000;
   const boundary = last + 48 * 60 * 60 * 1000;
   const synced = GlobalSyncState(scope: 'account:a', lastFullSuccessMs: last);
-  testWidgets('global chrome rebuilds when coordinator state changes',
+  testWidgets('global chrome stays quiet until a manual sync', (tester) async {
+    final sync = _VisibleSync();
+    await tester.pumpWidget(ProviderScope(
+        overrides: [
+          globalSyncCoordinatorProvider.overrideWith((ref) => sync),
+          podcastAssociationOfferProvider.overrideWith((ref) async => null),
+        ],
+        child:
+            const MaterialApp(home: GlobalSyncChrome(child: Text('Library')))));
+    for (final state in [
+      const GlobalSyncState(scope: 'account:a'),
+      const GlobalSyncState(scope: 'account:a', active: true),
+      const GlobalSyncState(scope: 'account:a', pending: 1),
+      const GlobalSyncState(scope: 'account:a', lastFullSuccessMs: last),
+      const GlobalSyncState(scope: 'account:a', errorKind: 'offline'),
+      const GlobalSyncState(scope: 'account:a', errorKind: 'auth'),
+    ]) {
+      sync.show(state);
+      await tester.pump();
+      expect(find.byType(TextButton), findsNothing);
+      expect(find.text('Library'), findsOneWidget);
+    }
+    sync.manual = true;
+    sync.revision++;
+    sync.show(const GlobalSyncState(scope: 'account:a', active: true));
+    await tester.pump();
+    expect(find.textContaining('Syncing…'), findsWidgets);
+    sync.manual = false;
+    sync.show(GlobalSyncState(
+        scope: 'account:a',
+        lastFullSuccessMs: DateTime.now().millisecondsSinceEpoch));
+    await tester.pump();
+    expect(find.text('Synced'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byType(TextButton), findsNothing);
+    sync.show(const GlobalSyncState(scope: 'account:a', pending: 1));
+    await tester.pump();
+    expect(find.textContaining('1 pending'), findsNothing);
+    // A very fast manual request may start and finish between rendered frames.
+    sync.revision++;
+    sync.show(GlobalSyncState(
+        scope: 'account:a',
+        lastFullSuccessMs: DateTime.now().millisecondsSinceEpoch));
+    await tester.pump();
+    expect(find.text('Synced'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byType(TextButton), findsNothing);
+  });
+  testWidgets('a fast first manual sync still shows its result',
       (tester) async {
     final sync = _VisibleSync();
     await tester.pumpWidget(ProviderScope(
@@ -38,20 +96,45 @@ void main() {
         ],
         child:
             const MaterialApp(home: GlobalSyncChrome(child: Text('Library')))));
-    sync.show(const GlobalSyncState(scope: 'account:a'));
-    await tester.pump();
-    expect(find.text('Not synced yet'), findsOneWidget);
+    sync.revision++;
     sync.show(GlobalSyncState(
         scope: 'account:a',
         lastFullSuccessMs: DateTime.now().millisecondsSinceEpoch));
-    await tester.pumpAndSettle();
-    expect(find.text('Synced'), findsNothing,
-        reason: 'a healthy sync leaves the footer hidden');
-    expect(find.text('Sync now'), findsNothing);
-    sync.show(const GlobalSyncState(
-        scope: 'account:a', lastFullSuccessMs: last, pending: 1));
     await tester.pump();
-    expect(find.textContaining('1 pending'), findsOneWidget);
+    expect(find.text('Synced'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byType(TextButton), findsNothing);
+  });
+  testWidgets('manual result survives an automatic rerun before the next frame',
+      (tester) async {
+    final sync = _VisibleSync();
+    await tester.pumpWidget(ProviderScope(
+        overrides: [
+          globalSyncCoordinatorProvider.overrideWith((ref) => sync),
+          podcastAssociationOfferProvider.overrideWith((ref) async => null),
+        ],
+        child:
+            const MaterialApp(home: GlobalSyncChrome(child: Text('Library')))));
+    sync.manual = true;
+    sync.revision++;
+    sync.show(const GlobalSyncState(scope: 'account:a', active: true));
+    await tester.pump();
+    sync.manual = false;
+    sync.result = GlobalSyncState(
+        scope: 'account:a',
+        lastFullSuccessMs: DateTime.now().millisecondsSinceEpoch);
+    sync.show(const GlobalSyncState(scope: 'account:a', active: true));
+    await tester.pump();
+    expect(find.text('Synced'), findsOneWidget);
+    expect(find.textContaining('Syncing…'), findsNothing);
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byType(TextButton), findsNothing);
+    // Another account must not inherit a fast manual result between frames.
+    sync.revision++;
+    sync.show(const GlobalSyncState(scope: 'account:b', active: true));
+    await tester.pump();
+    expect(find.byType(TextButton), findsNothing);
+    await tester.pump(const Duration(seconds: 4));
   });
   testWidgets('library menu row reports status and runs Sync now',
       (tester) async {
@@ -98,12 +181,14 @@ void main() {
       'labeled retry stays nonblocking and auth cannot retry ineffectively',
       (tester) async {
     var retries = 0;
-    Future<void> show(GlobalSyncState state) => tester.pumpWidget(MaterialApp(
+    Future<void> show(GlobalSyncState state, {bool manual = true}) =>
+        tester.pumpWidget(MaterialApp(
             home: Scaffold(
                 body: Column(children: [
           const Text('Playback continues'),
           GlobalSyncStatus(
               state: state,
+              manualSyncActive: manual,
               nowMs: boundary,
               onSync: () {
                 retries++;
@@ -129,9 +214,40 @@ void main() {
     expect(find.textContaining('unavailable'), findsNothing);
     await show(const GlobalSyncState());
     expect(find.byType(TextButton), findsNothing);
-    await show(const GlobalSyncState(
-        scope: 'account:a', lastFullSuccessMs: boundary - 1000));
+    await show(
+        const GlobalSyncState(
+            scope: 'account:a', lastFullSuccessMs: boundary - 1000),
+        manual: false);
     expect(find.byType(TextButton), findsNothing,
-        reason: 'a fresh, healthy sync hides the footer');
+        reason: 'a background sync never opens the footer');
+  });
+  testWidgets(
+      'manual failure result expires and account switches clear feedback',
+      (tester) async {
+    Future<void> show(GlobalSyncState state, bool manual) =>
+        tester.pumpWidget(MaterialApp(
+            home: Scaffold(
+                body: GlobalSyncStatus(
+                    state: state,
+                    nowMs: boundary,
+                    manualSyncActive: manual,
+                    manualSyncResult: manual ? null : state,
+                    onSync: () {}))));
+    await show(const GlobalSyncState(scope: 'account:a', active: true), true);
+    await show(
+        const GlobalSyncState(scope: 'account:a', errorKind: 'offline'), false);
+    expect(find.textContaining('Sync unavailable'), findsOneWidget);
+    // A background retry must not replace the final result of the manual run.
+    await show(const GlobalSyncState(scope: 'account:a', active: true), false);
+    expect(find.textContaining('Sync unavailable'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byType(TextButton), findsNothing);
+    await show(const GlobalSyncState(scope: 'account:a', active: true), true);
+    await show(
+        const GlobalSyncState(scope: 'account:a', errorKind: 'offline'), false);
+    await show(const GlobalSyncState(scope: 'account:b', pending: 2), false);
+    expect(find.byType(TextButton), findsNothing);
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byType(TextButton), findsNothing);
   });
 }
