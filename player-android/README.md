@@ -317,9 +317,10 @@ Missing lyrics or a failed lookup leave playback available; **Retry lyrics**
 tries the lookup again. Changing tracks clears the previous lyrics.
 
 Lyrics prefer the server's sidecar files and embedded audio metadata. If the
-operator configures a provider, **Find lyrics online (send track tags)** explicitly
-requests a match; ordinary playback/downloads never start provider lookup.
-**Remove provider lyrics** clears this account's server provider cache.
+operator configures a provider, the overflow menu's **Find lyrics online**
+explicitly requests a match (sends track tags); ordinary playback/downloads
+never start provider lookup. **Remove provider lyrics** in the same menu clears
+this account's server provider cache.
 New completed downloads and cached songs save available lyrics, including rich
 timings/translations, for offline display and seeking after restart. Download
 removal/cache eviction removes its lyrics too; existing downloads retain their

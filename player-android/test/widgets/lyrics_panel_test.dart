@@ -15,7 +15,7 @@ final _timed = Lyrics.fromJson({
 
 void main() {
   testWidgets(
-      'provider actions are explicit and saved lyrics hide online actions',
+      'provider actions stay on the controller; saved lyrics hide them',
       (tester) async {
     var fetched = 0, removed = 0;
     final available = Lyrics.fromJson({'provider_enabled': true, 'lines': []});
@@ -31,9 +31,12 @@ void main() {
         }
       ]
     });
+    final controller = LyricsPanelController();
+    addTearDown(controller.dispose);
     Widget panel({bool saved = false}) => MaterialApp(
             home: Scaffold(
                 body: LyricsPanel(
+          controller: controller,
           load: () async => available,
           lookup: () async {
             fetched++;
@@ -50,14 +53,19 @@ void main() {
         )));
     await tester.pumpWidget(panel());
     expect(fetched, 0);
+    expect(controller.canFindOnline, isTrue,
+        reason: 'Find is offered before the first load');
+    expect(find.text('Find lyrics online (send track tags)'), findsNothing,
+        reason: 'provider actions live in the overflow, not the panel');
     await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
     expect(fetched, 0, reason: 'opening lyrics reads cache only');
-    await tester.tap(find.text('Find lyrics online (send track tags)'));
+    await controller.findOnline();
     await tester.pumpAndSettle();
     expect(fetched, 1);
     expect(find.text('Lyrics: provider'), findsOneWidget);
-    await tester.tap(find.text('Remove provider lyrics'));
+    expect(controller.canRemoveProvider, isTrue);
+    await controller.removeProvider();
     await tester.pumpAndSettle();
     expect(removed, 1);
     expect(find.text('No lyrics available.'), findsOneWidget);
@@ -66,7 +74,8 @@ void main() {
     await tester.tap(find.text('Lyrics'));
     await tester.pumpAndSettle();
     expect(find.text('No saved lyrics'), findsOneWidget);
-    expect(find.text('Find lyrics online (send track tags)'), findsNothing);
+    expect(controller.canFindOnline, isFalse);
+    expect(controller.canRemoveProvider, isFalse);
     expect(fetched, 1);
   });
   testWidgets('loads on tap, highlights positions and seeks a timed line',

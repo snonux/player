@@ -175,6 +175,9 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   // here. Null before playback progressed and once the item completed.
   Duration? _lastKnownPosition;
 
+  // Provider lyrics actions for the overflow menu (panel stays a reader).
+  final LyricsPanelController _lyricsActions = LyricsPanelController();
+
   // Set when casting ended: load the item where the TV left it, but do not
   // start playing on the phone by surprise.
   bool _startPaused = false;
@@ -239,6 +242,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         _handler?.musicState == null) {
       unawaited(lease!.stop());
     }
+    _lyricsActions.dispose();
     super.dispose();
   }
 
@@ -1106,11 +1110,14 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                   : 'Audio – ${widget.mediaId}')),
         ),
         body: Column(children: [
-          SleepTimerControl(timer: ref.read(audioHandlerProvider).sleepTimer),
           Expanded(
               child: casting
                   ? CastPlaybackView(onStop: stopCasting)
                   : _buildBody()),
+          // Bottom strip: reachable with the thumb; hidden while idle.
+          SleepTimerControl(timer: ref.read(audioHandlerProvider).sleepTimer),
+          if (!casting && !_isLoading && _error == null && _activeRequest != null)
+            _buildBottomTransport(ref.read(audioHandlerProvider)),
         ]),
       ),
     );
@@ -1123,6 +1130,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     final ready = request != null && !_isLoading && _error == null;
     final personal = ready && !casting && !widget.isPublicShare;
     final store = personal ? _personalBinding.storeFor(ref, request) : null;
+    final music = handler.musicState != null;
     return [
       if (request is ServerPlaybackRequest && !widget.isPublicShare && !casting)
         OverflowMenuItem(
@@ -1146,37 +1154,90 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
             label: 'Playback speed',
             subtitle: '${_playbackSpeed}x',
             onSelected: _showSpeedSheet),
-        AudioVisualsMenuItem(visuals: _visualsKey, playerContext: context),
-        StreamBuilder<void>(
-            stream: handler.queueChanges,
-            builder: (context, _) => SwitchListTile.adaptive(
-                key: const Key('gapless_toggle'),
-                secondary: const Icon(Icons.merge_type),
-                title: const Text('Gapless music queue'),
-                subtitle: Text('${handler.gaplessStatus}\n'
-                    'Prepares the next song in the native decoder. '
-                    'Applies when you next open a Music queue song. '
-                    'Spoken audio, resume items and remote playback '
-                    'use normal advance.'),
-                isThreeLine: true,
-                value: handler.gaplessEnabled,
-                onChanged: handler.setGaplessEnabled)),
-        OverflowMenuItem(
-            icon: Icons.volume_up,
-            label: 'Loudness',
-            onSelected: () => showLoudnessSheet(context, handler.loudness)),
-        OverflowMenuItem(
-            icon: Icons.equalizer,
-            label: 'Equalizer',
-            onSelected: () => showEqualizerSheet(context, handler.equalizer)),
-        if (request.kind == PlaybackSourceKind.server)
+        if (music) ...[
           OverflowMenuItem(
-              icon: Icons.tune,
-              label: 'Quality',
-              onSelected: () =>
-                  showStreamQualitySheet(context, ref.read(apiClientProvider))),
+              key: const Key('audio_player_seek_back_15'),
+              icon: Icons.fast_rewind,
+              label: 'Skip back 15 seconds',
+              onSelected: () => _skip(-_kSkipDuration)),
+          OverflowMenuItem(
+              key: const Key('audio_player_seek_forward_15'),
+              icon: Icons.fast_forward,
+              label: 'Skip forward 15 seconds',
+              onSelected: () => _skip(_kSkipDuration)),
+        ],
+        OverflowMenuItem(
+            key: const Key('sound_playback_menu'),
+            icon: Icons.tune,
+            label: 'Sound & playback',
+            onSelected: () => _showSoundPlaybackSheet(handler)),
+        if (_lyricsActions.canFindOnline)
+          OverflowMenuItem(
+              key: const Key('lyrics_find_online'),
+              icon: Icons.search,
+              label: 'Find lyrics online',
+              subtitle: 'Send track tags',
+              onSelected: _lyricsActions.findOnline),
+        if (_lyricsActions.canRemoveProvider)
+          OverflowMenuItem(
+              key: const Key('lyrics_remove_provider'),
+              icon: Icons.link_off,
+              label: 'Remove provider lyrics',
+              onSelected: _lyricsActions.removeProvider),
       ],
     ];
+  }
+
+  /// Loudness, EQ, quality, visuals and gapless share one nested sheet so the
+  /// top-level overflow stays short.
+  void _showSoundPlaybackSheet(PlayerAudioHandler handler) {
+    final request = _activeRequest;
+    showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: SingleChildScrollView(
+          key: const Key('sound_playback_sheet'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(title: Text('Sound & playback')),
+              OverflowMenuItem(
+                  icon: Icons.volume_up,
+                  label: 'Loudness',
+                  onSelected: () =>
+                      showLoudnessSheet(context, handler.loudness)),
+              OverflowMenuItem(
+                  icon: Icons.equalizer,
+                  label: 'Equalizer',
+                  onSelected: () =>
+                      showEqualizerSheet(context, handler.equalizer)),
+              if (request?.kind == PlaybackSourceKind.server)
+                OverflowMenuItem(
+                    icon: Icons.high_quality_outlined,
+                    label: 'Quality',
+                    onSelected: () => showStreamQualitySheet(
+                        context, ref.read(apiClientProvider))),
+              AudioVisualsMenuItem(
+                  visuals: _visualsKey, playerContext: context),
+              StreamBuilder<void>(
+                  stream: handler.queueChanges,
+                  builder: (context, _) => SwitchListTile.adaptive(
+                      key: const Key('gapless_toggle'),
+                      secondary: const Icon(Icons.merge_type),
+                      title: const Text('Gapless'),
+                      subtitle: Text('${handler.gaplessStatus}\n'
+                          'Next Music queue song only.'),
+                      value: handler.gaplessEnabled,
+                      onChanged: handler.setGaplessEnabled)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showMusicInfo() {
@@ -1303,7 +1364,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     );
   }
 
-  /// The main playback UI: cover art, seek bar, and controls.
+  /// The main playback UI: cover art, seek bar, lyrics. Transport sits in the
+  /// scaffold footer for thumb reach.
   Widget _buildPlayerView() {
     final handler = ref.read(audioHandlerProvider);
     return LayoutBuilder(
@@ -1348,8 +1410,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                 _buildSeekBar(handler),
                 if (_activeRequest?.kind != PlaybackSourceKind.local)
                   _buildAudioFormat(),
-                const SizedBox(height: 16),
-                _buildControls(handler),
                 StreamBuilder<void>(
                     stream: handler.queueChanges,
                     builder: (context, _) {
@@ -1374,6 +1434,17 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Thumb-reachable footer: prev/play/next (music) or ±15s/play/±15s.
+  Widget _buildBottomTransport(PlayerAudioHandler handler) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+        child: _buildControls(handler),
       ),
     );
   }
@@ -1430,6 +1501,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       positionStream: handler.player.positionStream,
       position: () => handler.player.position,
       onSeek: _seek,
+      controller: _lyricsActions,
       saved: request is OfflinePlaybackRequest,
       lookup: request is ServerPlaybackRequest
           ? () => ref.read(apiClientProvider).changeMediaLyrics(request.mediaId)
@@ -1524,7 +1596,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     );
   }
 
-  /// Playback controls: skip-back, play/pause, skip-forward.
+  /// Playback controls. Music: prev/play/next (long-press ±15s). Podcast/media:
+  /// ±15s stays visible beside play.
   ///
   /// All tap handlers delegate to [handler] instead of calling the underlying
   /// [AudioPlayer] directly, so the media-session notification stays in sync
@@ -1538,26 +1611,20 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (music)
-              IconButton(
-                  onPressed: () => _skip(-_kSkipDuration),
-                  tooltip: 'Skip back 15 seconds',
-                  constraints:
-                      const BoxConstraints(minWidth: 48, minHeight: 48),
-                  icon: const Icon(Icons.fast_rewind, color: Colors.white)),
-            // Skip back 15 s
             IconButton(
               key: const Key('audio_player_skip_back'),
               icon: Icon(music ? Icons.skip_previous : Icons.fast_rewind,
                   color: Colors.white, size: 36),
               onPressed: () =>
                   music ? handler.skipToPrevious() : _skip(-_kSkipDuration),
+              onLongPress:
+                  music ? () => _skip(-_kSkipDuration) : null,
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              tooltip:
-                  music ? context.tr('Previous track') : 'Skip back 15 seconds',
+              tooltip: music
+                  ? '${context.tr('Previous track')} · hold −15s'
+                  : 'Skip back 15 seconds',
             ),
-            SizedBox(width: music ? 4 : 16),
-            // Play / Pause — delegate to handler so the notification updates.
+            const SizedBox(width: 16),
             IconButton(
               key: const Key('audio_player_play_pause'),
               icon: Icon(
@@ -1583,8 +1650,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               },
               tooltip: isPlaying ? context.tr('Pause') : context.tr('Play'),
             ),
-            SizedBox(width: music ? 4 : 16),
-            // Skip forward 15 s
+            const SizedBox(width: 16),
             IconButton(
               key: const Key('audio_player_skip_forward'),
               icon: Icon(
@@ -1594,17 +1660,12 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               ),
               onPressed: () =>
                   music ? handler.skipToNext() : _skip(_kSkipDuration),
+              onLongPress: music ? () => _skip(_kSkipDuration) : null,
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              tooltip:
-                  music ? context.tr('Next track') : 'Skip forward 15 seconds',
+              tooltip: music
+                  ? '${context.tr('Next track')} · hold +15s'
+                  : 'Skip forward 15 seconds',
             ),
-            if (music)
-              IconButton(
-                  onPressed: () => _skip(_kSkipDuration),
-                  tooltip: 'Skip forward 15 seconds',
-                  constraints:
-                      const BoxConstraints(minWidth: 48, minHeight: 48),
-                  icon: const Icon(Icons.fast_forward, color: Colors.white)),
           ],
         );
       },

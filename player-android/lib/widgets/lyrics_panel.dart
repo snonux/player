@@ -2,6 +2,50 @@ import 'package:flutter/material.dart';
 
 import '../models/lyrics.dart';
 
+/// Bridges provider lyrics actions to the player overflow menu so the panel
+/// itself stays a reader, not a second control strip.
+class LyricsPanelController extends ChangeNotifier {
+  bool _canFindOnline = false;
+  bool _canRemoveProvider = false;
+  Future<void> Function()? _findOnline;
+  Future<void> Function()? _removeProvider;
+
+  bool get canFindOnline => _canFindOnline;
+  bool get canRemoveProvider => _canRemoveProvider;
+
+  Future<void> findOnline() async {
+    final action = _findOnline;
+    if (action != null) await action();
+  }
+
+  Future<void> removeProvider() async {
+    final action = _removeProvider;
+    if (action != null) await action();
+  }
+
+  void bind({
+    required bool canFindOnline,
+    required bool canRemoveProvider,
+    Future<void> Function()? findOnline,
+    Future<void> Function()? removeProvider,
+  }) {
+    final changed = _canFindOnline != canFindOnline ||
+        _canRemoveProvider != canRemoveProvider;
+    _canFindOnline = canFindOnline;
+    _canRemoveProvider = canRemoveProvider;
+    _findOnline = findOnline;
+    _removeProvider = removeProvider;
+    if (changed) notifyListeners();
+  }
+
+  void clear() => bind(
+        canFindOnline: false,
+        canRemoveProvider: false,
+        findOnline: null,
+        removeProvider: null,
+      );
+}
+
 /// Optional lyrics loading stays independent of audio setup and playback.
 /// Recreate with a source key when the playback request changes.
 class LyricsPanel extends StatefulWidget {
@@ -14,6 +58,7 @@ class LyricsPanel extends StatefulWidget {
     this.lookup,
     this.removeProvider,
     this.saved = false,
+    this.controller,
   });
 
   final Future<Lyrics> Function() load;
@@ -23,6 +68,7 @@ class LyricsPanel extends StatefulWidget {
   final Stream<Duration> positionStream;
   final Duration Function() position;
   final Future<void> Function(Duration) onSeek;
+  final LyricsPanelController? controller;
 
   @override
   State<LyricsPanel> createState() => _LyricsPanelState();
@@ -34,6 +80,27 @@ class _LyricsPanelState extends State<LyricsPanel> {
   bool _failed = false;
   Lyrics? _lyrics;
   String _language = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _syncController();
+  }
+
+  @override
+  void didUpdateWidget(covariant LyricsPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?.clear();
+    }
+    _syncController();
+  }
+
+  @override
+  void dispose() {
+    widget.controller?.clear();
+    super.dispose();
+  }
 
   Future<void> _load([Future<Lyrics> Function()? action]) async {
     setState(() {
@@ -51,8 +118,42 @@ class _LyricsPanelState extends State<LyricsPanel> {
       if (!mounted) return;
       setState(() => _failed = true);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+        _syncController();
+      }
     }
+  }
+
+  Future<void> _runProvider(Future<Lyrics> Function()? action) async {
+    if (!_open) setState(() => _open = true);
+    await _load(action);
+  }
+
+  void _syncController() {
+    final controller = widget.controller;
+    if (controller == null) return;
+    final saved = widget.saved || _lyrics?.saved == true;
+    final lyrics = _lyrics;
+    // Offer Find before the first load so the hamburger stays discoverable;
+    // hide it once sidecar/embedded lyrics prove a provider lookup is wrong.
+    final canFind = !saved &&
+        widget.lookup != null &&
+        (lyrics == null ||
+            (lyrics.providerEnabled &&
+                !{'sidecar', 'embedded'}.contains(lyrics.source)));
+    final canRemove = !saved &&
+        widget.removeProvider != null &&
+        lyrics != null &&
+        lyrics.providerEnabled &&
+        lyrics.source == 'provider';
+    controller.bind(
+      canFindOnline: canFind,
+      canRemoveProvider: canRemove,
+      findOnline: canFind ? () => _runProvider(widget.lookup) : null,
+      removeProvider:
+          canRemove ? () => _runProvider(widget.removeProvider) : null,
+    );
   }
 
   @override
@@ -69,7 +170,11 @@ class _LyricsPanelState extends State<LyricsPanel> {
           ),
           onPressed: () {
             setState(() => _open = !_open);
-            if (_open && _lyrics == null && !_loading) _load();
+            if (_open && _lyrics == null && !_loading) {
+              _load().then((_) {
+                if (mounted) _syncController();
+              });
+            }
           },
           icon: Icon(_open ? Icons.expand_less : Icons.lyrics_outlined),
           label: Text(_open ? 'Hide lyrics' : 'Lyrics'),
@@ -94,21 +199,6 @@ class _LyricsPanelState extends State<LyricsPanel> {
               if (_lyrics?.providerState == 'empty')
                 const Text('No provider match.',
                     style: TextStyle(color: Colors.white70)),
-              if (!saved &&
-                  _lyrics?.providerEnabled == true &&
-                  widget.lookup != null &&
-                  !{'sidecar', 'embedded'}.contains(_lyrics?.source))
-                TextButton(
-                    onPressed: _loading ? null : () => _load(widget.lookup),
-                    child: const Text('Find lyrics online (send track tags)')),
-              if (!saved &&
-                  _lyrics?.providerEnabled == true &&
-                  _lyrics?.source == 'provider' &&
-                  widget.removeProvider != null)
-                TextButton(
-                    onPressed:
-                        _loading ? null : () => _load(widget.removeProvider),
-                    child: const Text('Remove provider lyrics')),
             ]),
           ),
         if (_open)

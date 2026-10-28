@@ -1275,12 +1275,13 @@ void main() {
       expect(find.byTooltip(tooltip), findsNothing, reason: tooltip);
     }
     for (final text in [
-      'Gapless music queue',
+      'Gapless',
       'Loudness',
       'Equalizer',
       'Quality',
       'Sleep timer',
       'Music visuals',
+      'Sound & playback',
     ]) {
       expect(find.text(text), findsNothing, reason: text);
     }
@@ -1296,11 +1297,17 @@ void main() {
       'playback_notes_item',
       'sleep_timer_menu_item',
       'audio_player_speed_selector',
-      'gapless_toggle',
+      'sound_playback_menu',
     ]) {
       await tester.ensureVisible(find.byKey(Key(key)));
       expect(find.byKey(Key(key)), findsOneWidget, reason: key);
     }
+    await tester.tap(find.byKey(const Key('sound_playback_menu')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('sound_playback_sheet')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('gapless_toggle')));
+    expect(find.byKey(const Key('gapless_toggle')), findsOneWidget);
+    expect(find.text('Gapless'), findsWidgets);
     for (final text in ['Loudness', 'Equalizer', 'Quality']) {
       await tester.ensureVisible(find.text(text));
       expect(find.text(text), findsOneWidget, reason: text);
@@ -1308,6 +1315,53 @@ void main() {
     expect(tester.takeException(), isNull);
     await handler.endProgress();
     await player.playingChanges.close();
+  });
+
+  testWidgets(
+      'music mode shows three transport buttons; ±15s lives in the menu',
+      (tester) async {
+    final (player, handler) = _usePlayableHandler(tester);
+    final client = _FakeApiClient();
+    final songs = [1, 2]
+        .map((id) => Media.fromJson({
+              'id': id,
+              'set_id': 1,
+              'type': 'audio',
+              'file_name': 'song$id.mp3',
+              'music': {'title': 'Song $id'}
+            }))
+        .toList();
+    await _pumpScreen(tester, client,
+        mediaId: '1',
+        mediaTitle: 'Song 1',
+        mediaUrl: client.streamUrl(1),
+        sequence: songs,
+        handlerOverride: handler,
+        serverBaseUrl: Uri.parse('http://localhost:8080'));
+    await _flushPlaybackStartup(tester);
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    expect(handler.musicState, isNotNull);
+    expect(find.byKey(const Key('audio_player_skip_back')), findsOneWidget);
+    expect(find.byKey(const Key('audio_player_play_pause')), findsOneWidget);
+    expect(find.byKey(const Key('audio_player_skip_forward')), findsOneWidget);
+    expect(find.byTooltip('Skip back 15 seconds'), findsNothing,
+        reason: '±15s is not a fifth primary button in music mode');
+    expect(find.byTooltip('Skip forward 15 seconds'), findsNothing);
+    player.elapsed = const Duration(seconds: 20);
+    await _openMenu(tester);
+    await tester.ensureVisible(find.byKey(const Key('audio_player_seek_back_15')));
+    await tester.tap(find.byKey(const Key('audio_player_seek_back_15')));
+    await tester.pump();
+    expect(player.elapsed, const Duration(seconds: 5));
+    await _openMenu(tester);
+    await tester.ensureVisible(
+        find.byKey(const Key('audio_player_seek_forward_15')));
+    await tester.tap(find.byKey(const Key('audio_player_seek_forward_15')));
+    await tester.pump();
+    expect(player.elapsed, const Duration(seconds: 20));
+    await tester.runAsync(handler.stop);
   });
 
   testWidgets('open bookmark sheet stays bound to its original audio session',
