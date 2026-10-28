@@ -433,7 +433,7 @@ void main() {
   });
 
   testWidgets(
-      'latest single-song confirmation replaces persistent batch snackbar and Undo targets only latest addition',
+      'queue confirmation replaces older notice, keeps layout, dismisses and retains Undo',
       (tester) async {
     final handler = PlayerAudioHandler(_IdlePlayer());
     final router = GoRouter(routes: [
@@ -467,11 +467,18 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Select Second by track'));
     await tester.pump();
     await reveal(tester, find.byTooltip('Selected song actions'));
+    final viewport = tester.getRect(find.byType(Scrollable).first);
     await tester.tap(find.byTooltip('Selected song actions'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Play next'));
     await tester.pumpAndSettle();
     expect(find.text('Added 2 songs'), findsOneWidget);
+    expect(tester.getRect(find.byType(Scrollable).first), viewport);
+    expect(handler.musicQueue.status, isEmpty);
+    final notice = tester.widget<SnackBar>(find.byType(SnackBar));
+    expect(notice.persist, isFalse);
+    expect(notice.behavior, SnackBarBehavior.floating);
+    expect(notice.backgroundColor, const Color(0xff323232));
     await tester.tap(find.text('Cancel selection'));
     await tester.pumpAndSettle();
     expect(find.text('Select songs'), findsNothing);
@@ -488,6 +495,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(handler.musicQueue.entries.map((e) => e.request.title),
         ['First by track', 'Second by track']);
+    // A new notice can be dismissed without undoing the insertion.
+    await tester.tap(find.byTooltip('Actions for First by track'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add to queue'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SnackBar), findsNothing);
+    expect(handler.musicQueue.entries, hasLength(3));
+    // Even with accessible navigation enabled, actionable notices expire.
+    await tester.tap(find.byTooltip('Actions for First by track'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add to queue'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(find.byType(SnackBar), findsNothing);
+    expect(handler.musicQueue.status, isEmpty);
+    expect(handler.musicQueue.canUndo, isTrue);
+    await handler.undoQueue();
+    expect(handler.musicQueue.entries, hasLength(3));
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(handler.stop);
     router.dispose();

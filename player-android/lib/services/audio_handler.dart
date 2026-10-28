@@ -909,8 +909,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       _queueUndoCanonical = previousCanonical;
     }
     if (action != QueueInsertion.now || _musicState?.error == null) {
-      _queueStatus =
-          'Added ${added.length} ${added.length == 1 ? 'song' : 'songs'}. Undo available.';
+      // Successful insertion has transient UI feedback; keep this persistent
+      // status for playback/recovery problems rather than a stale confirmation.
+      _queueStatus = '';
     }
     _notifyQueue();
     return true;

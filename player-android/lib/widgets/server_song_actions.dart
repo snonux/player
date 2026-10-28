@@ -118,10 +118,19 @@ Future<ServerSongInsertionResult> insertServerSongs(BuildContext context,
     _showQueueSnackBar(
         context,
         SnackBar(
+            // Action snackbars otherwise persist indefinitely. Undo also stays
+            // available in the Now Playing queue after this notice disappears.
+            persist: false,
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xff323232),
+            showCloseIcon: true,
+            closeIconColor: Colors.white,
             content: Text(
-                'Added ${songs.length} ${songs.length == 1 ? 'song' : 'songs'}'),
+                'Added ${songs.length} ${songs.length == 1 ? 'song' : 'songs'}',
+                style: const TextStyle(color: Colors.white)),
             action: SnackBarAction(
                 label: context.tr('Undo'),
+                textColor: Colors.white,
                 onPressed: () => handler.undoQueue(expected: token))));
     return accepted;
   } catch (_) {
@@ -138,7 +147,7 @@ Future<ServerSongInsertionResult> insertServerSongs(BuildContext context,
   }
 }
 
-// A persistent actionable snackbar must not hide newer queue confirmations.
+// New queue feedback replaces the previous notice instead of building a backlog.
 void _showQueueSnackBar(BuildContext context, SnackBar snackbar) {
   final messenger = ScaffoldMessenger.of(context);
   messenger.clearSnackBars();
