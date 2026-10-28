@@ -14,6 +14,7 @@ let installation;
 events.install({ waitUntil: promise => { installation = promise; } });
 await installation;
 const cached = new Set(installed);
+assert.equal(cached.size, installed.length, 'Cache.addAll rejects duplicate URLs: the install manifest must be unique');
 assert(cached.has('/js/app.js'), 'the app entry point must be precached');
 
 // Recursively follow production static imports, re-exports, side-effect imports
