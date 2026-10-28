@@ -56,7 +56,12 @@ test('M26 create add album rename comment cold client persistence account scope 
   await page.reload();await expect(page.getByRole('heading',{name:renamed,exact:true})).toBeVisible();
   await page.keyboard.press('Backspace');await expect(page.getByRole('heading',{name:'Playlists',exact:true})).toBeVisible();await selectByKeys(page,'Open playlist '+renamed,100);await page.keyboard.press('Enter');await expect(page.getByRole('heading',{name:renamed,exact:true})).toBeVisible();
   for(const [theme,width]of [['dark',1366],['light',1366],['dark',390],['light',390]]as const){
-   await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   await page.setViewportSize({width,height:844});
+   if(await page.locator('html').getAttribute('data-theme')!==theme){
+    await page.getByRole('button',{name:'More options',exact:true}).click();
+    await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   }
+   await expect(page.locator('html')).toHaveAttribute('data-theme',theme);
    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
    await expect.poll(()=>page.locator('#media-grid [data-playlist-more]').evaluate(el=>getComputedStyle(el).color!=='')).toBe(true);
    const shot=e.path(`m26-${theme}-${width}.png`);await page.screenshot({path:shot,fullPage:true,animations:'disabled'});artifacts.push(shot);

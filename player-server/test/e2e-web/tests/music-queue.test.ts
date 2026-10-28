@@ -40,10 +40,20 @@ test('M13 queue keyboard and buttons preserve entry/focus, source edits and Undo
   await album(page); await page.keyboard.press('Q');
   await expect(row(page,0)).toBeFocused(); await expect(row(page,0)).toHaveAttribute('aria-current','true');
   const activeEntry=await row(page,0).getAttribute('data-entry-id');
-  await page.keyboard.press('j'); await page.keyboard.press('J');
+  await page.keyboard.press('j');
+  const movedEntry=await row(page,1).getAttribute('data-entry-id');
+  await page.keyboard.press('J');
   expect(await titles(page)).toEqual(['First Light','Harbour','Long Road Home']);
   await expect(row(page,2)).toBeFocused();
+  await expect(row(page,2)).toHaveAttribute('data-entry-id',movedEntry!);
   await page.keyboard.press('K'); await expect(row(page,1)).toBeFocused();
+  expect(await titles(page)).toEqual(['First Light','Long Road Home','Harbour']);
+  await expect(row(page,1)).toHaveAttribute('data-entry-id',movedEntry!);
+  // Move the same entry down again for the remaining edited-order journey.
+  await page.keyboard.press('J');
+  expect(await titles(page)).toEqual(['First Light','Harbour','Long Road Home']);
+  await expect(row(page,2)).toBeFocused();
+  await expect(row(page,2)).toHaveAttribute('data-entry-id',movedEntry!);
   await row(page,1).getByRole('button',{name:/Actions for Harbour/}).focus();
   await page.keyboard.press('Space');
   await expect(page.getByRole('menu',{name:'Queue track actions'})).toBeVisible();
@@ -54,7 +64,9 @@ test('M13 queue keyboard and buttons preserve entry/focus, source edits and Undo
   await expect(row(page,2)).toBeFocused();
   await page.keyboard.press('Shift+F10');
   await expect(page.getByRole('menu',{name:'Queue track actions'})).toBeVisible();
-  await page.getByRole('menu',{name:'Queue track actions'}).getByRole('button',{name:'Move Long Road Home down',exact:true}).click();
+  await expect(page.getByRole('menu',{name:'Queue track actions'}).getByRole('button',{name:'Move Long Road Home down',exact:true})).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(row(page,2)).toBeFocused();
   expect(await titles(page)).toEqual(['First Light','Harbour','Long Road Home']);
   expect(await row(page,0).getAttribute('data-entry-id')).toBe(activeEntry);
   await row(page,2).getByRole('button',{name:/Actions for Long Road Home/}).focus();
@@ -74,9 +86,12 @@ test('M13 queue keyboard and buttons preserve entry/focus, source edits and Undo
   for(const [theme,width] of [['dark',1366],['light',1366],['dark',390],['light',390]] as const) {
    await page.setViewportSize({width,height:844});
    if(await page.locator('html').getAttribute('data-theme')!==theme) {
-    if(width<700) { await panel(page).getByRole('button',{name:'Close queue'}).click(); await page.getByRole('button',{name:'Toggle theme',exact:true}).click(); await page.keyboard.press('Q'); }
-    else await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+    if(width<700) await panel(page).getByRole('button',{name:'Close queue'}).click();
+    await page.getByRole('button',{name:'More options',exact:true}).click();
+    await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+    if(width<700) await page.keyboard.press('Q');
    }
+   await expect(page.locator('html')).toHaveAttribute('data-theme',theme);
    const shot=evidence.path(`m13-queue-${theme}-${width}.png`);await page.screenshot({path:shot,fullPage:true,animations:'disabled'});artifacts.push(shot);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
    expect(await row(page,0).getByRole('button',{name:/Actions for First Light/}).isVisible()).toBe(true);
