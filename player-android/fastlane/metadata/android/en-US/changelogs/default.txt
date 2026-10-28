@@ -1,4 +1,5 @@
-Android Auto / Automotive music browse, play and search.
-Locale/Tasker music start-playing automation.
-Gapless music playback, rich lyrics, automatic offline sync.
-Web radio, TurboNotes for audiobooks and podcasts, and audio format info.
+Decluttered web and Android screens behind a shared More menu.
+Tapping media plays it directly; details live behind a Details button.
+Card actions trimmed to Play, Favorite and More, with a minimal header and player chrome.
+Played videos are cached automatically and the cache trims itself by least-recent use.
+Fixed duplicated web radio routes breaking login.
