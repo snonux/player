@@ -13,6 +13,7 @@ import 'package:player_android/providers/audio_handler_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/screens/music_artists_screen.dart';
 import 'package:player_android/widgets/music_collection_actions.dart';
+import 'package:player_android/widgets/overflow_menu.dart';
 import 'package:player_android/services/music_collections.dart';
 import 'package:player_android/screens/music_playlists_screen.dart';
 import 'package:player_android/services/audio_handler.dart';
@@ -160,7 +161,9 @@ void main() {
                 home: MusicArtistsScreen(artistKey: 'artist'));
           })));
       await tester.pumpAndSettle();
-      await tester.tap(find.descendant(of: find.byType(MusicCollectionActions), matching: find.byTooltip('More options')));
+      await tester.tap(find.descendant(
+          of: find.byType(MusicCollectionActions),
+          matching: find.byTooltip('More options')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Shuffle options…'));
       await tester.pumpAndSettle();
@@ -260,7 +263,9 @@ void main() {
           child: const MaterialApp(
               home: MusicPlaylistsScreen(playlistId: 'playlist'))));
       await tester.pumpAndSettle();
-      final menu = find.descendant(of: find.byType(MusicCollectionActions), matching: find.byTooltip('More options'));
+      final menu = find.descendant(
+          of: find.byType(MusicCollectionActions),
+          matching: find.byTooltip('More options'));
       final node = tester.getSemantics(menu);
       var rect = node.rect;
       for (var ancestor = node;;) {
@@ -379,7 +384,8 @@ void main() {
     }
   });
 
-  testWidgets('compact card exposes only More with Play and Keep offline inside',
+  testWidgets(
+      'compact card exposes only More with Play and Keep offline inside',
       (tester) async {
     await tester.pumpWidget(ProviderScope(
         overrides: [
@@ -408,5 +414,35 @@ void main() {
     expect(find.text('Play next'), findsOneWidget);
     expect(find.text('Add to queue'), findsOneWidget);
     expect(find.text('Shuffle options…'), findsOneWidget);
+  });
+  testWidgets(
+      'empty compact playlist retains management without enabling playback',
+      (tester) async {
+    var unpinned = false;
+    await tester.pumpWidget(ProviderScope(
+        child: MaterialApp(
+            home: Scaffold(
+                body: MusicCollectionActions(
+                    compact: true,
+                    enabled: false,
+                    collections: const [MusicCollection('playlist', 'empty')],
+                    playLabel: 'Play playlist',
+                    moreExtras: (_) => [
+                          OverflowMenuItem(
+                              icon: Icons.push_pin_outlined,
+                              label: 'Unpin playlist',
+                              onSelected: () => unpinned = true),
+                        ])))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+    final play = tester.widget<OverflowMenuItem>(find.ancestor(
+        of: find.text('Play playlist'),
+        matching: find.byType(OverflowMenuItem)));
+    expect(play.onSelected, isNull);
+    await tester.ensureVisible(find.text('Unpin playlist'));
+    await tester.tap(find.text('Unpin playlist'));
+    await tester.pumpAndSettle();
+    expect(unpinned, isTrue);
   });
 }

@@ -109,6 +109,16 @@ void main() {
             home: const ServerPluginsScreen())));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 10));
+    if (find.byType(ExpansionTile).evaluate().isNotEmpty) {
+      final header = find
+          .descendant(
+              of: find.byType(ExpansionTile).first,
+              matching: find.byType(ListTile))
+          .first;
+      await tester.ensureVisible(header);
+      await tester.tap(header);
+      await tester.pumpAndSettle();
+    }
   }
 
   Future<void> press(WidgetTester tester, String label) async {

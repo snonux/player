@@ -322,8 +322,7 @@ class _ShareTile extends StatelessWidget {
     final uses = share.maxUses != null
         ? '${share.usedCount}/${share.maxUses} uses'
         : '${share.usedCount} uses';
-    final buttonStyle =
-        IconButton.styleFrom(minimumSize: const Size(48, 48));
+    final buttonStyle = IconButton.styleFrom(minimumSize: const Size(48, 48));
 
     return ListTile(
       key: Key('share_tile_${share.token}'),
@@ -337,40 +336,35 @@ class _ShareTile extends StatelessWidget {
           maxLines: 3,
           overflow: TextOverflow.ellipsis),
       onTap: () => onEdit(share),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
+      trailing: PopupMenuButton<String>(
+        key: Key('share_menu_${share.token}'),
+        tooltip: 'Share actions for $title',
+        style: buttonStyle,
+        icon: const Icon(Icons.menu),
+        onSelected: (value) {
+          if (value == 'copy') {
+            onCopyLink(share);
+          } else if (value == 'edit') {
+            onEdit(share);
+          } else if (value == 'revoke') {
+            onRevoke(share, index);
+          }
+        },
+        itemBuilder: (_) => [
+          PopupMenuItem(
             key: Key('share_copy_${share.token}'),
-            style: buttonStyle,
-            icon: const Icon(Icons.copy_outlined),
-            tooltip: 'Copy link',
-            onPressed: () => onCopyLink(share),
+            value: 'copy',
+            child: const Text('Copy link'),
           ),
-          PopupMenuButton<String>(
-            key: Key('share_menu_${share.token}'),
-            tooltip: 'Share actions for $title',
-            style: buttonStyle,
-            icon: const Icon(Icons.menu),
-            onSelected: (value) {
-              if (value == 'edit') {
-                onEdit(share);
-              } else if (value == 'revoke') {
-                onRevoke(share, index);
-              }
-            },
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                key: Key('share_edit_${share.token}'),
-                value: 'edit',
-                child: Text(context.tr('Edit share')),
-              ),
-              PopupMenuItem(
-                key: Key('share_revoke_${share.token}'),
-                value: 'revoke',
-                child: const Text('Revoke share'),
-              ),
-            ],
+          PopupMenuItem(
+            key: Key('share_edit_${share.token}'),
+            value: 'edit',
+            child: Text(context.tr('Edit share')),
+          ),
+          PopupMenuItem(
+            key: Key('share_revoke_${share.token}'),
+            value: 'revoke',
+            child: const Text('Revoke share'),
           ),
         ],
       ),

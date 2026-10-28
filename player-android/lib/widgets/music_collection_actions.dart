@@ -178,9 +178,8 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
         OverflowMenuItem(
             icon: Icons.play_arrow,
             label: widget.playLabel,
-            onSelected: enabled
-                ? () => _run(QueueInsertion.now, replace: true)
-                : null),
+            onSelected:
+                enabled ? () => _run(QueueInsertion.now, replace: true) : null),
         OverflowMenuItem(
             icon: Icons.shuffle,
             label: context.tr('Shuffle'),
@@ -219,7 +218,8 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
               ? () => showDialog<void>(
                   context: context,
                   builder: (_) => MusicShuffleOptionsDialog(
-                      run: (options, current, report) => _run(QueueInsertion.now,
+                      run: (options, current, report) => _run(
+                          QueueInsertion.now,
                           replace: true,
                           shuffled: true,
                           options: options,
@@ -243,9 +243,8 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
     if (widget.playOnly) {
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         FilledButton.icon(
-            onPressed: enabled
-                ? () => _run(QueueInsertion.now, replace: true)
-                : null,
+            onPressed:
+                enabled ? () => _run(QueueInsertion.now, replace: true) : null,
             icon: const Icon(Icons.play_arrow),
             label: Text(widget.playLabel)),
         _messageBanner(),
@@ -254,7 +253,7 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
     if (widget.compact) {
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         OverflowMenuButton(
-            enabled: enabled,
+            enabled: !_busy && (enabled || widget.moreExtras != null),
             items: (_) => _moreItems(enabled, includePlayShuffle: true)),
         _messageBanner(),
       ]);
@@ -273,8 +272,8 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
                 label: Text(widget.playLabel)),
             OutlinedButton.icon(
                 onPressed: enabled
-                    ? () => _run(QueueInsertion.now,
-                        replace: true, shuffled: true)
+                    ? () =>
+                        _run(QueueInsertion.now, replace: true, shuffled: true)
                     : null,
                 style:
                     OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
@@ -283,10 +282,8 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
             OverflowMenuButton(
                 // Host extras (edit/delete/add) must stay reachable on an
                 // empty collection while Play/Shuffle stay disabled.
-                enabled: !_busy &&
-                    (enabled || widget.moreExtras != null),
-                items: (_) =>
-                    _moreItems(enabled, includePlayShuffle: false)),
+                enabled: !_busy && (enabled || widget.moreExtras != null),
+                items: (_) => _moreItems(enabled, includePlayShuffle: false)),
           ]),
       _messageBanner(),
     ]);

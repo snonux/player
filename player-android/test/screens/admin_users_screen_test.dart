@@ -262,10 +262,9 @@ void main() {
       expect(find.text('carol'), findsOneWidget);
     });
 
-    testWidgets('hides delete button for the current user\'s own row',
+    testWidgets('hides action menu for the current user\'s own row',
         (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..usersResult = [_kAlice, _kBob];
+      final fakeClient = _FakeApiClient()..usersResult = [_kAlice, _kBob];
 
       // Current user is alice (id=1); her tile should not have a delete button.
       await _pumpAdminUsersScreen(tester, fakeClient, currentUser: _kAlice);
@@ -273,14 +272,14 @@ void main() {
 
       // Alice tile: no delete button.
       expect(
-        find.byKey(const Key('admin_user_delete_1')),
+        find.byKey(const Key('admin_user_menu_1')),
         findsNothing,
       );
       // Bob tile: delete button present.
-      expect(find.byKey(const Key('admin_user_delete_2')), findsOneWidget);
+      expect(find.byKey(const Key('admin_user_menu_2')), findsOneWidget);
     });
 
-    testWidgets('shows delete button for users other than the current user',
+    testWidgets('shows action menu for users other than the current user',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..usersResult = [_kAlice, _kBob, _kCarol];
@@ -289,8 +288,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Both non-self users have delete buttons.
-      expect(find.byKey(const Key('admin_user_delete_2')), findsOneWidget);
-      expect(find.byKey(const Key('admin_user_delete_3')), findsOneWidget);
+      expect(find.byKey(const Key('admin_user_menu_2')), findsOneWidget);
+      expect(find.byKey(const Key('admin_user_menu_3')), findsOneWidget);
     });
 
     testWidgets('shows "(you)" subtitle on the current user\'s own row',
@@ -490,7 +489,8 @@ void main() {
       expect(find.text('newuser'), findsOneWidget);
     });
 
-    testWidgets('reverts placeholder and shows error SnackBar on createUser failure',
+    testWidgets(
+        'reverts placeholder and shows error SnackBar on createUser failure',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..usersResult = [_kAlice]
@@ -525,7 +525,8 @@ void main() {
       expect(find.byKey(const Key('admin_user_tile_1')), findsOneWidget);
 
       // Error SnackBar visible.
-      expect(find.byKey(const Key('admin_users_error_snackbar')), findsOneWidget);
+      expect(
+          find.byKey(const Key('admin_users_error_snackbar')), findsOneWidget);
       expect(
         find.textContaining('already exists'),
         findsOneWidget,
@@ -540,13 +541,14 @@ void main() {
   group('delete user action', () {
     testWidgets('confirmation dialog cancel leaves the row intact',
         (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..usersResult = [_kAlice, _kBob];
+      final fakeClient = _FakeApiClient()..usersResult = [_kAlice, _kBob];
 
       await _pumpAdminUsersScreen(tester, fakeClient, currentUser: _kAlice);
       await tester.pumpAndSettle();
 
       // Tap delete for bob.
+      await tester.tap(find.byKey(const Key('admin_user_menu_2')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_user_delete_2')));
       await tester.pumpAndSettle();
 
@@ -561,13 +563,14 @@ void main() {
 
     testWidgets('confirmation dialog confirm removes the user row',
         (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..usersResult = [_kAlice, _kBob];
+      final fakeClient = _FakeApiClient()..usersResult = [_kAlice, _kBob];
 
       await _pumpAdminUsersScreen(tester, fakeClient, currentUser: _kAlice);
       await tester.pumpAndSettle();
 
       // Tap delete for bob.
+      await tester.tap(find.byKey(const Key('admin_user_menu_2')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_user_delete_2')));
       await tester.pumpAndSettle();
 
@@ -607,6 +610,8 @@ void main() {
       await _pumpAdminUsersScreen(tester, fakeClient, currentUser: _kAlice);
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const Key('admin_user_menu_2')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_user_delete_2')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_users_confirm_delete')));
@@ -707,7 +712,8 @@ void main() {
         requestOptions: RequestOptions(path: '/api/v1/admin/users'),
         type: DioExceptionType.connectionError,
       );
-      expect(adminUserErrorMessage(err), contains('Could not reach the server'));
+      expect(
+          adminUserErrorMessage(err), contains('Could not reach the server'));
     });
 
     test('returns server-message from body for 400 when body has message field',
@@ -773,7 +779,8 @@ void main() {
     });
 
     test('returns generic message for non-Dio error', () {
-      expect(adminUserErrorMessage(Exception('boom')), contains('Unexpected error'));
+      expect(adminUserErrorMessage(Exception('boom')),
+          contains('Unexpected error'));
     });
   });
 }

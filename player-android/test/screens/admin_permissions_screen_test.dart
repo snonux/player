@@ -148,7 +148,8 @@ class _DelayedFakeApiClient extends PlayerApiClient {
 // Sample data helpers
 // ---------------------------------------------------------------------------
 
-User _makeUser({required int id, required String username, bool isAdmin = false}) {
+User _makeUser(
+    {required int id, required String username, bool isAdmin = false}) {
   return User(id: id, username: username, isAdmin: isAdmin);
 }
 
@@ -302,6 +303,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('admin_perms_table')), findsOneWidget);
 
+      await tester.tap(find.byKey(const Key('admin_perms_menu')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_perms_exit_matrix')));
       await tester.pumpAndSettle();
 
@@ -331,7 +334,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('admin_perms_user_option_3')), findsOneWidget);
+      expect(
+          find.byKey(const Key('admin_perms_user_option_3')), findsOneWidget);
       expect(find.byKey(const Key('admin_perms_user_option_2')), findsNothing);
       expect(find.byKey(const Key('admin_perms_user_option_1')), findsNothing);
 
@@ -363,8 +367,7 @@ void main() {
       final fakeClient = _FakeApiClient()
         ..usersResult = [_kBob]
         ..setsResult = [_kSetA]
-        ..permsResult =
-            _permsWithGrant(userId: 2, setId: 10, role: 'owner');
+        ..permsResult = _permsWithGrant(userId: 2, setId: 10, role: 'owner');
 
       await _pumpPermsScreen(tester, fakeClient);
       await tester.pumpAndSettle();

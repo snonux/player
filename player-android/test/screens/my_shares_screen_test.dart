@@ -53,8 +53,7 @@ class _FakeTokenStorage implements TokenStorage {
 /// also overridden so copy-link tests can assert the produced URL without
 /// depending on the Dio base URL.  All other methods remain [UnimplementedError].
 class _FakeApiClient extends PlayerApiClient {
-  _FakeApiClient()
-      : super(dio: Dio(BaseOptions(baseUrl: 'http://test.local')));
+  _FakeApiClient() : super(dio: Dio(BaseOptions(baseUrl: 'http://test.local')));
 
   // ---- listMyShares ----
 
@@ -193,8 +192,7 @@ void main() {
   group('renders share list', () {
     testWidgets('shows a tile for each share returned by listMyShares',
         (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..sharesResult = [_kShareA, _kShareB];
+      final fakeClient = _FakeApiClient()..sharesResult = [_kShareA, _kShareB];
 
       await _pumpMySharesScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -295,6 +293,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap the copy-link button for _kShareA.
+      await tester.tap(find.byKey(const Key('share_menu_tok_aaa')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('share_copy_tok_aaa')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
@@ -327,13 +327,14 @@ void main() {
   // --------------------------------------------------------------------------
 
   group('row actions', () {
-    testWidgets('trailing row exposes Copy and hamburger only', (tester) async {
+    testWidgets('row exposes one hamburger with every share action',
+        (tester) async {
       final fakeClient = _FakeApiClient()..sharesResult = [_kShareA];
 
       await _pumpMySharesScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('share_copy_tok_aaa')), findsOneWidget);
+      expect(find.byKey(const Key('share_copy_tok_aaa')), findsNothing);
       expect(find.byKey(const Key('share_menu_tok_aaa')), findsOneWidget);
       // Edit/Revoke live in the menu, not as primary IconButtons.
       expect(find.byKey(const Key('share_edit_tok_aaa')), findsNothing);
@@ -352,8 +353,7 @@ void main() {
   group('revoke action', () {
     testWidgets('revoke removes the share from the list optimistically',
         (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..sharesResult = [_kShareA, _kShareB];
+      final fakeClient = _FakeApiClient()..sharesResult = [_kShareA, _kShareB];
 
       await _pumpMySharesScreen(tester, fakeClient);
       await tester.pumpAndSettle();
@@ -379,7 +379,8 @@ void main() {
       expect(fakeClient.revokedToken, equals('tok_aaa'));
     });
 
-    testWidgets('revoke reverts optimistic removal on API error', (tester) async {
+    testWidgets('revoke reverts optimistic removal on API error',
+        (tester) async {
       final fakeClient = _FakeApiClient()
         ..sharesResult = [_kShareA, _kShareB]
         ..revokeError = DioException(
@@ -454,7 +455,8 @@ void main() {
       );
     });
 
-    testWidgets('shows retry button on error and retry calls listMyShares again',
+    testWidgets(
+        'shows retry button on error and retry calls listMyShares again',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..sharesError = DioException(
@@ -532,7 +534,8 @@ void main() {
     });
 
     test('returns generic message for non-Dio error', () {
-      expect(sharesErrorMessage(Exception('boom')), contains('Unexpected error'));
+      expect(
+          sharesErrorMessage(Exception('boom')), contains('Unexpected error'));
     });
   });
 }

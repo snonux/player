@@ -124,13 +124,17 @@ void main() {
   });
 
   group('resolve actions', () {
-    testWidgets('renders conflict and keep separate removes it', (tester) async {
+    testWidgets('renders conflict and keep separate removes it',
+        (tester) async {
       final client = _FakeApiClient()..conflictsResult = [_kConflict];
       await _pump(tester, client);
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('admin_identity_tile_7')), findsOneWidget);
       expect(find.text('old/song.mp3'), findsOneWidget);
+      expect(find.byKey(const Key('admin_identity_keep_7')), findsNothing);
+      await tester.tap(find.byKey(const Key('admin_identity_tile_7')));
+      await tester.pumpAndSettle();
       expect(find.textContaining('Candidates: new/a.mp3, new/b.mp3'),
           findsOneWidget);
 
@@ -148,6 +152,8 @@ void main() {
       await _pump(tester, client);
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const Key('admin_identity_tile_7')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_identity_merge_7_200')));
       await tester.pumpAndSettle();
 
@@ -157,7 +163,8 @@ void main() {
       expect(find.byKey(const Key('admin_identity_tile_7')), findsNothing);
     });
 
-    testWidgets('resolve failure shows snackbar and keeps tile', (tester) async {
+    testWidgets('resolve failure shows snackbar and keeps tile',
+        (tester) async {
       final client = _FakeApiClient()
         ..conflictsResult = [_kConflict]
         ..resolveError = DioException(
@@ -171,6 +178,8 @@ void main() {
       await _pump(tester, client);
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const Key('admin_identity_tile_7')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_identity_keep_7')));
       await tester.pumpAndSettle();
 

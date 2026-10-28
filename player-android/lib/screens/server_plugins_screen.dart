@@ -201,43 +201,47 @@ class _PluginListState extends State<_PluginList> {
       if (!_forbidden)
         for (final plugin in _plugins)
           Card(
-              child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(plugin.name,
-                            style: Theme.of(context).textTheme.titleMedium),
-                        if (plugin.version.isNotEmpty)
-                          Text('Version ${plugin.version}'),
-                        if (plugin.description.isNotEmpty)
-                          Text(plugin.description),
-                        Text('Status: ${switch (plugin.status) {
-                          'active' => 'Active',
-                          'disabled' => plugin.enabled
-                              ? 'Enabled · ready for self-check'
-                              : 'Disabled',
-                          _ => 'Error',
-                        }}'),
-                        if (plugin.error.isNotEmpty) Text(plugin.error),
-                        Text(plugin.hasProbe
-                            ? 'Permissions: Self-check only. No library, file or network access.'
-                            : 'Permissions: No supported capability reported.'),
-                        const SizedBox(height: 8),
-                        Wrap(spacing: 8, runSpacing: 8, children: [
-                          OutlinedButton(
-                              onPressed: _busy ? null : () => _enable(plugin),
-                              child:
-                                  Text(plugin.enabled ? 'Disable' : 'Enable')),
-                          if (plugin.canCheck)
-                            FilledButton(
-                                onPressed: _busy
-                                    ? null
-                                    : () => _act(() async =>
-                                        '${plugin.name}: Self-check passed (result ${await widget.api.check(plugin.id, widget.epoch)}).'),
-                                child: const Text('Run self-check')),
-                        ])
-                      ]))),
+            key: ValueKey('plugin_card_${plugin.id}'),
+            child: ExpansionTile(
+              key: ValueKey('plugin_${plugin.id}'),
+              title: Text(plugin.name,
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: Text('Status: ${switch (plugin.status) {
+                'active' => 'Active',
+                'disabled' => plugin.enabled
+                    ? 'Enabled · ready for self-check'
+                    : 'Disabled',
+                _ => 'Error',
+              }}'),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SelectableText(plugin.name),
+                if (plugin.version.isNotEmpty)
+                  Text('Version ${plugin.version}'),
+                if (plugin.description.isNotEmpty) Text(plugin.description),
+                if (plugin.error.isNotEmpty) Text(plugin.error),
+                Text(plugin.hasProbe
+                    ? 'Permissions: Self-check only. No library, file or network access.'
+                    : 'Permissions: No supported capability reported.'),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  OutlinedButton(
+                    onPressed: _busy ? null : () => _enable(plugin),
+                    child: Text(plugin.enabled ? 'Disable' : 'Enable'),
+                  ),
+                  if (plugin.canCheck)
+                    FilledButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _act(() async =>
+                              '${plugin.name}: Self-check passed (result ${await widget.api.check(plugin.id, widget.epoch)}).'),
+                      child: const Text('Run self-check'),
+                    ),
+                ]),
+              ],
+            ),
+          ),
     ]);
   }
 }

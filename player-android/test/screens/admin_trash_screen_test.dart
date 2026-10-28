@@ -261,6 +261,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap restore on video_a (id=1).
+      await tester.tap(find.byKey(const Key('admin_trash_menu_1')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_trash_restore_1')));
       await tester.pumpAndSettle();
 
@@ -287,6 +289,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap restore on video_a (id=1); the API will fail.
+      await tester.tap(find.byKey(const Key('admin_trash_menu_1')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_trash_restore_1')));
       await tester.pumpAndSettle();
 
@@ -314,6 +318,8 @@ void main() {
       await _pumpTrashScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const Key('admin_trash_menu_1')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_trash_delete_1')));
       await tester.pumpAndSettle();
 
@@ -333,6 +339,8 @@ void main() {
       await _pumpTrashScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const Key('admin_trash_menu_1')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_trash_delete_1')));
       await tester.pumpAndSettle();
 
@@ -357,6 +365,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Hard-delete video_a (id=1).
+      await tester.tap(find.byKey(const Key('admin_trash_menu_1')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_trash_delete_1')));
       await tester.pumpAndSettle();
 
@@ -395,6 +405,8 @@ void main() {
       await _pumpTrashScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const Key('admin_trash_menu_1')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('admin_trash_delete_1')));
       await tester.pumpAndSettle();
 

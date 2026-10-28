@@ -305,22 +305,29 @@ class _TrashTile extends StatelessWidget {
         maxLines: 2,
         style: Theme.of(context).textTheme.bodySmall,
       ),
-      // Restore and hard-delete actions side by side in the trailing slot.
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
+      trailing: PopupMenuButton<String>(
+        key: Key('admin_trash_menu_${item.id}'),
+        tooltip: 'Actions for ${item.fileName}',
+        style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+        icon: const Icon(Icons.menu),
+        onSelected: (action) {
+          if (action == 'restore') {
+            onRestore(item);
+          } else {
+            onHardDelete(item);
+          }
+        },
+        itemBuilder: (_) => [
+          PopupMenuItem(
             key: Key('admin_trash_restore_${item.id}'),
-            icon: const Icon(Icons.restore_outlined),
-            tooltip: 'Restore',
-            onPressed: () => onRestore(item),
+            value: 'restore',
+            child: const Text('Restore'),
           ),
-          IconButton(
+          PopupMenuItem(
             key: Key('admin_trash_delete_${item.id}'),
-            icon: const Icon(Icons.delete_forever_outlined),
-            tooltip: 'Delete permanently',
-            color: Theme.of(context).colorScheme.error,
-            onPressed: () => onHardDelete(item),
+            value: 'delete',
+            child: Text('Delete permanently',
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ),
         ],
       ),

@@ -316,6 +316,9 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
           ),
         PopupMenuButton<_MenuAction>(
           key: const Key('notes_overflow_menu'),
+          tooltip: 'More options',
+          icon: const Icon(Icons.menu),
+          style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
           // Disable the menu entirely while saving to prevent concurrent calls.
           enabled: !_isSaving && !_isClearing && !_isLeaving && _loaded,
           onSelected: (action) {

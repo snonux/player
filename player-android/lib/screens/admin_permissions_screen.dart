@@ -213,30 +213,26 @@ class _AdminPermissionsScreenState
       appBar: AppBar(
         title: Text(_showMatrix ? 'Permissions matrix' : 'Permissions'),
         actions: [
-          if (_showMatrix)
-            IconButton(
-              key: const Key('admin_perms_exit_matrix'),
-              icon: const Icon(Icons.person_search),
-              tooltip: 'User editor',
-              onPressed: () => setState(() => _showMatrix = false),
-            ),
-          IconButton(
-            key: const Key('admin_perms_refresh'),
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: _load,
-          ),
           PopupMenuButton<String>(
             key: const Key('admin_perms_menu'),
-            tooltip: 'More',
+            tooltip: 'More options',
+            icon: const Icon(Icons.menu),
+            style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
             onSelected: (value) {
-              if (value == 'matrix') {
+              if (value == 'refresh') {
+                _load();
+              } else if (value == 'matrix') {
                 setState(() => _showMatrix = true);
               } else if (value == 'editor') {
                 setState(() => _showMatrix = false);
               }
             },
             itemBuilder: (_) => [
+              const PopupMenuItem(
+                key: Key('admin_perms_refresh'),
+                value: 'refresh',
+                child: Text('Refresh'),
+              ),
               if (!_showMatrix)
                 const PopupMenuItem(
                   value: 'matrix',
@@ -244,6 +240,7 @@ class _AdminPermissionsScreenState
                 ),
               if (_showMatrix)
                 const PopupMenuItem(
+                  key: Key('admin_perms_exit_matrix'),
                   value: 'editor',
                   child: Text('User editor'),
                 ),
@@ -657,9 +654,7 @@ class _PermissionMatrixState extends State<_PermissionMatrix> {
                     children: [
                       for (final user in widget.users)
                         ColoredBox(
-                          color: user.isAdmin
-                              ? headerBg
-                              : Colors.transparent,
+                          color: user.isAdmin ? headerBg : Colors.transparent,
                           child: SizedBox(
                             height: _rowHeight,
                             child: Padding(
@@ -685,9 +680,8 @@ class _PermissionMatrixState extends State<_PermissionMatrix> {
                         children: [
                           for (final user in widget.users)
                             ColoredBox(
-                              color: user.isAdmin
-                                  ? headerBg
-                                  : Colors.transparent,
+                              color:
+                                  user.isAdmin ? headerBg : Colors.transparent,
                               child: SizedBox(
                                 height: _rowHeight,
                                 child: Row(

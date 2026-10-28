@@ -353,12 +353,21 @@ class _UserTile extends StatelessWidget {
           // Delete button is hidden for the current user's own row.
           if (!isSelf) ...[
             const SizedBox(width: 8),
-            IconButton(
-              key: Key('admin_user_delete_${user.id}'),
-              icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete user',
-              color: Theme.of(context).colorScheme.error,
-              onPressed: () => onDelete(user, index),
+            PopupMenuButton<String>(
+              key: Key('admin_user_menu_${user.id}'),
+              tooltip: 'Actions for ${user.username}',
+              icon: const Icon(Icons.menu),
+              style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+              onSelected: (_) => onDelete(user, index),
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  key: Key('admin_user_delete_${user.id}'),
+                  value: 'delete',
+                  child: Text('Delete user',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error)),
+                ),
+              ],
             ),
           ],
         ],

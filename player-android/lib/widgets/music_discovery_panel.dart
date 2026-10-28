@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import '../services/music_discovery.dart';
 import '../services/music_collections.dart';
 import 'music_collection_actions.dart';
+import 'overflow_menu.dart';
 
 /// Compact discovery sections share the catalog's queue actions and identities.
 class MusicDiscoveryPanel extends ConsumerStatefulWidget {
@@ -279,11 +280,15 @@ class _MusicDiscoveryPanelState extends ConsumerState<MusicDiscoveryPanel> {
                     ],
                     playLabel: 'Play playlist',
                     sourceLabel: playlist['name'] as String,
-                    enabled: (playlist['song_count'] as num? ?? 0) > 0),
-                TextButton(
-                    onPressed: () => _update(
-                        () => home.pins.remove(playlist['playlist_id'])),
-                    child: Text('Unpin ${playlist['name']}')),
+                    enabled: (playlist['song_count'] as num? ?? 0) > 0,
+                    moreExtras: (_) => [
+                          OverflowMenuItem(
+                            icon: Icons.push_pin_outlined,
+                            label: 'Unpin ${playlist['name']}',
+                            onSelected: () => _update(() =>
+                                home.pins.remove(playlist['playlist_id'])),
+                          ),
+                        ]),
               ],
               if (lists != null && accessible.length < home.pins.length)
                 TextButton(

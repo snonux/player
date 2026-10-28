@@ -145,65 +145,64 @@ class _AdminMusicIdentityScreenState
                 final candidates = conflict.candidatePaths.isNotEmpty
                     ? conflict.candidatePaths.join(', ')
                     : 'unknown path';
-                return Padding(
+                return ExpansionTile(
                   key: Key('admin_identity_tile_${conflict.id}'),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(title, style: Theme.of(context).textTheme.titleSmall),
+                  title:
+                      Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                      '${conflict.candidateMediaIds.length} candidates · Review conflict'),
+                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SelectableText(title),
+                    Text(
+                      'Candidates: $candidates',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    if (conflict.reason.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        'Candidates: $candidates',
+                        conflict.reason,
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
-                      if (conflict.reason.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          conflict.reason,
-                          style: Theme.of(context).textTheme.bodySmall,
+                    ],
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton(
+                          key: Key('admin_identity_keep_${conflict.id}'),
+                          onPressed: busy
+                              ? null
+                              : () => _resolve(
+                                    conflict: conflict,
+                                    action: 'keep_separate',
+                                  ),
+                          child: const Text('Keep separate'),
                         ),
-                      ],
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          OutlinedButton(
+                        for (var i = 0;
+                            i < conflict.candidateMediaIds.length;
+                            i++)
+                          FilledButton(
                             key: Key(
-                                'admin_identity_keep_${conflict.id}'),
+                                'admin_identity_merge_${conflict.id}_${conflict.candidateMediaIds[i]}'),
                             onPressed: busy
                                 ? null
                                 : () => _resolve(
                                       conflict: conflict,
-                                      action: 'keep_separate',
+                                      action: 'merge',
+                                      candidateMediaId:
+                                          conflict.candidateMediaIds[i],
                                     ),
-                            child: const Text('Keep separate'),
-                          ),
-                          for (var i = 0;
-                              i < conflict.candidateMediaIds.length;
-                              i++)
-                            FilledButton(
-                              key: Key(
-                                  'admin_identity_merge_${conflict.id}_${conflict.candidateMediaIds[i]}'),
-                              onPressed: busy
-                                  ? null
-                                  : () => _resolve(
-                                        conflict: conflict,
-                                        action: 'merge',
-                                        candidateMediaId:
-                                            conflict.candidateMediaIds[i],
-                                      ),
-                              child: Text(
-                                'Merge → ${i < conflict.candidatePaths.length ? conflict.candidatePaths[i] : conflict.candidateMediaIds[i]}',
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                            child: Text(
+                              'Merge → ${i < conflict.candidatePaths.length ? conflict.candidatePaths[i] : conflict.candidateMediaIds[i]}',
+                              overflow: TextOverflow.ellipsis,
                             ),
-                        ],
-                      ),
-                    ],
-                  ),
+                          ),
+                      ],
+                    ),
+                  ],
                 );
               },
             ),
