@@ -1032,7 +1032,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                 ? 'Shared Video'
                 : 'Video – ${widget.mediaId}')),
       ),
-      body: casting ? CastPlaybackView(onStop: stopCasting) : _buildBody(),
+      body: casting ? const CastPlaybackView() : _buildBody(),
     );
   }
 
@@ -1046,6 +1046,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         !widget.isPublicShare;
     final store = personal ? _personalBinding.storeFor(ref, request) : null;
     return [
+      if (casting)
+        OverflowMenuItem(
+            key: const Key('cast_stop'),
+            icon: Icons.stop,
+            label: 'Return to this device',
+            onSelected: stopCasting),
       if (request is ServerPlaybackRequest && !widget.isPublicShare && !casting)
         OverflowMenuItem(
             key: const Key('playback_details_button'),

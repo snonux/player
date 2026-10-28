@@ -1097,7 +1097,10 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         backgroundColor: Colors.black,
         appBar: AppBar(
           actions: [
-            if (!widget.isPublicShare && !casting) const MusicQueueButton(),
+            if (!widget.isPublicShare &&
+                (!casting ||
+                    ref.watch(castControllerProvider).rendererQueue.isNotEmpty))
+              const MusicQueueButton(),
             buildCastButton(ready: !_isLoading && _error == null),
             OverflowMenuButton(items: (_) => _menuItems(casting)),
           ],
@@ -1111,9 +1114,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         ),
         body: Column(children: [
           Expanded(
-              child: casting
-                  ? CastPlaybackView(onStop: stopCasting)
-                  : _buildBody()),
+              child: casting ? const CastPlaybackView() : _buildBody()),
           // Bottom strip: reachable with the thumb; hidden while idle.
           SleepTimerControl(timer: ref.read(audioHandlerProvider).sleepTimer),
           if (!casting && !_isLoading && _error == null && _activeRequest != null)
@@ -1132,6 +1133,12 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     final store = personal ? _personalBinding.storeFor(ref, request) : null;
     final music = handler.musicState != null;
     return [
+      if (casting)
+        OverflowMenuItem(
+            key: const Key('cast_stop'),
+            icon: Icons.stop,
+            label: 'Return to this device',
+            onSelected: stopCasting),
       if (request is ServerPlaybackRequest && !widget.isPublicShare && !casting)
         OverflowMenuItem(
             key: const Key('playback_details_button'),

@@ -745,11 +745,15 @@ void main() {
     await tester.pump();
     expect(find.text('On Kitchen'), findsOneWidget);
     await tester.tap(find.byKey(const Key('renderer_mini_open')));
-    for (var i = 0; i < 5; i++) {
-      await tester.pump();
-    }
+    await tester.pumpAndSettle();
     expect(find.text('Playing on Kitchen'), findsOneWidget);
-    expect(find.text('Queue · 3 of 3'), findsOneWidget);
+    expect(find.byKey(const Key('music_queue_button')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('music_queue_button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('renderer_queue_title')), findsOneWidget);
+    expect(find.textContaining('3 of 3'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close queue'));
+    await tester.pumpAndSettle();
     expect(player.sourceRequests, 0);
     expect(coordinator.generation, generation);
     expect(controller.currentOccurrenceID, 'a' * 32);
@@ -2871,6 +2875,9 @@ void main() {
 
       receiver!.pushMediaStatus('PLAYING', time: 40);
       await tester.pump();
+      // Disconnect from the hamburger; CastButton remains the visible affordance.
+      await tester.tap(find.byKey(const Key('overflow_menu_button')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('cast_stop')));
       await settle();
 

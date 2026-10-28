@@ -168,12 +168,10 @@ class _PickerNote extends StatelessWidget {
 }
 
 /// Remote controls shown in place of the local player while the current
-/// item plays on a cast device.
+/// item plays on a cast device. Disconnect stays on the app-bar [CastButton]
+/// (and the screen hamburger); the renderer queue uses [MusicQueueButton].
 class CastPlaybackView extends ConsumerStatefulWidget {
-  const CastPlaybackView({super.key, required this.onStop});
-
-  /// Ends casting; the screen continues on the phone.
-  final VoidCallback onStop;
+  const CastPlaybackView({super.key});
 
   @override
   ConsumerState<CastPlaybackView> createState() => _CastPlaybackViewState();
@@ -214,6 +212,8 @@ class _CastPlaybackViewState extends ConsumerState<CastPlaybackView> {
             .toDouble()
             .clamp(0.0, totalMs > 0 ? totalMs : 1.0);
     final playing = status.playerState == CastPlayerState.playing;
+    final trackSkip = cast.device.isRenderer &&
+        (controller.hasPrevious || controller.hasNext);
     const labelStyle = TextStyle(color: Colors.white70, fontSize: 12);
 
     void skip(Duration delta) {
@@ -238,40 +238,6 @@ class _CastPlaybackViewState extends ConsumerState<CastPlaybackView> {
               style: const TextStyle(color: Colors.white, fontSize: 18),
               textAlign: TextAlign.center,
             ),
-            if (cast.device.isRenderer && controller.rendererQueue.isNotEmpty)
-              TextButton.icon(
-                icon: const Icon(Icons.queue_music, color: Colors.white),
-                label: Text(
-                    'Queue · ${controller.rendererIndex + 1} of ${controller.rendererQueue.length}',
-                    style: const TextStyle(color: Colors.white)),
-                onPressed: () => showModalBottomSheet<void>(
-                  context: context,
-                  showDragHandle: true,
-                  builder: (sheetContext) => SafeArea(
-                      child: SizedBox(
-                    height: MediaQuery.sizeOf(sheetContext).height * .6,
-                    child: ListView.builder(
-                      itemCount: controller.rendererQueue.length,
-                      itemBuilder: (context, index) {
-                        final request = controller.rendererQueue[index];
-                        return ListTile(
-                          selected: index == controller.rendererIndex,
-                          title: Text(request.title),
-                          subtitle: Text(request.subtitle),
-                          leading: Icon(index == controller.rendererIndex
-                              ? Icons.speaker
-                              : Icons.music_note),
-                          onTap: () {
-                            Navigator.of(sheetContext).pop();
-                            unawaited(controller.moveRendererQueue(
-                                index - controller.rendererIndex));
-                          },
-                        );
-                      },
-                    ),
-                  )),
-                ),
-              ),
             if (status.playerState == CastPlayerState.buffering) ...[
               const SizedBox(height: 12),
               const SizedBox(
@@ -307,32 +273,34 @@ class _CastPlaybackViewState extends ConsumerState<CastPlaybackView> {
                 ],
               ),
             ),
-            if (cast.device.isRenderer &&
-                (controller.hasPrevious || controller.hasNext))
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                IconButton(
-                    tooltip: 'Previous track',
-                    icon: const Icon(Icons.skip_previous, color: Colors.white),
-                    onPressed: controller.hasPrevious
-                        ? () => unawaited(controller.moveRendererQueue(-1))
-                        : null),
-                IconButton(
-                    tooltip: 'Next track',
-                    icon: const Icon(Icons.skip_next, color: Colors.white),
-                    onPressed: controller.hasNext
-                        ? () => unawaited(controller.moveRendererQueue(1))
-                        : null),
-              ]),
             const SizedBox(height: 8),
+            // One transport row: renderer tracks use prev/play/next (±15 via
+            // long-press); Chromecast keeps visible ±15 beside play.
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
                   key: const Key('cast_skip_back'),
-                  icon: const Icon(Icons.fast_rewind,
-                      color: Colors.white, size: 36),
-                  tooltip: 'Skip back 15 seconds',
-                  onPressed: () => skip(-_kCastSkip),
+                  icon: Icon(
+                    trackSkip ? Icons.skip_previous : Icons.fast_rewind,
+                    color: Colors.white,
+                    size: 36,
+                  ),
+                  constraints:
+                      const BoxConstraints(minWidth: 48, minHeight: 48),
+                  tooltip: trackSkip
+                      ? 'Previous track · hold −15s'
+                      : 'Skip back 15 seconds',
+                  // Keep onPressed non-null at queue ends so Flutter still
+                  // delivers onLongPress (±15s), matching local music.
+                  onPressed: trackSkip
+                      ? () {
+                          if (controller.hasPrevious) {
+                            unawaited(controller.moveRendererQueue(-1));
+                          }
+                        }
+                      : () => skip(-_kCastSkip),
+                  onLongPress: trackSkip ? () => skip(-_kCastSkip) : null,
                 ),
                 const SizedBox(width: 16),
                 IconButton(
@@ -351,10 +319,24 @@ class _CastPlaybackViewState extends ConsumerState<CastPlaybackView> {
                 const SizedBox(width: 16),
                 IconButton(
                   key: const Key('cast_skip_forward'),
-                  icon: const Icon(Icons.fast_forward,
-                      color: Colors.white, size: 36),
-                  tooltip: 'Skip forward 15 seconds',
-                  onPressed: () => skip(_kCastSkip),
+                  icon: Icon(
+                    trackSkip ? Icons.skip_next : Icons.fast_forward,
+                    color: Colors.white,
+                    size: 36,
+                  ),
+                  constraints:
+                      const BoxConstraints(minWidth: 48, minHeight: 48),
+                  tooltip: trackSkip
+                      ? 'Next track · hold +15s'
+                      : 'Skip forward 15 seconds',
+                  onPressed: trackSkip
+                      ? () {
+                          if (controller.hasNext) {
+                            unawaited(controller.moveRendererQueue(1));
+                          }
+                        }
+                      : () => skip(_kCastSkip),
+                  onLongPress: trackSkip ? () => skip(_kCastSkip) : null,
                 ),
               ],
             ),
@@ -374,13 +356,6 @@ class _CastPlaybackViewState extends ConsumerState<CastPlaybackView> {
                   const Icon(Icons.volume_up, color: Colors.white70),
                 ],
               ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              key: const Key('cast_stop'),
-              onPressed: widget.onStop,
-              icon: const Icon(Icons.stop),
-              label: const Text('Return to this device'),
-            ),
           ],
         ),
       ),

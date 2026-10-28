@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import '../l10n/music_localizations.dart';
 import 'queue_playlist_dialog.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/audio_handler_provider.dart';
+import '../providers/cast_provider.dart';
 import '../services/audio_handler.dart';
+import '../services/cast/cast_controller.dart';
 import '../services/music_queue.dart';
 import '../services/playback_request.dart';
 import 'package:go_router/go_router.dart';
@@ -14,19 +18,105 @@ import 'overflow_menu.dart';
 import 'saved_queue_controls.dart';
 
 /// Shared entry point on the player and library screens; no new player route.
+///
+/// While a DLNA renderer holds a cast queue, opens that same sheet idiom
+/// backed by [CastController.rendererQueue] instead of a separate cast UI.
 class MusicQueueButton extends ConsumerWidget {
   const MusicQueueButton({super.key, this.offlineOnly = false});
   final bool offlineOnly;
   @override
   Widget build(BuildContext context, WidgetRef ref) => IconButton(
+      key: const Key('music_queue_button'),
       tooltip: context.tr('Now Playing queue'),
       icon: const Icon(Icons.queue_music),
-      onPressed: () => showModalBottomSheet<void>(
-          context: context,
-          isScrollControlled: true,
-          useSafeArea: true,
-          builder: (_) => _MusicQueueSheet(ref.read(audioHandlerProvider),
-              offlineOnly: offlineOnly)));
+      onPressed: () {
+        final cast = ref.read(castControllerProvider);
+        if (cast.active?.device.isRenderer == true &&
+            cast.rendererQueue.isNotEmpty) {
+          showRendererQueueSheet(context, cast);
+          return;
+        }
+        showModalBottomSheet<void>(
+            context: context,
+            isScrollControlled: true,
+            useSafeArea: true,
+            builder: (_) => _MusicQueueSheet(ref.read(audioHandlerProvider),
+                offlineOnly: offlineOnly));
+      });
+}
+
+/// Same Now Playing sheet chrome as the local queue, for a renderer cast.
+void showRendererQueueSheet(BuildContext context, CastController controller) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => _RendererQueueSheet(controller),
+  );
+}
+
+class _RendererQueueSheet extends StatelessWidget {
+  const _RendererQueueSheet(this.controller);
+
+  final CastController controller;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+      height: MediaQuery.sizeOf(context).height * .92,
+      child: ListenableBuilder(
+          listenable: controller,
+          builder: (context, _) {
+            final queue = controller.rendererQueue;
+            final index = controller.rendererIndex;
+            return CustomScrollView(slivers: [
+              SliverToBoxAdapter(
+                  child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(children: [
+                        Expanded(
+                            child: Text(
+                                queue.isEmpty
+                                    ? context.tr('Now Playing')
+                                    : '${context.tr('Now Playing')} · ${index + 1} of ${queue.length}',
+                                key: const Key('renderer_queue_title'),
+                                style:
+                                    Theme.of(context).textTheme.titleLarge)),
+                        IconButton(
+                            tooltip: context.tr('Close queue'),
+                            color: Theme.of(context).colorScheme.onSurface,
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close))
+                      ]))),
+              if (queue.isEmpty)
+                SliverToBoxAdapter(
+                    child: Center(
+                        child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(context.tr(
+                                'Queue is empty. Add songs or play an album to start.')))))
+              else
+                SliverList.builder(
+                    itemCount: queue.length,
+                    itemBuilder: (context, i) {
+                      final request = queue[i];
+                      return ListTile(
+                          key: Key('renderer_queue_item_$i'),
+                          selected: i == index,
+                          leading: Text('${i + 1}'),
+                          title: Text(request.title,
+                              maxLines: 3, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(
+                              i == index ? 'Now' : request.subtitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis),
+                          onTap: () {
+                            Navigator.pop(context);
+                            unawaited(
+                                controller.moveRendererQueue(i - index));
+                          });
+                    }),
+            ]);
+          }));
 }
 
 class _MusicQueueSheet extends ConsumerWidget {
