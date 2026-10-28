@@ -326,6 +326,29 @@ void main() {
   // Revoke action
   // --------------------------------------------------------------------------
 
+  group('row actions', () {
+    testWidgets('trailing row exposes Copy and hamburger only', (tester) async {
+      final fakeClient = _FakeApiClient()..sharesResult = [_kShareA];
+
+      await _pumpMySharesScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('share_copy_tok_aaa')), findsOneWidget);
+      expect(find.byKey(const Key('share_menu_tok_aaa')), findsOneWidget);
+      // Edit/Revoke live in the menu, not as primary IconButtons.
+      expect(find.byKey(const Key('share_edit_tok_aaa')), findsNothing);
+      expect(find.byKey(const Key('share_revoke_tok_aaa')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('share_menu_tok_aaa')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('share_edit_tok_aaa')), findsOneWidget);
+      expect(find.byKey(const Key('share_revoke_tok_aaa')), findsOneWidget);
+      expect(find.text('Edit share'), findsOneWidget);
+      expect(find.text('Revoke share'), findsOneWidget);
+    });
+  });
+
   group('revoke action', () {
     testWidgets('revoke removes the share from the list optimistically',
         (tester) async {
@@ -339,7 +362,9 @@ void main() {
       expect(find.byKey(const Key('share_tile_tok_aaa')), findsOneWidget);
       expect(find.byKey(const Key('share_tile_tok_bbb')), findsOneWidget);
 
-      // Tap revoke for _kShareA.
+      // Open row menu, then revoke _kShareA.
+      await tester.tap(find.byKey(const Key('share_menu_tok_aaa')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('share_revoke_tok_aaa')));
       await tester.pumpAndSettle();
 
@@ -365,7 +390,9 @@ void main() {
       await _pumpMySharesScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      // Tap revoke for _kShareA.
+      // Open row menu, then revoke _kShareA.
+      await tester.tap(find.byKey(const Key('share_menu_tok_aaa')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('share_revoke_tok_aaa')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));

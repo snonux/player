@@ -294,11 +294,12 @@ class _ShareList extends StatelessWidget {
   }
 }
 
-/// A single share row with copy-link and revoke actions.
+/// A single share row with copy-link and a secondary-actions hamburger.
 ///
 /// Shows the filename (falling back to media-ID when absent), the expiry date
 /// (or "No expiry" for non-expiring shares), and the used/max-uses count.
-/// A trailing icon row provides copy-link and revoke buttons.
+/// Row tap and the menu's Edit item both open the editor; Revoke stays in the
+/// menu so each row keeps at most two primary trailing controls (Copy + menu).
 class _ShareTile extends StatelessWidget {
   const _ShareTile({
     required this.share,
@@ -321,6 +322,8 @@ class _ShareTile extends StatelessWidget {
     final uses = share.maxUses != null
         ? '${share.usedCount}/${share.maxUses} uses'
         : '${share.usedCount} uses';
+    final buttonStyle =
+        IconButton.styleFrom(minimumSize: const Size(48, 48));
 
     return ListTile(
       key: Key('share_tile_${share.token}'),
@@ -338,24 +341,36 @@ class _ShareTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            key: Key('share_edit_${share.token}'),
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: context.tr('Edit share'),
-            onPressed: () => onEdit(share),
-          ),
-          // Copy-link: writes the share URL to the clipboard.
-          IconButton(
             key: Key('share_copy_${share.token}'),
+            style: buttonStyle,
             icon: const Icon(Icons.copy_outlined),
             tooltip: 'Copy link',
             onPressed: () => onCopyLink(share),
           ),
-          // Revoke: removes the share optimistically.
-          IconButton(
-            key: Key('share_revoke_${share.token}'),
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'Revoke share',
-            onPressed: () => onRevoke(share, index),
+          PopupMenuButton<String>(
+            key: Key('share_menu_${share.token}'),
+            tooltip: 'Share actions for $title',
+            style: buttonStyle,
+            icon: const Icon(Icons.menu),
+            onSelected: (value) {
+              if (value == 'edit') {
+                onEdit(share);
+              } else if (value == 'revoke') {
+                onRevoke(share, index);
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                key: Key('share_edit_${share.token}'),
+                value: 'edit',
+                child: Text(context.tr('Edit share')),
+              ),
+              PopupMenuItem(
+                key: Key('share_revoke_${share.token}'),
+                value: 'revoke',
+                child: const Text('Revoke share'),
+              ),
+            ],
           ),
         ],
       ),
