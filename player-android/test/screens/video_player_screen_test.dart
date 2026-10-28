@@ -29,6 +29,7 @@ import 'dart:async';
 
 import 'package:chewie/chewie.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -202,6 +203,7 @@ class _PlayableVideoPlatform extends VideoPlayerPlatform {
   Completer<void>? pendingPause;
   Completer<void>? pendingDispose;
   int playCalls = 0;
+  int pauseCalls = 0;
   int positionPolls = 0;
   int disposeCalls = 0;
   bool failInitialize = false;
@@ -254,6 +256,7 @@ class _PlayableVideoPlatform extends VideoPlayerPlatform {
 
   @override
   Future<void> pause(int playerId) async {
+    pauseCalls++;
     await pendingPause?.future;
   }
 
@@ -556,12 +559,31 @@ void main() {
     await tester.pump();
     expect(finished, 0);
     expect(saved, contains(8));
+    final playCalls = platform.playCalls;
+    final pauseCalls = platform.pauseCalls;
     await tester.tap(find.byTooltip('Pause'));
+    // The surrounding fullscreen double-tap gesture delays a single tap.
+    // pumpAndSettle alone can return while that timer is still pending.
+    await tester.pump(kDoubleTapTimeout);
     await tester.pumpAndSettle();
+    expect(find.byTooltip('Play'), findsOneWidget);
+    expect(platform.pauseCalls, pauseCalls + 1);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(platform.playCalls, playCalls);
+    expect(platform.position, const Duration(seconds: 8));
     expect(finished, 0);
     await tester.tap(find.byTooltip('Play'));
+    await tester.pump(kDoubleTapTimeout);
     await tester.pumpAndSettle();
+    expect(find.byTooltip('Pause'), findsOneWidget);
+    expect(platform.playCalls, playCalls + 1);
     expect(platform.position, const Duration(seconds: 8));
+    platform.position = const Duration(seconds: 13);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(saved, contains(13));
+    expect(finished, 0);
     platform.events.add(VideoEvent(eventType: VideoEventType.completed));
     await tester.pumpAndSettle();
     expect(finished, 1);
@@ -1631,5 +1653,4 @@ void main() {
     expect(chewie.isFullScreen, isTrue);
     await _leavePlayingScreen(tester);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
-
 }
