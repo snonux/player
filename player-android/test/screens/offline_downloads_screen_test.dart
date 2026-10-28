@@ -82,9 +82,21 @@ void main() {
         child: const MaterialApp(home: OfflineDownloadsScreen())));
     await tester.pumpAndSettle();
     expect(find.text('Saved audio.mp3'), findsOneWidget);
-    expect(find.textContaining('https://saved.example:8443'), findsOneWidget);
-    await tester.tap(find.byTooltip('Music details'));
+    expect(find.textContaining('0 KB · Audio'), findsOneWidget);
+    expect(find.textContaining('https://saved.example:8443'), findsNothing);
+    expect(find.byKey(Key('offline_menu_$key')), findsOneWidget);
+    expect(find.byTooltip('Music details'), findsNothing);
+    expect(find.byTooltip('Notes'), findsNothing);
+    expect(find.byTooltip('Remove download'), findsNothing);
+
+    await tester.tap(find.byKey(Key('offline_menu_$key')));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(Key('offline_details_$key')));
+    await tester.pumpAndSettle();
+    expect(find.text('Details'), findsWidgets);
+    expect(find.textContaining('Origin: https://saved.example:8443'),
+        findsOneWidget);
+    expect(find.text('Account 7'), findsOneWidget);
     expect(find.text('Saved offline snapshot'), findsOneWidget);
     expect(find.text('Release date: 2025-04'), findsOneWidget);
     expect(find.text('Original date: 1979'), findsOneWidget);
@@ -92,7 +104,10 @@ void main() {
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
     expect(find.text('Saved offline snapshot'), findsNothing);
-    await tester.tap(find.byTooltip('Remove download'));
+
+    await tester.tap(find.byKey(Key('offline_menu_$key')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(Key('offline_remove_$key')));
     await tester.pumpAndSettle();
     expect(find.textContaining('The server file stays available.'),
         findsOneWidget);
@@ -102,7 +117,9 @@ void main() {
 
     // Failure to stop the native player leaves the copy available for retry.
     playback.refuseStop = true;
-    await tester.tap(find.byTooltip('Remove download'));
+    await tester.tap(find.byKey(Key('offline_menu_$key')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(Key('offline_remove_$key')));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Remove download'));
     await tester.pumpAndSettle();
@@ -119,7 +136,9 @@ void main() {
         stop: () async {
           stopped = true;
         });
-    await tester.tap(find.byTooltip('Remove download'));
+    await tester.tap(find.byKey(Key('offline_menu_$key')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(Key('offline_remove_$key')));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Remove download'));
     // Advance both Flutter's fake clock and the real SQLite/filesystem work.
@@ -196,7 +215,14 @@ void main() {
     await tester.pumpWidget(UncontrolledProviderScope(
         container: container, child: MaterialApp.router(routerConfig: router)));
     await waitFor(
-        () => find.byTooltip('Add to favorites').evaluate().isNotEmpty);
+        () => find.byKey(Key('offline_menu_$key')).evaluate().isNotEmpty);
+    await tester.tap(find.byKey(Key('offline_menu_$key')));
+    await tester.pumpAndSettle();
+    expect(find.text('Add to favorites'), findsOneWidget);
+    // Close the menu without changing favorite state.
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('Saved image.png'));
     await waitFor(() => find
         .descendant(
@@ -211,11 +237,20 @@ void main() {
     await tester.binding.handlePopRoute();
     await waitFor(() =>
         find.byType(OfflinePlaybackRoute).evaluate().isEmpty &&
-        find.byTooltip('Remove from favorites').evaluate().isNotEmpty);
+        find.byKey(Key('offline_menu_$key')).evaluate().isNotEmpty);
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(find.byTooltip('Remove from favorites'));
-    await waitFor(
-        () => find.byTooltip('Add to favorites').evaluate().isNotEmpty);
+    await tester.tap(find.byKey(Key('offline_menu_$key')));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove from favorites'), findsOneWidget);
+    await tester.tap(find.byKey(Key('offline_favorite_$key')));
+    await waitFor(() {
+      // Menu closes after selection; reopen once favorite reload settles.
+      return find.text('Remove from favorites').evaluate().isEmpty;
+    });
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.byKey(Key('offline_menu_$key')));
+    await tester.pumpAndSettle();
+    expect(find.text('Add to favorites'), findsOneWidget);
     expect(
         await tester
             .runAsync(() => repository.personalStore(key).getFavorite()),

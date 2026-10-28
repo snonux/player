@@ -110,74 +110,15 @@ class _OfflineDownloadsScreenState
                       child: Text(
                           '${items.length} files · ${formatOfflineBytes(items.fold(0, (sum, item) => sum + item.sizeBytes))} on this device')),
                   for (final item in items)
-                    ListTile(
-                      key: ValueKey('offline_${item.key}'),
-                      leading: Icon(switch (item.type) {
-                        'audio' => Icons.headphones,
-                        'video' => Icons.movie_outlined,
-                        _ => Icons.image_outlined,
-                      }),
-                      title: Text(item.title,
-                          maxLines: 2, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(
-                          '${formatOfflineBytes(item.sizeBytes)} · ${item.origin}\nAccount ${item.userId}'),
-                      isThreeLine: true,
-                      onTap: _removing.contains(item.key)
-                          ? null
-                          : () => _open(item),
-                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                        if (item.type == 'audio')
-                          IconButton(
-                            tooltip: 'Music details',
-                            icon: const Icon(Icons.info_outline),
-                            onPressed: () => showDialog<void>(
-                                context: context,
-                                builder: (context) => AlertDialog(
-                                      title: const Text('Music details'),
-                                      content: SingleChildScrollView(
-                                          child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                            const Text(
-                                                'Saved offline snapshot'),
-                                            Text(item.downloadQualityLabel),
-                                            if (item.contentType.isNotEmpty)
-                                              Text(item.contentType),
-                                            const SizedBox(height: 12),
-                                            MusicMetadataDetails(
-                                                music: item.music,
-                                                filename: item.sourceName),
-                                          ])),
-                                      actions: [
-                                        TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(context),
-                                            child: const Text('Close'))
-                                      ],
-                                    )),
-                          ),
-                        IconButton(
-                            tooltip: 'Notes',
-                            icon: const Icon(Icons.notes_outlined),
-                            onPressed: _removing.contains(item.key)
-                                ? null
-                                : () => openPersonalNotes(
-                                    context,
-                                    offlinePersonalStore(ref, item.key),
-                                    item.title)),
-                        if (item.type == 'image')
-                          FavoriteButton(
-                              store: offlinePersonalStore(ref, item.key),
-                              revision: _personalRevision),
-                        IconButton(
-                            tooltip: 'Remove download',
-                            onPressed: _removing.contains(item.key)
-                                ? null
-                                : () => _remove(item),
-                            icon: const Icon(Icons.delete_outline)),
-                      ]),
+                    _OfflineDownloadTile(
+                      item: item,
+                      removing: _removing.contains(item.key),
+                      personalRevision: _personalRevision,
+                      onOpen: () => _open(item),
+                      onRemove: () => _remove(item),
+                      onPersonalChanged: () {
+                        if (mounted) setState(() => _personalRevision++);
+                      },
                     ),
                 ]),
         )),
@@ -220,3 +161,191 @@ class _OfflineDownloadsScreenState
     }
   }
 }
+
+enum _OfflineDownloadAction { details, notes, favorite, remove }
+
+/// Compact download row: title, size/type, and one overflow menu for secondary actions.
+class _OfflineDownloadTile extends ConsumerStatefulWidget {
+  const _OfflineDownloadTile({
+    required this.item,
+    required this.removing,
+    required this.personalRevision,
+    required this.onOpen,
+    required this.onRemove,
+    required this.onPersonalChanged,
+  });
+
+  final OfflineMedia item;
+  final bool removing;
+  final int personalRevision;
+  final VoidCallback onOpen;
+  final VoidCallback onRemove;
+  final VoidCallback onPersonalChanged;
+
+  @override
+  ConsumerState<_OfflineDownloadTile> createState() =>
+      _OfflineDownloadTileState();
+}
+
+class _OfflineDownloadTileState extends ConsumerState<_OfflineDownloadTile> {
+  bool? _favorite;
+  bool _favoriteBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.item.type == 'image') _loadFavorite();
+  }
+
+  @override
+  void didUpdateWidget(covariant _OfflineDownloadTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.item.type == 'image' &&
+        (oldWidget.item.key != widget.item.key ||
+            oldWidget.personalRevision != widget.personalRevision)) {
+      _loadFavorite();
+    }
+  }
+
+  Future<void> _loadFavorite() async {
+    setState(() => _favoriteBusy = true);
+    try {
+      final favorite =
+          await offlinePersonalStore(ref, widget.item.key).getFavorite();
+      if (mounted) setState(() => _favorite = favorite);
+    } catch (_) {
+      if (mounted) setState(() => _favorite = null);
+    } finally {
+      if (mounted) setState(() => _favoriteBusy = false);
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_favoriteBusy) return;
+    setState(() => _favoriteBusy = true);
+    try {
+      final favorite =
+          await offlinePersonalStore(ref, widget.item.key).toggleFavorite();
+      if (mounted) {
+        setState(() => _favorite = favorite);
+        widget.onPersonalChanged();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Could not save favorite. Please try again.')));
+      }
+    } finally {
+      if (mounted) setState(() => _favoriteBusy = false);
+    }
+  }
+
+  void _showDetails() {
+    final item = widget.item;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Details'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Origin: ${item.origin}'),
+              Text('Account ${item.userId}'),
+              Text('Size: ${formatOfflineBytes(item.sizeBytes)}'),
+              Text('Type: ${_typeLabel(item.type)}'),
+              Text(item.downloadQualityLabel),
+              if (item.contentType.isNotEmpty) Text(item.contentType),
+              if (item.type == 'audio') ...[
+                const SizedBox(height: 12),
+                const Text('Saved offline snapshot'),
+                MusicMetadataDetails(
+                    music: item.music, filename: item.sourceName),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'))
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final buttonStyle =
+        IconButton.styleFrom(minimumSize: const Size(48, 48));
+    final favoriteLabel = _favorite == true
+        ? 'Remove from favorites'
+        : 'Add to favorites';
+
+    return ListTile(
+      key: ValueKey('offline_${item.key}'),
+      leading: Icon(switch (item.type) {
+        'audio' => Icons.headphones,
+        'video' => Icons.movie_outlined,
+        _ => Icons.image_outlined,
+      }),
+      title: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+          '${formatOfflineBytes(item.sizeBytes)} · ${_typeLabel(item.type)}'),
+      onTap: widget.removing ? null : widget.onOpen,
+      trailing: PopupMenuButton<_OfflineDownloadAction>(
+        key: Key('offline_menu_${item.key}'),
+        tooltip: 'Actions for ${item.title}',
+        style: buttonStyle,
+        icon: const Icon(Icons.menu),
+        enabled: !widget.removing,
+        onSelected: (action) {
+          switch (action) {
+            case _OfflineDownloadAction.details:
+              _showDetails();
+            case _OfflineDownloadAction.notes:
+              openPersonalNotes(context,
+                  offlinePersonalStore(ref, item.key), item.title);
+            case _OfflineDownloadAction.favorite:
+              _toggleFavorite();
+            case _OfflineDownloadAction.remove:
+              widget.onRemove();
+          }
+        },
+        itemBuilder: (_) => [
+          PopupMenuItem(
+            key: Key('offline_details_${item.key}'),
+            value: _OfflineDownloadAction.details,
+            child: const Text('Details'),
+          ),
+          PopupMenuItem(
+            key: Key('offline_notes_${item.key}'),
+            value: _OfflineDownloadAction.notes,
+            child: const Text('Notes'),
+          ),
+          if (item.type == 'image')
+            PopupMenuItem(
+              key: Key('offline_favorite_${item.key}'),
+              value: _OfflineDownloadAction.favorite,
+              enabled: !_favoriteBusy,
+              child: Text(favoriteLabel),
+            ),
+          PopupMenuItem(
+            key: Key('offline_remove_${item.key}'),
+            value: _OfflineDownloadAction.remove,
+            child: const Text('Remove download'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _typeLabel(String type) => switch (type) {
+      'audio' => 'Audio',
+      'video' => 'Video',
+      'image' => 'Image',
+      _ => type,
+    };
