@@ -1,3 +1,4 @@
+import 'package:player_android/providers/saved_account_validation_provider.dart';
 import '../support/saved_server_auth.dart';
 import 'package:player_android/services/saved_server_credentials.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -78,6 +79,7 @@ void main() {
     final storage = _TokenStore();
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
     ]);
     addTearDown(container.dispose);
@@ -198,6 +200,7 @@ void main() {
     var firstRunBuilds = 0;
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       localMediaListProvider.overrideWith((ref) async => []),
       authStateProvider
           .overrideWith(() => _CountingUnauthenticated(() => authBuilds++)),
@@ -237,6 +240,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+          savedAccountValidationProvider.overrideWithValue((_) async => true),
           localMediaListProvider.overrideWith((ref) async => []),
           authStateProvider.overrideWith(
             () => _CountingUnauthenticated(() => authBuilds++),
@@ -317,6 +321,7 @@ void main() {
     });
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       authStateProvider.overrideWith(_Unauthenticated.new),
       firstRunProvider.overrideWith((ref) async => false),
     ]);
@@ -347,6 +352,7 @@ void main() {
     });
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       authStateProvider.overrideWith(_Unauthenticated.new),
       firstRunProvider.overrideWith((ref) async => false),
     ]);

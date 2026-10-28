@@ -46,14 +46,17 @@ class CredentialMutationQueue {
   Future<void> _tail = Future<void>.value();
   int _generation = 0;
   bool _credentialsEnabled;
+  bool _offlineOnly = false;
   String? _credentialOrigin;
 
   int get generation => _generation;
   bool get credentialsEnabled => _credentialsEnabled;
+  bool get offlineOnly => _offlineOnly;
   String? get credentialOrigin => _credentialOrigin;
 
   int beginAuthChange({String? origin}) {
     _credentialsEnabled = false;
+    _offlineOnly = false;
     if (origin != null) _credentialOrigin = origin;
     return ++_generation;
   }
@@ -62,7 +65,15 @@ class CredentialMutationQueue {
     if (_generation == generation) {
       _credentialOrigin = origin;
       _credentialsEnabled = true;
+      _offlineOnly = false;
     }
+  }
+
+  void unlockOffline(int generation, {required String origin}) {
+    if (_generation != generation) return;
+    _credentialOrigin = origin;
+    _credentialsEnabled = false;
+    _offlineOnly = true;
   }
 
   Future<T> run<T>(Future<T> Function() action) async {
@@ -259,6 +270,13 @@ class _AuthInterceptor extends Interceptor {
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
+    if (_mutationQueue.offlineOnly) {
+      handler.reject(DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+          error: 'Only saved files are available offline.'));
+      return;
+    }
     // A caller may pass an absolute URL to Dio; never send the mobile token
     // to a different server even when it uses this shared client.
     if (options.uri.origin != _origin) {

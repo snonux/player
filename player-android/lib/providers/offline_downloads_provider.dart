@@ -32,17 +32,42 @@ final offlineDownloadsProvider =
   return downloads;
 });
 
-final offlineMediaListProvider = FutureProvider<List<OfflineMedia>>((ref) {
+final offlineMediaListProvider =
+    FutureProvider<List<OfflineMedia>>((ref) async {
   ref.watch(offlineDownloadsProvider
       .select((downloads) => downloads.libraryRevision));
-  return ref.watch(offlineDownloadRepositoryProvider).list();
+  final offlineUserId = ref.watch(authStateProvider.select((state) =>
+      state.valueOrNull?.isOffline == true
+          ? state.valueOrNull?.user?.id
+          : null));
+  final origin = ref.watch(playerBaseUrlProvider).origin;
+  final repository = ref.watch(offlineDownloadRepositoryProvider);
+  final items = await repository.list();
+  if (offlineUserId == null) return items;
+  final matching = <OfflineMedia>[];
+  for (final item in items) {
+    if (item.origin != origin || item.userId != offlineUserId) continue;
+    try {
+      matching.add(await repository.validatePlaybackCopy(item.key));
+    } catch (_) {/* Missing and incomplete copies cannot be played. */}
+  }
+  return matching;
 });
 
 final offlineMediaProvider =
     FutureProvider.autoDispose.family<OfflineMedia?, String>((ref, key) {
   ref.watch(offlineDownloadsProvider
       .select((downloads) => downloads.libraryRevision));
-  return ref.watch(offlineDownloadRepositoryProvider).get(key);
+  final offlineUserId = ref.watch(authStateProvider.select((state) =>
+      state.valueOrNull?.isOffline == true
+          ? state.valueOrNull?.user?.id
+          : null));
+  final origin = ref.watch(playerBaseUrlProvider).origin;
+  return ref.watch(offlineDownloadRepositoryProvider).get(key).then((item) =>
+      offlineUserId != null &&
+              (item?.origin != origin || item?.userId != offlineUserId)
+          ? null
+          : item);
 });
 
 /// Captures credentials only for the selected account and never persists them.

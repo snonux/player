@@ -1,5 +1,9 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
+
+import 'saved_account_validation_provider.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -37,20 +41,23 @@ enum AuthStatus {
 /// makes it safe to pass into go_router's redirect callback and to compare
 /// with `==` in tests.
 class AuthState {
-  const AuthState({required this.status, this.user});
+  const AuthState({required this.status, this.user, this.isOffline = false});
 
   final AuthStatus status;
   final User? user;
+  final bool isOffline;
 
   /// Convenience constructors reduce noise at call sites.
   const AuthState.loading()
       : status = AuthStatus.loading,
-        user = null;
-  const AuthState.authenticated({this.user})
+        user = null,
+        isOffline = false;
+  const AuthState.authenticated({this.user, this.isOffline = false})
       : status = AuthStatus.authenticated;
   const AuthState.unauthenticated()
       : status = AuthStatus.unauthenticated,
-        user = null;
+        user = null,
+        isOffline = false;
 
   bool get isLoading => status == AuthStatus.loading;
   bool get isAuthenticated => status == AuthStatus.authenticated;
@@ -65,13 +72,14 @@ class AuthState {
       other is AuthState &&
           runtimeType == other.runtimeType &&
           status == other.status &&
+          isOffline == other.isOffline &&
           user?.id == other.user?.id &&
           user?.username == other.user?.username &&
           user?.isAdmin == other.user?.isAdmin;
 
   @override
   int get hashCode =>
-      Object.hash(status, user?.id, user?.username, user?.isAdmin);
+      Object.hash(status, isOffline, user?.id, user?.username, user?.isAdmin);
 }
 
 /// Notifier that owns the mutable [AuthState] and exposes mutation methods
@@ -180,10 +188,24 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
     final generation = queue.beginAuthChange(origin: origin);
     final credential =
         await ref.read(savedServerCredentialsProvider).read(origin);
-    if (credential == null || !credential.isValid) return false;
+    if (credential == null ||
+        credential.origin != origin ||
+        !credential.isValid) {
+      return false;
+    }
     if (!await ref.read(serverBiometricUnlockProvider).authenticate(origin)) {
       return false;
     }
+    if (!credential.isValid ||
+        queue.generation != generation ||
+        ref.read(playerBaseUrlProvider).origin != origin ||
+        ref.read(settingsProvider).valueOrNull?.destination !=
+            LibraryDestination.server) {
+      return false;
+    }
+    // Biometrics unlock only this saved identity. A reachable server must
+    // accept its bearer before any server work is allowed.
+    final online = await ref.read(savedAccountValidationProvider)(credential);
     if (!credential.isValid ||
         queue.generation != generation ||
         ref.read(playerBaseUrlProvider).origin != origin ||
@@ -209,14 +231,73 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
         await prefs.setInt(_kAuthExpiresKey, credential.expiresAt);
         await prefs.setBool(_kAuthSessionPresentKey, true);
         if (queue.generation != generation) return false;
-        queue.enable(generation, origin: origin);
-        state = AsyncData(AuthState.authenticated(user: credential.user));
+        if (online) {
+          queue.enable(generation, origin: origin);
+        } else {
+          queue.unlockOffline(generation, origin: origin);
+        }
+        state = AsyncData(
+          AuthState.authenticated(user: credential.user, isOffline: !online),
+        );
         return true;
       } catch (_) {
         await _clearCredentials(prefs);
         rethrow;
       }
     });
+  }
+
+  Future<bool>? _reconnecting;
+
+  /// Revalidate the same secure account before reopening requests and sync.
+  Future<bool> reconnectSavedAccount() {
+    if (_reconnecting != null) return _reconnecting!;
+    _reconnecting = _reconnectSavedAccount()
+        .catchError((Object _) => false)
+        .whenComplete(() {
+      _reconnecting = null;
+    });
+    return _reconnecting!;
+  }
+
+  Future<bool> _reconnectSavedAccount() async {
+    final current = state.valueOrNull;
+    if (current?.isOffline != true) return false;
+    final queue = ref.read(credentialMutationQueueProvider);
+    final generation = queue.generation;
+    final origin = ref.read(playerBaseUrlProvider).origin;
+    final credential =
+        await ref.read(savedServerCredentialsProvider).read(origin);
+    bool sameAccount() =>
+        queue.generation == generation &&
+        state.valueOrNull?.isOffline == true &&
+        state.valueOrNull?.user?.id == current!.user?.id &&
+        ref.read(playerBaseUrlProvider).origin == origin &&
+        ref.read(settingsProvider).valueOrNull?.destination ==
+            LibraryDestination.server;
+    if (!sameAccount()) return false;
+    if (credential == null ||
+        !credential.isValid ||
+        credential.origin != origin ||
+        credential.user.id != current!.user?.id) {
+      await clearAfterUnauthorized(preserveProgress: true);
+      return false;
+    }
+    try {
+      final online = await ref.read(savedAccountValidationProvider)(credential);
+      if (!online || !credential.isValid || !sameAccount()) return false;
+      queue.enable(generation, origin: origin);
+      state = AsyncData(AuthState.authenticated(user: credential.user));
+      return true;
+    } on DioException catch (error) {
+      if (sameAccount() && [401, 403].contains(error.response?.statusCode)) {
+        // Preserve durable edits while locking a rejected saved account.
+        await clearAfterUnauthorized(preserveProgress: true);
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Retains the server's authenticated user separately from credentials.
@@ -250,8 +331,10 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
       }
       // The login/bootstrap response sets a session cookie. Mint a dedicated
       // mobile token while that cookie is available in the shared Dio client.
-      final result =
-          await api.createAPIToken(name: 'android-client', expiresInDays: 365);
+      final result = await api.createAPIToken(
+        name: 'android-client',
+        expiresInDays: 365,
+      );
       final token = result['token'];
       final tokenId = result['id'];
       if (token is! String ||
@@ -337,6 +420,9 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
   /// Revokes the mobile token and session when reachable, then always removes
   /// local credentials. Returns false if either server request failed.
   Future<bool> logout() async {
+    if (state.valueOrNull?.isOffline == true) {
+      await ref.read(playbackSessionCoordinatorProvider).stopCurrent();
+    }
     // Stop server-mediated output while its credentials still work. Progress
     // enqueueing is fire-and-forget; neither receiver loss nor failed cleanup
     // may prevent local credentials from being cleared below.
@@ -349,44 +435,51 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
         } catch (_) {}
       }
     }
+    final wasOffline = state.valueOrNull?.isOffline == true;
     final api = ref.read(apiClientProvider);
     ref.read(credentialMutationQueueProvider).beginAuthChange();
-    final snapshot =
-        await ref.read(credentialMutationQueueProvider).run(() async {
-      int? tokenId;
-      String? token;
-      var tokenReadFailed = false;
-      String? sessionCookie;
-      try {
-        tokenId =
-            (await SharedPreferences.getInstance()).getInt(_kAuthTokenIdKey);
-      } catch (_) {}
-      try {
-        token = await ref.read(tokenStorageProvider).readToken();
-      } catch (_) {
-        tokenReadFailed = true;
-      }
-      try {
-        final cookies = await ref
-            .read(cookieJarProvider)
-            .loadForRequest(ref.read(playerBaseUrlProvider));
-        for (final cookie in cookies) {
-          if (cookie.name == 'session') {
-            sessionCookie = 'session=${cookie.value}';
-            break;
-          }
+    final snapshot = await ref.read(credentialMutationQueueProvider).run(
+      () async {
+        int? tokenId;
+        String? token;
+        var tokenReadFailed = false;
+        String? sessionCookie;
+        try {
+          tokenId = (await SharedPreferences.getInstance()).getInt(
+            _kAuthTokenIdKey,
+          );
+        } catch (_) {}
+        try {
+          token = await ref.read(tokenStorageProvider).readToken();
+        } catch (_) {
+          tokenReadFailed = true;
         }
-      } catch (_) {}
-      final localCleared =
-          await clearAfterUnauthorized(advanceGeneration: false);
-      return (
-        tokenId: tokenId,
-        token: token,
-        tokenReadFailed: tokenReadFailed,
-        sessionCookie: sessionCookie,
-        localCleared: localCleared
-      );
-    });
+        try {
+          final cookies = await ref
+              .read(cookieJarProvider)
+              .loadForRequest(ref.read(playerBaseUrlProvider));
+          for (final cookie in cookies) {
+            if (cookie.name == 'session') {
+              sessionCookie = 'session=${cookie.value}';
+              break;
+            }
+          }
+        } catch (_) {}
+        final localCleared = await clearAfterUnauthorized(
+          advanceGeneration: false,
+          preserveProgress: wasOffline,
+        );
+        return (
+          tokenId: tokenId,
+          token: token,
+          tokenReadFailed: tokenReadFailed,
+          sessionCookie: sessionCookie,
+          localCleared: localCleared,
+        );
+      },
+    );
+
+    if (wasOffline) return snapshot.localCleared;
 
     var revoked = snapshot.localCleared &&
         !snapshot.tokenReadFailed &&
@@ -426,7 +519,9 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
   Future<bool> clearAfterUnauthorized({
     bool advanceGeneration = true,
     bool preserveServerQueue = false,
+    bool preserveProgress = false,
   }) async {
+    final wasOffline = state.valueOrNull?.isOffline == true;
     if (advanceGeneration) {
       ref.read(credentialMutationQueueProvider).beginAuthChange();
     }
@@ -443,7 +538,9 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
         ref.read(settingsProvider).valueOrNull?.destination ==
             LibraryDestination.server;
     try {
-      if (!preserveServerQueue || serverSelected) {
+      if (preserveProgress) {
+        await ref.read(progressQueueProvider).suspend();
+      } else if (!preserveServerQueue || serverSelected) {
         await ref.read(progressQueueProvider).clearAndSuspend();
       }
     } catch (_) {
@@ -455,7 +552,9 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
       }
       final playback = ref.read(playbackSessionCoordinatorProvider);
       final activeKind = playback.activeKind;
-      if (activeKind == PlaybackSourceKind.server) {
+      if (wasOffline) {
+        await playback.stopCurrent();
+      } else if (activeKind == PlaybackSourceKind.server) {
         await playback.stopServerSession();
       } else if (activeKind == null &&
           serverSelected &&

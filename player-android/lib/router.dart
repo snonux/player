@@ -98,6 +98,19 @@ final routerProvider = Provider<GoRouter>((ref) {
           state.fullPath == AppRoutes.localPlayer ||
           location == AppRoutes.offlineDownloads ||
           state.fullPath == AppRoutes.offlinePlayer;
+      final offlineContainer =
+          ProviderScope.containerOf(context, listen: false);
+      final offlineAuth = offlineContainer.exists(authStateProvider)
+          ? offlineContainer.read(authStateProvider).valueOrNull
+          : null;
+      if (offlineAuth?.isOffline == true) {
+        coldEntry = false;
+        // Evaluate before the public/local bypass: an unlocked saved account
+        // exposes only its saved files, never admin or remote player routes.
+        final allowed = location == AppRoutes.offlineDownloads ||
+            state.fullPath == AppRoutes.offlinePlayer;
+        return allowed ? null : AppRoutes.offlineDownloads;
+      }
       if (isShareViewerRoute || isPublicSetupRoute || isLocalRoute) {
         coldEntry = false;
         return null;

@@ -137,7 +137,10 @@ class PlaybackCache extends ChangeNotifier {
   /// credentials participate; evicted/missing files never become streams.
   Future<OfflinePlaybackRequest> offlineRequest(
       String key, String origin, int user,
-      {bool protect = false}) async {
+      {bool protect = false,
+      Future<double?> Function()? readPosition,
+      Future<void> Function(double)? savePosition,
+      Future<void> Function()? markFinished}) async {
     await initialize();
     final row = _rows[key];
     if (row == null ||
@@ -167,10 +170,11 @@ class PlaybackCache extends ChangeNotifier {
         music: music,
         artist: music?.artist ?? '',
         album: music?.album ?? '',
-        // The audio handler requires both callbacks when it starts a track.
-        // Disposable cache copies have no durable offline progress to update.
-        savePosition: (_) async {},
-        markFinished: () async {});
+        readPosition: readPosition,
+        // Device-only browsing has no unlocked server identity. Its caller may
+        // supply durable scoped progress after unlocking a saved account.
+        savePosition: savePosition ?? (_) async {},
+        markFinished: markFinished ?? () async {});
   }
 
   String key(String origin, int user, int media, String variant) => sha256

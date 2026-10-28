@@ -145,7 +145,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } catch (_) {
       if (mounted) {
         _showError(
-            'Fingerprint unavailable. Use your server password to sign in.');
+            'Could not unlock saved login. Retry or use your server password.');
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

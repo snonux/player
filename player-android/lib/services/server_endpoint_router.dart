@@ -28,6 +28,9 @@ Future<String> probeServerIdentity(Uri origin) async {
     }
     return id;
   } on DioException catch (error) {
+    if ([502, 503, 504].contains(error.response?.statusCode)) {
+      throw const EndpointReachabilityException();
+    }
     if (error.response != null) throw const EndpointIdentityException();
     rethrow;
   } finally {
@@ -257,14 +260,40 @@ class ServerEndpointRouter {
         return origin;
       } on EndpointIdentityException {
         rethrow;
-      } catch (_) {
-        /* Reachability failure: try the other explicitly paired origin. */
+      } catch (error) {
+        // Only known transport outages permit a fallback. TLS, malformed
+        // identities and unexpected failures must never become offline access.
+        if (!_isReachabilityFailure(error)) rethrow;
       }
     }
     onStatus?.call(
         'Cannot reach either server address. Check the network and retry.');
-    throw StateError('Cannot reach the paired server addresses.');
+    throw const EndpointReachabilityException();
   }
+}
+
+/// Every address allowed by the selected profile failed a transport probe.
+/// This typed boundary also survives Dio's wrapping of adapter exceptions.
+class EndpointReachabilityException implements Exception {
+  const EndpointReachabilityException();
+  @override
+  String toString() => 'Cannot reach the paired server addresses.';
+}
+
+bool _isReachabilityFailure(Object error) {
+  if (error is EndpointReachabilityException ||
+      error is SocketException ||
+      error is TimeoutException) {
+    return true;
+  }
+  if (error is! DioException || error.response != null) return false;
+  return {
+        DioExceptionType.connectionTimeout,
+        DioExceptionType.receiveTimeout,
+        DioExceptionType.sendTimeout,
+      }.contains(error.type) ||
+      (error.type == DioExceptionType.connectionError &&
+          error.error is SocketException);
 }
 
 class EndpointIdentityException implements Exception {

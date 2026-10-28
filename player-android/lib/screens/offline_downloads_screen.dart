@@ -1,4 +1,6 @@
 import '../widgets/offline_music_browser.dart';
+import '../providers/auth_state_provider.dart';
+import '../providers/api_client_provider.dart';
 import '../l10n/music_localizations.dart';
 import '../widgets/music_pin_button.dart';
 import '../widgets/music_download_dialog.dart';
@@ -29,28 +31,62 @@ class _OfflineDownloadsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final offline = ref.watch(authStateProvider).valueOrNull?.isOffline == true;
     final downloads = ref.watch(offlineDownloadsProvider);
     final items = ref.watch(offlineMediaListProvider);
-    final job = downloads.active;
+    final job = offline ? null : downloads.active;
     return Scaffold(
-      appBar: AppBar(title: const Text('Downloads'), actions: [
-        IconButton(
-            tooltip: 'On this device',
-            icon: const Icon(Icons.phone_android),
-            onPressed: () => context.go(AppRoutes.localLibrary)),
-      ]),
+      appBar: AppBar(
+          title: Text(offline ? 'Offline downloads' : 'Downloads'),
+          actions: [
+            if (offline)
+              PopupMenuButton<String>(
+                tooltip: 'Offline account',
+                icon: const Icon(Icons.menu),
+                onSelected: (action) async {
+                  final auth = ref.read(authStateProvider.notifier);
+                  if (action == 'retry') {
+                    final connected = await auth.reconnectSavedAccount();
+                    if (context.mounted && !connected) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text(
+                              'Could not reconnect. Retry or sign in again.')));
+                    }
+                  } else if (action == 'switch') {
+                    await auth
+                        .switchServer(ref.read(playerBaseUrlProvider).origin);
+                    if (context.mounted) context.go(AppRoutes.server);
+                  } else {
+                    await auth.logout();
+                    if (context.mounted) context.go(AppRoutes.login);
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                      value: 'retry', child: Text('Reconnect to server')),
+                  PopupMenuItem(value: 'switch', child: Text('Change server')),
+                  PopupMenuItem(value: 'logout', child: Text('Sign out')),
+                ],
+              ),
+            if (!offline)
+              IconButton(
+                  tooltip: 'On this device',
+                  icon: const Icon(Icons.phone_android),
+                  onPressed: () => context.go(AppRoutes.localLibrary)),
+          ]),
       body: Column(children: [
-        const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-                'Play saved files without signing in or connecting. Removing a download keeps the server file.')),
+        Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(offline
+                ? 'Server unavailable. Only this account’s saved files are shown. Playback progress syncs after reconnecting.'
+                : 'Play saved files without signing in or connecting. Removing a download keeps the server file.')),
         TextButton.icon(
             icon: const Icon(Icons.library_music),
             label: Text(context.tr('Browse offline music')),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => const OfflineMusicBrowser()))),
-        const OfflinePinnedCollections(),
-        if (downloads.batch case final batch?)
+        if (!offline) const OfflinePinnedCollections(),
+        if ((offline ? null : downloads.batch) case final batch?)
           ListTile(
             title: Text(
                 'Music downloads · ${batch.completed} of ${batch.songs.length} saved'),
@@ -87,7 +123,7 @@ class _OfflineDownloadsScreenState
                 onPressed: downloads.cancel,
                 icon: const Icon(Icons.cancel_outlined)),
           ),
-        if (downloads.error != null)
+        if (!offline && downloads.error != null)
           Padding(
               padding: const EdgeInsets.all(16),
               child: Text(downloads.error!,
@@ -278,11 +314,9 @@ class _OfflineDownloadTileState extends ConsumerState<_OfflineDownloadTile> {
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
-    final buttonStyle =
-        IconButton.styleFrom(minimumSize: const Size(48, 48));
-    final favoriteLabel = _favorite == true
-        ? 'Remove from favorites'
-        : 'Add to favorites';
+    final buttonStyle = IconButton.styleFrom(minimumSize: const Size(48, 48));
+    final favoriteLabel =
+        _favorite == true ? 'Remove from favorites' : 'Add to favorites';
 
     return ListTile(
       key: ValueKey('offline_${item.key}'),
@@ -306,8 +340,8 @@ class _OfflineDownloadTileState extends ConsumerState<_OfflineDownloadTile> {
             case _OfflineDownloadAction.details:
               _showDetails();
             case _OfflineDownloadAction.notes:
-              openPersonalNotes(context,
-                  offlinePersonalStore(ref, item.key), item.title);
+              openPersonalNotes(
+                  context, offlinePersonalStore(ref, item.key), item.title);
             case _OfflineDownloadAction.favorite:
               _toggleFavorite();
             case _OfflineDownloadAction.remove:

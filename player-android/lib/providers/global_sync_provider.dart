@@ -103,11 +103,11 @@ GlobalSyncAccount? captureSyncAccount(Ref ref) {
 }
 
 class _ForegroundSync extends WidgetsBindingObserver {
-  _ForegroundSync(this.sync);
-  final GlobalSyncCoordinator sync;
+  _ForegroundSync(this.wake);
+  final void Function() wake;
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) sync.trigger();
+    if (state == AppLifecycleState.resumed) wake();
   }
 }
 
@@ -123,15 +123,28 @@ final globalSyncCoordinatorProvider =
   repository.onSyncNeeded = sync.trigger;
   downloads.onSyncNeeded = sync.trigger;
   if (queue is ProgressQueue) queue.onSyncNeeded = sync.trigger;
+  Future<void> wake() async {
+    if (ref.read(authStateProvider).valueOrNull?.isOffline == true) {
+      await ref.read(authStateProvider.notifier).reconnectSavedAccount();
+    }
+    sync.trigger();
+  }
+
+  final retry = Timer.periodic(const Duration(seconds: 15), (_) {
+    if (ref.read(authStateProvider).valueOrNull?.isOffline == true) {
+      unawaited(wake());
+    }
+  });
   final connectivity =
-      Connectivity().onConnectivityChanged.listen((_) => sync.trigger());
-  final lifecycle = _ForegroundSync(sync);
+      Connectivity().onConnectivityChanged.listen((_) => unawaited(wake()));
+  final lifecycle = _ForegroundSync(() => unawaited(wake()));
   WidgetsBinding.instance.addObserver(lifecycle);
   ref.listen(
       authStateProvider,
       (_, next) =>
           sync.trigger(signedIn: next.valueOrNull?.isAuthenticated == true));
   ref.onDispose(() {
+    retry.cancel();
     musicScheduler.onWake = null;
     unawaited(connectivity.cancel());
     WidgetsBinding.instance.removeObserver(lifecycle);

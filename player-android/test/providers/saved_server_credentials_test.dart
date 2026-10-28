@@ -1,3 +1,10 @@
+import 'package:player_android/models/server_endpoint_profile.dart';
+import 'package:player_android/services/server_endpoint_router.dart';
+import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:player_android/providers/progress_queue_provider.dart';
+import 'package:player_android/services/progress_queue.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -14,6 +21,7 @@ import 'package:player_android/api/dio_client.dart';
 import 'package:player_android/models/user.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
+import 'package:player_android/providers/saved_account_validation_provider.dart';
 import 'package:player_android/providers/settings_provider.dart';
 import 'package:player_android/services/saved_server_credentials.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -40,9 +48,20 @@ class _Biometrics implements ServerBiometricUnlock {
   }
 }
 
+class _Connected implements Connectivity {
+  @override
+  Stream<List<ConnectivityResult>> get onConnectivityChanged =>
+      const Stream.empty();
+  @override
+  Future<List<ConnectivityResult>> checkConnectivity() async =>
+      [ConnectivityResult.wifi];
+}
+
 class _Requests implements HttpClientAdapter {
   RequestOptions? seen;
+  final requests = <RequestOptions>[];
   int status = 200;
+  String body = '{}';
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
@@ -50,7 +69,10 @@ class _Requests implements HttpClientAdapter {
     Future? cancelFuture,
   ) async {
     seen = options;
-    return ResponseBody.fromString('{}', status);
+    requests.add(options);
+    return ResponseBody.fromString(body, status, headers: {
+      Headers.contentTypeHeader: ['application/json']
+    });
   }
 
   @override
@@ -253,6 +275,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           tokenStorageProvider.overrideWithValue(storage),
+          savedAccountValidationProvider.overrideWithValue((_) async => true),
           serverBiometricUnlockProvider.overrideWithValue(biometric),
         ],
       );
@@ -287,6 +310,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           tokenStorageProvider.overrideWithValue(storage),
+          savedAccountValidationProvider.overrideWithValue((_) async => true),
           serverBiometricUnlockProvider.overrideWithValue(biometric),
         ],
       );
@@ -330,6 +354,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         tokenStorageProvider.overrideWithValue(storage),
+        savedAccountValidationProvider.overrideWithValue((_) async => true),
         serverBiometricUnlockProvider.overrideWithValue(biometric),
       ],
     );
@@ -364,6 +389,7 @@ void main() {
       late DioClient dioClient;
       final container = ProviderContainer(overrides: [
         tokenStorageProvider.overrideWithValue(storage),
+        savedAccountValidationProvider.overrideWithValue((_) async => true),
         cookieJarProvider.overrideWith((ref) {
           ref.watch(apiClientProvider);
           return dioClient.cookieJar;
@@ -430,6 +456,7 @@ void main() {
     late DioClient dioClient;
     final container = ProviderContainer(overrides: [
       tokenStorageProvider.overrideWithValue(storage),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       cookieJarProvider.overrideWith((ref) {
         ref.watch(apiClientProvider);
         return dioClient.cookieJar;
@@ -488,6 +515,7 @@ void main() {
     final biometric = _Biometrics()..pending = Completer<bool>();
     final container = ProviderContainer(overrides: [
       tokenStorageProvider.overrideWithValue(storage),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       savedServerCredentialsProvider.overrideWithValue(vault),
       serverBiometricUnlockProvider.overrideWithValue(biometric),
     ]);
@@ -504,6 +532,324 @@ void main() {
         isFalse);
     expect(container.read(authStateProvider).requireValue.isUnauthenticated,
         isTrue);
+  });
+
+  test('expiry during server validation cannot grant an offline unlock',
+      () async {
+    final credential = _ExpiringCredential();
+    final validationStarted = Completer<void>();
+    final validation = Completer<bool>();
+    final vault = _MemoryVault()..entries[credential.origin] = credential;
+    final container = ProviderContainer(overrides: [
+      tokenStorageProvider.overrideWithValue(_TokenStore()),
+      savedServerCredentialsProvider.overrideWithValue(vault),
+      serverBiometricUnlockProvider
+          .overrideWithValue(_Biometrics()..accepted = true),
+      savedAccountValidationProvider.overrideWithValue((_) async {
+        validationStarted.complete();
+        return validation.future;
+      }),
+    ]);
+    addTearDown(container.dispose);
+    final auth = container.read(authStateProvider.notifier);
+    await auth.switchServer(credential.origin);
+    final unlock = auth.unlockSavedServer();
+    await validationStarted.future;
+    credential.valid = false;
+    validation.complete(false);
+    expect(await unlock, isFalse);
+    expect(container.read(authStateProvider).requireValue.isUnauthenticated,
+        isTrue);
+    expect(container.read(credentialMutationQueueProvider).credentialsEnabled,
+        isFalse);
+  });
+
+  for (final failure in [
+    'socket',
+    'identity',
+    'certificate',
+    'wrapped_certificate',
+    'malformed',
+    'unexpected'
+  ]) {
+    test(
+        'real paired endpoint adapter only unlocks offline for transport outage: $failure',
+        () async {
+      const profile = ServerEndpointProfile(
+          primary: 'https://a.example',
+          local: 'http://192.168.1.2:8080',
+          serverId:
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+      final attempts = <Uri>[];
+      final requests = _Requests();
+      final router = ServerEndpointRouter(
+          primary: Uri.parse(profile.primary),
+          profile: profile,
+          probe: (uri) async {
+            attempts.add(uri);
+            switch (failure) {
+              case 'socket':
+                throw const SocketException('No route to endpoint');
+              case 'identity':
+                return 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+              case 'certificate':
+                throw DioException(
+                    requestOptions: RequestOptions(path: uri.toString()),
+                    type: DioExceptionType.badCertificate,
+                    error: const HandshakeException('Untrusted certificate'));
+              case 'wrapped_certificate':
+                throw DioException(
+                    requestOptions: RequestOptions(path: uri.toString()),
+                    type: DioExceptionType.connectionError,
+                    error: const HandshakeException('Untrusted certificate'));
+              case 'malformed':
+                throw const FormatException('Malformed server identity');
+              default:
+                throw StateError('Unexpected probe failure');
+            }
+          });
+      addTearDown(router.close);
+      final container = ProviderContainer(overrides: [
+        tokenStorageProvider.overrideWithValue(_TokenStore()),
+        serverBiometricUnlockProvider
+            .overrideWithValue(_Biometrics()..accepted = true),
+        savedAccountValidationTransportProvider.overrideWithValue(
+            () => EndpointHttpAdapter(router, delegate: requests)),
+      ]);
+      addTearDown(container.dispose);
+      final auth = container.read(authStateProvider.notifier);
+      await auth.switchServer(profile.primary);
+      await container
+          .read(savedServerCredentialsProvider)
+          .write(_credential(profile.primary, 'token-a'));
+      if (failure == 'socket') {
+        expect(await auth.unlockSavedServer(), isTrue);
+        expect(
+            container.read(authStateProvider).requireValue.isOffline, isTrue);
+        expect(attempts.map((uri) => uri.origin),
+            [profile.local, profile.primary]);
+      } else {
+        await expectLater(
+            auth.unlockSavedServer(), throwsA(isA<DioException>()));
+        expect(container.read(authStateProvider).requireValue.isUnauthenticated,
+            isTrue);
+        expect(attempts, hasLength(1));
+      }
+      expect(requests.requests, isEmpty);
+      expect(container.read(credentialMutationQueueProvider).credentialsEnabled,
+          isFalse);
+    });
+  }
+
+  for (final status in [200, 401, 403, 500, 502, 503, 504]) {
+    test(
+        'saved bearer probe distinguishes gateway outage from rejection ($status)',
+        () async {
+      final requests = _Requests()..status = status;
+      final container = ProviderContainer(overrides: [
+        savedAccountValidationTransportProvider
+            .overrideWithValue(() => requests),
+      ]);
+      addTearDown(container.dispose);
+      // A response with the right token ID verifies the persisted bearer.
+      requests.body = '[{"id":7}]';
+      final validate = container.read(savedAccountValidationProvider);
+      final result = validate(_credential('https://a.example', 'token-a'));
+      if (status == 200 || [502, 503, 504].contains(status)) {
+        expect(await result, status == 200);
+      } else {
+        await expectLater(result, throwsA(isA<DioException>()));
+      }
+      expect(requests.seen!.uri.toString(),
+          'https://a.example/api/v1/auth/tokens');
+      expect(requests.seen!.headers['Authorization'], 'Bearer token-a');
+      expect(requests.seen!.headers['cookie'], isNull);
+      expect(requests.seen!.followRedirects, isFalse);
+    });
+  }
+
+  for (final status in [401, 403, 503]) {
+    test(
+        'fingerprint with server response $status only unlocks during an outage',
+        () async {
+      final requests = _Requests()..status = status;
+      final container = ProviderContainer(overrides: [
+        tokenStorageProvider.overrideWithValue(_TokenStore()),
+        serverBiometricUnlockProvider
+            .overrideWithValue(_Biometrics()..accepted = true),
+        savedAccountValidationTransportProvider
+            .overrideWithValue(() => requests),
+      ]);
+      addTearDown(container.dispose);
+      final auth = container.read(authStateProvider.notifier);
+      await auth.switchServer('https://a.example');
+      await container
+          .read(savedServerCredentialsProvider)
+          .write(_credential('https://a.example', 'token-a'));
+      if (status == 503) {
+        expect(await auth.unlockSavedServer(), isTrue);
+        expect(
+            container.read(authStateProvider).requireValue.isOffline, isTrue);
+      } else {
+        await expectLater(
+            auth.unlockSavedServer(), throwsA(isA<DioException>()));
+        expect(container.read(authStateProvider).requireValue.isUnauthenticated,
+            isTrue);
+      }
+      expect(container.read(credentialMutationQueueProvider).credentialsEnabled,
+          isFalse);
+    });
+  }
+
+  test('delayed reconnect cannot enable credentials after a server switch',
+      () async {
+    Completer<bool>? reconnect;
+    final container = ProviderContainer(overrides: [
+      tokenStorageProvider.overrideWithValue(_TokenStore()),
+      serverBiometricUnlockProvider
+          .overrideWithValue(_Biometrics()..accepted = true),
+      savedAccountValidationProvider.overrideWithValue((_) async {
+        final pending = reconnect;
+        return pending == null ? false : await pending.future;
+      }),
+    ]);
+    addTearDown(container.dispose);
+    final auth = container.read(authStateProvider.notifier);
+    await auth.switchServer('https://a.example');
+    await container
+        .read(savedServerCredentialsProvider)
+        .write(_credential('https://a.example', 'token-a'));
+    await auth.unlockSavedServer();
+    reconnect = Completer<bool>();
+    final validating = auth.reconnectSavedAccount();
+    await Future<void>.delayed(Duration.zero);
+    await auth.switchServer('https://b.example');
+    reconnect.complete(true);
+    expect(await validating, isFalse);
+    expect(container.read(authStateProvider).requireValue.isUnauthenticated,
+        isTrue);
+    expect(container.read(credentialMutationQueueProvider).credentialsEnabled,
+        isFalse);
+  });
+
+  test(
+      'offline fingerprint unlock keeps API gate closed until same account validates',
+      () async {
+    var online = false;
+    final storage = _TokenStore();
+    final container = ProviderContainer(overrides: [
+      tokenStorageProvider.overrideWithValue(storage),
+      serverBiometricUnlockProvider
+          .overrideWithValue(_Biometrics()..accepted = true),
+      savedAccountValidationProvider.overrideWithValue((_) async => online),
+    ]);
+    addTearDown(container.dispose);
+    final auth = container.read(authStateProvider.notifier);
+    await auth.switchServer('https://a.example');
+    await container
+        .read(savedServerCredentialsProvider)
+        .write(_credential('https://a.example', 'token-a'));
+    expect(await auth.unlockSavedServer(), isTrue);
+    expect(container.read(authStateProvider).requireValue.isOffline, isTrue);
+    final gate = container.read(credentialMutationQueueProvider);
+    expect(gate.credentialsEnabled, isFalse);
+    final api = container.read(apiClientProvider);
+    final requests = _Requests();
+    api.rawDio.httpClientAdapter = requests;
+    await expectLater(api.rawDio.post<void>('/api/v1/admin/rescan'),
+        throwsA(isA<DioException>()));
+    expect(requests.seen, isNull);
+    expect(await auth.reconnectSavedAccount(), isFalse);
+    expect(gate.credentialsEnabled, isFalse);
+    online = true;
+    expect(await auth.reconnectSavedAccount(), isTrue);
+    expect(container.read(authStateProvider).requireValue.isOffline, isFalse);
+    expect(gate.credentialsEnabled, isTrue);
+    await api.rawDio.get<void>('/healthz');
+    expect(requests.seen!.headers['Authorization'], 'Bearer token-a');
+  });
+
+  test(
+      'offline queued cache progress survives logout/restart and flushes only after account validation',
+      () async {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfiNoIsolate;
+    final directory =
+        await Directory.systemTemp.createTemp('offline-unlock-progress-');
+    final path = '${directory.path}/progress.db';
+    const scope = ProgressScope(origin: 'https://a.example', userId: 1);
+    var online = false;
+    var denied = false;
+    for (final restart in [false, true]) {
+      final storage = _TokenStore();
+      final requests = _Requests();
+      final container = ProviderContainer(overrides: [
+        tokenStorageProvider.overrideWithValue(storage),
+        serverBiometricUnlockProvider
+            .overrideWithValue(_Biometrics()..accepted = true),
+        savedAccountValidationProvider.overrideWithValue((_) async {
+          if (denied) {
+            final options = RequestOptions(path: '/api/v1/auth/tokens');
+            throw DioException(
+                requestOptions: options,
+                type: DioExceptionType.badResponse,
+                response: Response(requestOptions: options, statusCode: 401));
+          }
+          return online;
+        }),
+        progressQueueProvider.overrideWith((ref) => ProgressQueue(
+            apiClient: ref.watch(apiClientProvider),
+            databasePath: path,
+            connectivity: _Connected())),
+      ]);
+      final auth = container.read(authStateProvider.notifier);
+      await auth.switchServer(scope.origin);
+      await container
+          .read(savedServerCredentialsProvider)
+          .write(_credential(scope.origin, 'token-a'));
+      expect(await auth.unlockSavedServer(), isTrue);
+      final api = container.read(apiClientProvider);
+      api.rawDio.httpClientAdapter = requests;
+      final queue = container.read(progressQueueProvider) as ProgressQueue;
+      await queue.resume(scope);
+      if (!restart) {
+        await queue.enqueue(42, 37);
+        expect(await queue.latestPosition(scope, 42), 37);
+        expect(requests.requests, isEmpty);
+        await auth.logout();
+        expect(await queue.pendingIds(scope), isNotEmpty);
+      } else {
+        expect(await queue.latestPosition(scope, 42), 37);
+        // Network availability alone never releases the saved account gate.
+        await expectLater(queue.flushForSync(scope),
+            throwsA(anyOf(isA<StateError>(), isA<DioException>())));
+        expect(requests.requests, isEmpty);
+        expect(await queue.pendingIds(scope), isNotEmpty);
+        denied = true;
+        expect(await auth.reconnectSavedAccount(), isFalse);
+        expect(container.read(authStateProvider).requireValue.isUnauthenticated,
+            isTrue);
+        expect(await queue.pendingIds(scope), isNotEmpty);
+        denied = false;
+        await container
+            .read(savedServerCredentialsProvider)
+            .write(_credential(scope.origin, 'token-a'));
+        expect(await auth.unlockSavedServer(), isTrue);
+        await queue.resume(scope);
+        online = true;
+        expect(await auth.reconnectSavedAccount(), isTrue);
+        await queue.flushForSync(scope);
+        expect(await queue.pendingIds(scope), isEmpty);
+        expect(requests.requests, isNotEmpty);
+        expect(
+            requests.requests.every((request) =>
+                request.headers['Authorization'] == 'Bearer token-a'),
+            isTrue);
+      }
+      await queue.dispose();
+      container.dispose();
+    }
+    await directory.delete(recursive: true);
   });
 
   test('invalid ports are rejected', () {

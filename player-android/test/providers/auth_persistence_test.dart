@@ -1,3 +1,4 @@
+import 'package:player_android/providers/saved_account_validation_provider.dart';
 import 'package:player_android/providers/cast_provider.dart';
 import 'package:player_android/services/cast/cast_controller.dart';
 import 'package:player_android/services/cast/cast_device.dart';
@@ -382,6 +383,7 @@ void main() {
     final storage = _MemoryTokenStorage();
     ProviderContainer container() => ProviderContainer(overrides: [
           serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+          savedAccountValidationProvider.overrideWithValue((_) async => true),
           tokenStorageProvider.overrideWithValue(storage),
           playerBaseUrlProvider.overrideWithValue(baseUrl),
           apiClientProvider.overrideWith((ref) {
@@ -419,6 +421,7 @@ void main() {
 
     final wrongServer = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://other.example')),
@@ -436,6 +439,7 @@ void main() {
     late DioClient testClient;
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -499,6 +503,7 @@ void main() {
     });
     container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -539,6 +544,7 @@ void main() {
     final adapter = _AuthAdapter([]);
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -575,6 +581,7 @@ void main() {
     late DioClient testClient;
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -622,6 +629,7 @@ void main() {
     final container = ProviderContainer(overrides: [
       progressQueueProvider.overrideWithValue(progress),
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -674,6 +682,7 @@ void main() {
     late DioClient testClient;
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -711,6 +720,7 @@ void main() {
     late DioClient testClient;
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       credentialMutationQueueProvider.overrideWithValue(queue),
       playerBaseUrlProvider
@@ -753,6 +763,7 @@ void main() {
     api.release.complete({'id': 7, 'token': 'pt-orphan'});
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       apiClientProvider.overrideWithValue(api),
     ]);
@@ -775,6 +786,7 @@ void main() {
     final api = _DelayedMintApiClient();
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       apiClientProvider.overrideWithValue(api),
     ]);
@@ -801,6 +813,7 @@ void main() {
     final container = ProviderContainer(overrides: [
       progressQueueProvider.overrideWithValue(progress),
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       apiClientProvider.overrideWithValue(api),
     ]);
@@ -825,6 +838,7 @@ void main() {
     api.release.complete({'id': 7, 'token': 'pt-reconnected'});
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(_MemoryTokenStorage()),
       apiClientProvider.overrideWithValue(api),
       progressQueueProvider.overrideWithValue(queue),
@@ -851,6 +865,7 @@ void main() {
     api.release.complete({'id': 7, 'token': 'pt-login'});
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       apiClientProvider.overrideWithValue(api),
       progressQueueProvider.overrideWithValue(queue),
@@ -880,6 +895,7 @@ void main() {
     final queue = _PausingResumeQueue();
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(_MemoryTokenStorage()),
       progressQueueProvider.overrideWithValue(queue),
       cookieJarProvider.overrideWithValue(CookieJar()),
@@ -923,6 +939,7 @@ void main() {
     final api = _DelayedMintApiClient();
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       credentialMutationQueueProvider.overrideWithValue(queue),
       apiClientProvider.overrideWithValue(api),
@@ -952,6 +969,7 @@ void main() {
     final storage = _MemoryTokenStorage()..token = 'pt-expired';
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       playerBaseUrlProvider
           .overrideWithValue(Uri.parse('https://player.example')),
@@ -978,6 +996,7 @@ void main() {
     final queue = CredentialMutationQueue();
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       credentialMutationQueueProvider.overrideWithValue(queue),
       playerBaseUrlProvider
@@ -1004,6 +1023,7 @@ void main() {
     late DioClient dio;
     final container = ProviderContainer(overrides: [
       serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+      savedAccountValidationProvider.overrideWithValue((_) async => true),
       tokenStorageProvider.overrideWithValue(storage),
       credentialMutationQueueProvider.overrideWithValue(queue),
       progressQueueProvider.overrideWithValue(progress),
@@ -1190,6 +1210,7 @@ void main() {
         ...idlePlaybackOverrides(),
         unpairedServerEndpointOverride(),
         serverBiometricUnlockProvider.overrideWithValue(AllowServerUnlock()),
+        savedAccountValidationProvider.overrideWithValue((_) async => true),
         tokenStorageProvider.overrideWithValue(storage),
         credentialMutationQueueProvider.overrideWithValue(queue),
         playerBaseUrlProvider

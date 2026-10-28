@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_client_provider.dart';
+import '../services/saved_server_credentials.dart';
 
 /// Returns whether the server has no registered users yet (first-run state).
 ///
@@ -17,9 +18,16 @@ import 'api_client_provider.dart';
 ///     login screen is shown and the user can retry; this avoids looping to
 ///     /bootstrap on connectivity failures.
 final firstRunProvider = FutureProvider<bool>((ref) async {
+  final saved = ref.watch(selectedServerCredentialProvider.future);
   final apiClient = ref.watch(apiClientProvider);
   try {
-    final count = await apiClient.countUsers();
+    // A validated saved identity already establishes this is a returning user.
+    // Optional setup detection must not delay offline fingerprint access.
+    if ((await saved)?.isValid == true) return false;
+  } catch (_) {/* Password login remains available if secure storage fails. */}
+  try {
+    final count =
+        await apiClient.countUsers().timeout(const Duration(seconds: 4));
     return count == 0;
   } catch (_) {
     // Network or server error: assume not first-run so we show login.

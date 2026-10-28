@@ -454,6 +454,18 @@ class ProgressQueue implements ProgressQueueBase, ListeningProgressQueue {
 
   /// The coordinator captures IDs first so edits made during its run do not
   /// prevent a truthful success for the work that existed at its start.
+  Future<double?> latestPosition(ProgressScope scope, int mediaId) async {
+    final db = _db;
+    if (db == null) return null;
+    final rows = await db.query(_kTable,
+        where: 'origin = ? AND user_id = ? AND media_id = ?',
+        whereArgs: [scope.origin, scope.userId, mediaId],
+        orderBy: 'id DESC',
+        limit: 1);
+    if (rows.isEmpty || rows.single[_kColFinished] == 1) return null;
+    return (rows.single[_kColPositionSeconds] as num).toDouble();
+  }
+
   Future<Set<int>> pendingIds(ProgressScope scope) async {
     final rows = await _db?.query(_kTable,
         columns: [_kColId],

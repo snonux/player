@@ -1,4 +1,8 @@
 import '../providers/playback_cache_provider.dart';
+import '../providers/auth_state_provider.dart';
+import '../providers/api_client_provider.dart';
+import '../providers/progress_queue_provider.dart';
+import '../services/progress_queue.dart';
 import 'music_queue_sheet.dart';
 import 'music_mini_player.dart';
 import 'dart:convert';
@@ -21,6 +25,11 @@ final offlineMusicItemsProvider =
     FutureProvider<List<OfflineMedia>>((ref) async {
   final downloads = ref.watch(offlineMediaListProvider.future);
   final cache = ref.watch(playbackCacheProvider);
+  final offlineUserId = ref.watch(authStateProvider.select((state) =>
+      state.valueOrNull?.isOffline == true
+          ? state.valueOrNull?.user?.id
+          : null));
+  final origin = ref.watch(playerBaseUrlProvider).origin;
   final saved = await downloads;
   final cached = await cache.offlineLibrary();
   final identities = saved
@@ -32,7 +41,11 @@ final offlineMusicItemsProvider =
         item.mediaId == 0 ||
         !identities
             .contains(jsonEncode([item.origin, item.userId, item.mediaId])))
-  ];
+  ]
+      .where((item) =>
+          offlineUserId == null ||
+          (item.origin == origin && item.userId == offlineUserId))
+      .toList();
 });
 
 /// A device-local view: selecting a saved account never unlocks online APIs.
@@ -79,11 +92,48 @@ class _OfflineMusicBrowserState extends ConsumerState<OfflineMusicBrowser> {
     try {
       final repository = ref.read(offlineDownloadRepositoryProvider);
       final requests = <OfflinePlaybackRequest>[];
+      final container = ProviderScope.containerOf(context, listen: false);
+      final auth = container.read(authStateProvider).valueOrNull;
+      final mutations = ref.read(credentialMutationQueueProvider);
+      final epoch = mutations.generation;
+      final progress = ref.read(progressQueueProvider);
+      bool canSave(OfflineMedia song) =>
+          mutations.generation == epoch &&
+          container.read(authStateProvider).valueOrNull?.isAuthenticated ==
+              true &&
+          container.read(authStateProvider).valueOrNull?.user?.id ==
+              song.userId &&
+          container.read(playerBaseUrlProvider).origin == song.origin;
+      if (auth?.isOffline == true) {
+        await progress.resume(ProgressScope(
+            origin: ref.read(playerBaseUrlProvider).origin,
+            userId: auth!.user!.id));
+        if (!current()) return;
+      }
       for (final song in songs) {
+        final saveProgress = auth?.isOffline == true && song.mediaId > 0;
         requests.add(song.key.startsWith('cache:')
-            ? await ref
-                .read(playbackCacheProvider)
-                .offlineRequest(song.key.substring(6), song.origin, song.userId)
+            ? await ref.read(playbackCacheProvider).offlineRequest(
+                song.key.substring(6), song.origin, song.userId,
+                readPosition: saveProgress && progress is ProgressQueue
+                    ? () => progress.latestPosition(
+                        ProgressScope(origin: song.origin, userId: song.userId),
+                        song.mediaId)
+                    : null,
+                savePosition: saveProgress
+                    ? (seconds) async {
+                        if (canSave(song)) {
+                          await progress.enqueue(song.mediaId, seconds);
+                        }
+                      }
+                    : null,
+                markFinished: saveProgress
+                    ? () async {
+                        if (canSave(song)) {
+                          await progress.enqueueFinished(song.mediaId);
+                        }
+                      }
+                    : null)
             : await repository.playbackRequest(song.key));
         if (!current()) return;
       }

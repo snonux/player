@@ -250,6 +250,14 @@ in Android's secure storage; account passwords are never saved. Switching server
 login and preserves each server's saved credential. Logout removes the selected
 server's credential. Expired/revoked tokens require password sign-in.
 
+If the server is unreachable (including a gateway outage), fingerprint unlock
+opens **Offline downloads** for that saved server/account. Only complete matching
+downloads and cached music appear, and playback uses local files. The account
+menu offers reconnect, server selection and sign-out. Progress stays on the
+device through restarts and syncs after the same saved account is accepted by
+the server again; network availability alone does not unlock server requests.
+A server rejection never grants offline access through the fingerprint fallback.
+
 Credential gating and background audio integration are covered by automated
 client checks. Biometric hardware behavior has not been verified on a physical
 device. Other enrolled biometrics may be offered alongside fingerprint.

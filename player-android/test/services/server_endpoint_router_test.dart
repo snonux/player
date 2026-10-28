@@ -43,7 +43,7 @@ void main() {
         profile: profile(),
         probe: (uri) async {
           attempts.add(uri.origin);
-          if (uri.host == '192.168.1.2') throw StateError('offline');
+          if (uri.host == '192.168.1.2') throw const SocketException('offline');
           return id;
         });
     final result = await router

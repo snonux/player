@@ -1,3 +1,9 @@
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:player_android/providers/first_run_provider.dart';
+import 'package:player_android/providers/settings_provider.dart';
+import 'package:player_android/router.dart';
+import 'package:player_android/models/user.dart';
+import 'package:player_android/providers/auth_state_provider.dart';
 import 'dart:io';
 import 'dart:convert';
 
@@ -5,7 +11,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:player_android/app_routes.dart';
 import 'package:player_android/screens/offline_playback_route.dart';
 import 'package:player_android/models/offline_media.dart';
 import 'package:player_android/models/music_metadata.dart';
@@ -17,6 +22,18 @@ import 'package:player_android/services/offline_downloads.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+class _OfflineAccount extends AuthStateNotifier {
+  @override
+  Future<AuthState> build() async => const AuthState.authenticated(
+      user: User(id: 7, username: 'alice', isAdmin: false), isOffline: true);
+}
+
+class _OfflineSettings extends SettingsNotifier {
+  @override
+  Future<AppSettings> build() async =>
+      const AppSettings(serverBaseUrl: 'https://saved.example:8443');
+}
 
 class _StopControl extends PlaybackSessionCoordinator {
   bool refuseStop = false;
@@ -32,6 +49,92 @@ void main() {
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfiNoIsolate;
+  });
+
+  test(
+      'offline unlocked account lists only complete copies for its origin and user',
+      () async {
+    final directory =
+        await Directory.systemTemp.createTemp('offline-account-files-');
+    final repository = OfflineDownloadRepository(directory: directory);
+    final container = ProviderContainer(overrides: [
+      authStateProvider.overrideWith(_OfflineAccount.new),
+      playerBaseUrlProvider
+          .overrideWithValue(Uri.parse('https://saved.example:8443')),
+      offlineDownloadRepositoryProvider.overrideWithValue(repository),
+    ]);
+    await container.read(authStateProvider.future);
+    final keys = <String>[];
+    for (final row in [
+      ('https://saved.example:8443', 7, 11, true),
+      ('https://saved.example:8443', 8, 12, true),
+      ('https://other.example', 7, 13, true),
+      ('https://saved.example:8443', 7, 14, false),
+    ]) {
+      final key = offlineMediaKey(row.$1, row.$2, row.$3);
+      keys.add(key);
+      await repository.database;
+      if (row.$4) await repository.file(key).writeAsBytes([1, 2, 3, 4]);
+      await repository.add(OfflineMedia(
+          key: key,
+          origin: row.$1,
+          userId: row.$2,
+          mediaId: row.$3,
+          title: 'Saved ${row.$3}',
+          type: 'audio',
+          sizeBytes: 4,
+          addedAt: DateTime.now()));
+    }
+    final items = await container.read(offlineMediaListProvider.future);
+    expect(items.map((item) => item.key), [keys.first]);
+    expect(await container.read(offlineMediaProvider(keys[1]).future), isNull);
+    expect(await container.read(offlineMediaProvider(keys[2]).future), isNull);
+    container.dispose();
+    await repository.close();
+    await directory.delete(recursive: true);
+  });
+
+  testWidgets(
+      'offline unlocked router confines remote, setup and public routes to saved files',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final container = ProviderContainer(overrides: [
+      authStateProvider.overrideWith(_OfflineAccount.new),
+      settingsProvider.overrideWith(_OfflineSettings.new),
+      firstRunProvider.overrideWith((ref) async => false),
+      offlineMediaListProvider.overrideWith((ref) async => []),
+      apiClientProvider.overrideWith(
+          (ref) => throw StateError('Offline router used server API')),
+    ]);
+    addTearDown(container.dispose);
+    await tester.runAsync(() async {
+      await container.read(settingsProvider.future);
+      await container.read(authStateProvider.future);
+    });
+    final router = container.read(routerProvider);
+    await tester.pumpWidget(UncontrolledProviderScope(
+        container: container, child: MaterialApp.router(routerConfig: router)));
+    await tester.pumpAndSettle();
+    expect(find.text('Offline downloads'), findsOneWidget);
+    for (final path in [
+      AppRoutes.home,
+      AppRoutes.adminUsers,
+      AppRoutes.settings,
+      AppRoutes.bootstrap,
+      AppRoutes.login,
+      '/media/42',
+      '/audio/42',
+      AppRoutes.shareViewerPath('public'),
+      AppRoutes.localLibrary
+    ]) {
+      router.go(path);
+      await tester.pumpAndSettle();
+      expect(router.routeInformationProvider.value.uri.path,
+          AppRoutes.offlineDownloads);
+      expect(find.text('Offline downloads'), findsOneWidget);
+    }
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets(
@@ -147,7 +250,10 @@ void main() {
       await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 10)));
       if (!repository.file(key).existsSync() &&
-          find.text('Saved audio.mp3').evaluate().isEmpty) {
+          find
+              .text('No offline copies yet. Use Keep offline on a server file.')
+              .evaluate()
+              .isNotEmpty) {
         break;
       }
     }

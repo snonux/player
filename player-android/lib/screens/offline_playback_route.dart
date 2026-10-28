@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/offline_downloads_provider.dart';
+import '../providers/auth_state_provider.dart';
+import '../providers/api_client_provider.dart';
 import '../providers/personal_media_provider.dart';
 import '../widgets/personal_media_actions.dart';
 import '../services/playback_request.dart';
@@ -10,8 +12,20 @@ import 'audio_player_screen.dart';
 import 'video_player_screen.dart';
 
 final _offlinePlaybackProvider = FutureProvider.autoDispose
-    .family<OfflinePlaybackRequest, String>((ref, key) {
-  return ref.watch(offlineDownloadRepositoryProvider).playbackRequest(key);
+    .family<OfflinePlaybackRequest, String>((ref, key) async {
+  final offlineUserId = ref.watch(authStateProvider.select((state) =>
+      state.valueOrNull?.isOffline == true
+          ? state.valueOrNull?.user?.id
+          : null));
+  final origin = ref.watch(playerBaseUrlProvider).origin;
+  final repository = ref.watch(offlineDownloadRepositoryProvider);
+  if (offlineUserId != null) {
+    final item = await repository.get(key);
+    if (item?.origin != origin || item?.userId != offlineUserId) {
+      throw StateError('Download unavailable for this account');
+    }
+  }
+  return repository.playbackRequest(key);
 });
 
 class OfflinePlaybackRoute extends ConsumerWidget {

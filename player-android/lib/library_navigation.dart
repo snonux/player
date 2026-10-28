@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'app_routes.dart';
 import 'providers/audio_handler_provider.dart';
+import 'providers/auth_state_provider.dart';
 import 'providers/playback_session_provider.dart';
 import 'providers/progress_queue_provider.dart';
 import 'providers/settings_provider.dart';
@@ -50,7 +51,8 @@ Future<void> initializeServerProgressQueue(WidgetRef ref, User user) =>
 /// server switch, which keeps working after the router replaces its screen.
 Future<void> initializeServerProgressQueueWith(
     ProviderReader read, User user) async {
-  if (read(serverProgressQueueLifecycleProvider)) {
+  final offline = read(authStateProvider).valueOrNull?.isOffline == true;
+  if (!offline && read(serverProgressQueueLifecycleProvider)) {
     try {
       await read(musicQueuePersistenceProvider).initialize(user.id);
     } catch (_) {
