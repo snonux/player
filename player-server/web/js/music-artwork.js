@@ -10,7 +10,7 @@ async function request(kind,key,options={}) {
  return data;
 }
 // One stable preview slot. Never replace a saved preview until a write succeeds.
-export function mountMusicArtwork(host,kind,key,current,fallback='') {
+export function mountMusicArtwork(host,kind,key,current,fallback='',options={}) {
  const section=document.createElement('section');section.className='music-artwork';
  section.setAttribute('aria-label',`${kind} artwork`);
  section.innerHTML='<div data-art-preview></div><div data-art-controls></div><p role="status" data-art-status>Loading artwork…</p>';
@@ -24,6 +24,7 @@ export function mountMusicArtwork(host,kind,key,current,fallback='') {
   preview.innerHTML=data.has_artwork?`<img class="album-cover" src="${esc(path(kind,key))}/image?revision=${encodeURIComponent(data.revision)}" alt="Custom ${kind} artwork">`:original;
   preview.querySelector('img')?.addEventListener('error',()=>{if(alive())status.textContent='Artwork could not be loaded. Retry or check your connection.';});
   controls.innerHTML=data.can_edit?'<button class="btn" data-art-change>Change artwork…</button> <button class="btn btn-ghost" data-art-remove>Remove artwork</button>':'';
+  controls.hidden=Boolean(options.menuOnly);
   if(!data.can_edit)return;
   const change=controls.querySelector('[data-art-change]'),remove=controls.querySelector('[data-art-remove]');remove.hidden=!data.has_artwork;
   change.onclick=()=>{if(busy)return;const input=document.createElement('input');input.type='file';input.accept='image/png,image/jpeg,image/gif';input.onchange=()=>{const file=input.files?.[0];if(file)void save(file);};input.click();};

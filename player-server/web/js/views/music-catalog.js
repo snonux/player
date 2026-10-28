@@ -124,7 +124,13 @@ export async function renderMusic(grid, isCurrent) {
   if(!current())return;
   if (view.search) { await renderMusicSearch(grid,view,current,{openAlbum,openArtist,back:backMusic,reload});await mountMusicFacets(grid,view,current,reload);return; }
   if (view.playlists) { await renderPlaylists(grid,view,current,positions.get(viewKey(view)));return; }
-  if (view.artists && !view.album) { await renderArtists(grid, view, current);await mountMusicFacets(grid,view,current,reload); return; }
+  if (view.artists && !view.album) {
+   await renderArtists(grid, view, current);
+   await mountMusicFacets(grid,view,current,reload);
+   // Favorites/ratings after Filters so they land in [data-music-filter-extras].
+   if (!view.artist) { favoriteFilter(grid,view,reload); ratingFilters(grid,view,reload); }
+   return;
+  }
   let data = view.album ? await API.album(view.album) : await API.albums({...ratingParams(view),collection:personalCollections.includes(view.collection)?'':view.collection || '',favorite:view.favorites || false,...facetParams(view.facets),...(view.artist ? {artist:view.artist} : {}),...libraryQueryParams()});
   if (!current()) return;
   if(!view.album && personalCollections.includes(view.collection)) data=discoverAlbums(data,view.collection);
@@ -360,7 +366,6 @@ async function renderArtists(grid, view, current) {
  const heading=musicArtistHeading(data,view);
  grid.innerHTML=heading+(detail ? data.albums.map(album=>html`<div class="media-card album-card" role="button" tabindex="0" data-album="${esc(album.album_key)}" aria-label="Open album ${esc(album.title)} by ${esc(album.artist)}">${cover(album)}<div class="card-body"><div class="title">${esc(album.title)}</div><div class="text-muted">${esc(album.artist)}</div><div class="text-muted" title="${esc(labels(album.roles))}">${esc(labels(album.roles))}</div>${listeningDetails(album)}</div></div>`).join('') : data.length ? data.map(person=>html`<div class="media-card album-card" role="button" tabindex="0" data-artist-card="${esc(person.artist_key)}" aria-label="Open artist ${esc(person.name)}"><div class="card-body">${favoriteButton('artist',person.artist_key,person)} ${ratingControl('artist',person.artist_key,person)}<div class="title" title="${esc(person.name)}">${esc(person.name)}</div><div class="text-muted" title="${esc(labels(person.roles))}">${esc(labels(person.roles))}</div><div class="text-muted">${uiCount(person.album_count, '{count} album', '{count} albums')} · ${person.song_count} ${hasFacets(view)?'matching songs':'songs'}</div>${listeningDetails(person)}</div></div>`).join('') : html`<p class="grid-full">${view.favorites?ui('No favorite artists. Show all artists to favorite one.'):ui('No artists available for this role. Choose another role or ask an administrator to rescan music tags.')}</p>`);
  bindFavorites(grid,current);bindRatings(grid,current);
- if(!detail){favoriteFilter(grid,view,reload);ratingFilters(grid,view,reload);}
  grid.querySelector('[data-music-back]').onclick=backMusic;
  grid.querySelectorAll('[data-album]').forEach(card=>card.onclick=()=>openAlbum(card.dataset.album));
  grid.querySelectorAll('[data-artist-card]').forEach(card=>card.onclick=()=>openArtist(card.dataset.artistCard));
@@ -368,12 +373,16 @@ async function renderArtists(grid, view, current) {
   const actions=document.createElement('div'); actions.innerHTML=collectionButtons('Play artist');
   grid.querySelector('.music-heading').append(actions);
   bindCollectionActions(actions,()=>[{kind:'artist',key:view.artist}],current,data.name);
+  // Keep Play primary; Shuffle + collection More stay reachable via artist More.
+  actions.querySelector('[data-collection-shuffle]')?.setAttribute('hidden','');
+  actions.querySelector('[data-collection-menu]')?.setAttribute('hidden','');
  }
- if(detail) mountMusicArtwork(grid.querySelector('.music-heading'),'artist',view.artist,current,data.albums?.find(a=>a.cover_media_id)?cover(data.albums.find(a=>a.cover_media_id)):'');
+ if(detail) mountMusicArtwork(grid.querySelector('.music-heading'),'artist',view.artist,current,data.albums?.find(a=>a.cover_media_id)?cover(data.albums.find(a=>a.cover_media_id)):'',{menuOnly:true});
  if(detail) mountMusicEnrichment(grid.querySelector('.music-heading'),'artist',view.artist,current);
  if(detail) {
-  const top=mountArtistTopSongs(grid,data.top_songs,data.name,current);
+  const top=mountArtistTopSongs(grid,data.top_songs,data.name,current,{hidePlayAll:true});
   grid.querySelector('.music-heading').after(top);
+  grid.querySelector('[data-artist-more]').onclick = event => artistDetailMore(event.currentTarget, grid, data);
  }
  if(detail) mountRelatedMusic(grid,'artist',view.artist,current,item=>openArtist(item.key));
  bindCollectionCatalog(grid,detail?data.albums:data,detail?'album':'artist',detail?'album_key':'artist_key',detail?'title':'name',current);
@@ -390,8 +399,68 @@ function discHeading(disc) {
  return html`<section class="music-disc" aria-label="${esc(title)}">${cover({title,cover_media_id:disc.cover_media_id})}<h2>${esc(title)}</h2></section>`;
 }
 
+function artistDetailMore(button, grid, data) {
+ const favorite = grid.querySelector('[data-entity-favorite]');
+ const rating = grid.querySelector('[data-music-rating][data-kind="artist"]');
+ const ratingHost = grid.querySelector('[data-artist-rating-host]');
+ const collectionMenu = grid.querySelector('[data-collection-menu]');
+ const shuffle = grid.querySelector('[data-collection-shuffle]');
+ const topPlay = grid.querySelector('[data-top-play="0"]');
+ const artChange = grid.querySelector('[data-art-change]');
+ const artRemove = grid.querySelector('[data-art-remove]');
+ const items = [
+  ['favorite', favorite?.getAttribute('aria-label') || t('Favorite artist')],
+  ['rating', t('Artist rating')],
+  ['shuffle', t('Shuffle')],
+  ['collection', t('Queue and offline…')],
+  ['top', t('Play top songs')],
+  ['art-change', t('Change artwork…')],
+  ['art-remove', t('Remove artwork')],
+ ].filter(([action]) => {
+  if (action === 'shuffle' || action === 'collection') return Boolean(data.albums?.length);
+  if (action === 'top') return Boolean(topPlay);
+  if (action === 'art-change') return Boolean(artChange);
+  if (action === 'art-remove') return Boolean(artRemove) && !artRemove.hidden;
+  return true;
+ });
+ const popover = document.createElement('div');
+ popover.className = 'shortcut-picker'; popover.setAttribute('popover', 'auto');
+ popover.setAttribute('role', 'menu'); popover.setAttribute('aria-label', t('More artist actions'));
+ popover.innerHTML = items.map(([action, label]) => html`<button class="btn btn-ghost" data-more="${action}">${esc(label)}</button>`).join('');
+ popover.querySelectorAll('[data-more]').forEach(item => item.onclick = () => {
+  popover.hidePopover();
+  const action = item.dataset.more;
+  if (action === 'favorite') {
+   favorite?.click();
+   queueMicrotask(() => { if (button.isConnected) button.focus(); });
+  } else if (action === 'rating' && rating && ratingHost) {
+   ratingHost.hidden = false;
+   rating.focus();
+   const hide = () => { ratingHost.hidden = true; if (button.isConnected) button.focus(); rating.removeEventListener('change', hide); rating.removeEventListener('blur', onBlur); };
+   const onBlur = () => setTimeout(() => { if (document.activeElement !== rating) hide(); }, 0);
+   rating.addEventListener('change', hide, { once: true });
+   rating.addEventListener('blur', onBlur, { once: true });
+  } else if (action === 'shuffle') shuffle?.click();
+  else if (action === 'collection') {
+   const restore = event => {
+    if (event.target?.matches?.('.shortcut-picker') && event.newState === 'closed') {
+     document.removeEventListener('toggle', restore, true);
+     queueMicrotask(() => { if (button.isConnected) button.focus(); });
+    }
+   };
+   document.addEventListener('toggle', restore, true);
+   collectionMenu?.click();
+  } else if (action === 'top') topPlay?.click();
+  else if (action === 'art-change') artChange?.click();
+  else if (action === 'art-remove') artRemove?.click();
+ });
+ popover.addEventListener('toggle', event => { if (event.newState === 'closed') { popover.remove(); if (button.isConnected) button.focus(); } });
+ document.body.append(popover); popover.showPopover(); popover.querySelector('button')?.focus();
+}
+
 export function musicArtistHeading(data, view) {
  const detail=Boolean(view.artist);
  const labels=roles=>roles.map(role=>t(artistRoles[role])).join(' · ');
- return html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-music-back>← ${detail?ui('Back'):ui('Back to Sets')}</button><h1>${detail?esc(data.name):ui('Artists')}</h1>${detail ? html`${favoriteButton('artist',data.artist_key,data)} ${ratingControl('artist',data.artist_key,data)}<p>${esc(labels(data.roles))}</p><p>${uiCount(data.album_count, '{count} album', '{count} albums')} · ${uiCount(data.song_count, '{count} song', '{count} songs')}</p>${listeningDetails(data)}` : html`<label>Role <select aria-label="Role">${Object.entries(artistRoles).map(([key,label])=>html`<option value="${key}" data-i18n="${esc(label)}" ${key===(view.role || 'artists')?'selected':''}>${t(label)}</option>`).join('')}</select></label>`}</div>`;
+ // Detail: Favorite/rating stay in DOM (hidden) for More menu; chrome is Back + Play + More.
+ return html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-music-back>← ${detail?ui('Back'):ui('Back to Sets')}</button><h1>${detail?esc(data.name):ui('Artists')}</h1>${detail ? html`<span hidden data-artist-favorite-host>${favoriteButton('artist',data.artist_key,data)}</span><span hidden data-artist-rating-host>${ratingControl('artist',data.artist_key,data)}</span><button type="button" class="icon-btn" data-artist-more aria-label="More" aria-haspopup="menu" title="More">☰</button><p>${esc(labels(data.roles))}</p><p>${uiCount(data.album_count, '{count} album', '{count} albums')} · ${uiCount(data.song_count, '{count} song', '{count} songs')}</p>${listeningDetails(data)}` : html`<label>Role <select aria-label="Role">${Object.entries(artistRoles).map(([key,label])=>html`<option value="${key}" data-i18n="${esc(label)}" ${key===(view.role || 'artists')?'selected':''}>${t(label)}</option>`).join('')}</select></label>`}</div>`;
 }
