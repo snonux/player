@@ -330,6 +330,8 @@ export const german = {
   "Collection queue actions": "Warteschlangenaktionen für Sammlungen",
   "More collection actions": "Weitere Sammlungsaktionen",
   "More playlist actions": "Weitere Wiedergabelistenaktionen",
+  "More album actions": "Weitere Albumaktionen",
+  "Album rating": "Albumbewertung",
   "New playlist": "Neue Wiedergabeliste",
   "Queue and offline…": "Warteschlange und offline…",
   "Compact list": "Kompakte Liste",

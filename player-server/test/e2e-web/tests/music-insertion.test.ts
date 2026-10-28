@@ -68,7 +68,12 @@ test('M14 single and selected insertion preserves FIFO, duplicates, position, Un
   await page.keyboard.press('/');await page.getByRole('searchbox',{name:'Search media'}).fill('e E Q j k');await expect(page.getByRole('searchbox',{name:'Search media'})).toHaveValue('e E Q j k');await page.getByRole('searchbox',{name:'Search media'}).fill('');await page.keyboard.press('Escape');
   await page.keyboard.press('Q');expect((await order(page)).length).toBe(6);await page.keyboard.press('Escape');
   if((await panel(page).getAttribute('class')||'').includes('open'))await panel(page).getByRole('button',{name:'Close queue',exact:true}).click();
-  await album(page,false);await expect(page.locator('[data-selection-count]')).toBeVisible();await expect(page.getByRole('button',{name:'Selected song actions',exact:true})).toBeVisible();
+  await album(page,false);await expect(page.locator('[data-selection-toolbar]')).toBeHidden();
+  await page.getByRole('checkbox',{name:'Select Harbour',exact:true}).check();
+  await expect(page.locator('[data-selection-toolbar]')).toBeVisible();
+  await expect(page.getByRole('button',{name:'Selected song actions',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Clear selection',exact:true}).click();
+  await expect(page.locator('[data-selection-toolbar]')).toBeHidden();
   await albumScreens(page,artifacts);
   evidence.record({feature:'M14',scenario:'selected/single FIFO duplicate semantics and playback/Undo/focus/typing',result:'pass',data:{before,after,proof,ids},artifacts});
  }catch(error){evidence.record({feature:'M14',scenario:'insertion UI',result:'fail',detail:String(error),data:{proof},artifacts});throw error;}

@@ -137,19 +137,28 @@ export async function renderMusic(grid, isCurrent) {
    state.media = data.songs || [];
    const layout = albumDiscLayout(data);
    count.innerHTML = `${ui('Music · Albums')} · ${esc(data.title)}`;
-   grid.innerHTML = html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-music-back>← ${ui('Back to albums')}</button><div class="album-header">${cover(data)}<div><h1>${esc(data.title)}</h1>${creditLinks(data.credits, "album_artist", data.artist)}<p class="text-muted">${data.year || ''}${data.from_folder ? ' · From folder' : ''}</p><p>${uiCount(data.song_count, '{count} song', '{count} songs')} · ${fmtDur(data.duration)}</p>${listeningDetails(data)}${favoriteButton('album',data.album_key,data)} ${ratingControl('album',data.album_key,data)}${collectionButtons('Play album')}<div class="music-selection"><span data-selection-count>0 selected</span><button class="btn" data-selection-actions disabled>Selected song actions</button><button class="btn btn-ghost" data-selection-clear>Clear selection</button></div></div></div></div>` + state.media.map((song,index) => html`${layout.grouped && layout.heads.has(song.id) ? discHeading(layout.heads.get(song.id)) : ''}<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" aria-label="Play ${esc(mediaTitle(song))}"><input type="checkbox" data-song-check="${song.id}" aria-label="Select ${esc(mediaTitle(song))}"><span class="text-muted music-number">${esc(albumSongNumber(song,layout.multi))}</span><span class="music-song"><button class="btn btn-ghost song-open" title="${esc(mediaTitle(song))}">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${creditLinks(data.song_credits?.[song.id], "track_artist", song.music?.artist || t("Unknown artist"))}</span>${listeningDetails(song)}</span><span>${fmtDur(song.duration)}</span>${ratingControl('song',song.id,song)}${songActionButtons(song)}<button class="btn btn-ghost" data-song-menu aria-label="Actions for ${esc(mediaTitle(song))}">⋮</button><button hidden data-action="song-info" data-song-info="${song.id}" aria-label="Info for ${esc(mediaTitle(song))}">Info</button></div>`).join('');
+   grid.innerHTML = html`<div class="grid-full music-heading"><button class="btn btn-ghost" data-music-back>← ${ui('Back to albums')}</button><div class="album-header">${cover(data)}<div><h1>${esc(data.title)}</h1>${creditLinks(data.credits, "album_artist", data.artist)}<p class="text-muted">${data.year || ''}${data.from_folder ? ' · From folder' : ''}</p><p>${uiCount(data.song_count, '{count} song', '{count} songs')} · ${fmtDur(data.duration)}</p>${listeningDetails(data)}<div class="playlist-actions">${collectionButtons('Play album')}<button type="button" class="icon-btn" data-album-more aria-label="More" aria-haspopup="menu" title="More">☰</button><span hidden>${favoriteButton('album',data.album_key,data)}${ratingControl('album',data.album_key,data)}</span></div><div class="music-selection" data-selection-toolbar hidden><span data-selection-count>0 selected</span><button class="btn" data-selection-actions disabled>Selected song actions</button><button class="btn btn-ghost" data-selection-clear>Clear selection</button></div></div></div></div>` + state.media.map((song,index) => html`${layout.grouped && layout.heads.has(song.id) ? discHeading(layout.heads.get(song.id)) : ''}<div class="media-row" role="group" tabindex="0" data-id="${song.id}" data-index="${index}" aria-label="Play ${esc(mediaTitle(song))}"><input type="checkbox" data-song-check="${song.id}" aria-label="Select ${esc(mediaTitle(song))}"><span class="text-muted music-number">${esc(albumSongNumber(song,layout.multi))}</span><span class="music-song"><button class="btn btn-ghost song-open" title="${esc(mediaTitle(song))}">${esc(mediaTitle(song))}</button><span class="text-muted text-sm">${creditLinks(data.song_credits?.[song.id], "track_artist", song.music?.artist || t("Unknown artist"))}</span>${listeningDetails(song)}</span><span>${fmtDur(song.duration)}</span>${compactSongRating(song)}${songActionButtons(song)}<button class="btn btn-ghost" data-song-menu aria-label="Actions for ${esc(mediaTitle(song))}">⋮</button><button hidden data-action="song-info" data-song-info="${song.id}" aria-label="Info for ${esc(mediaTitle(song))}">Info</button></div>`).join('');
    mountMusicEnrichment(grid.querySelector('.music-heading'),'album',view.album,current);
    mountRelatedMusic(grid,'album',view.album,current,item=>openAlbum(item.key));
    bindSongActions(grid);
    grid.querySelectorAll('.music-disc img').forEach(img=>img.addEventListener('error',()=>{ const replacement=document.createElement('div'); replacement.className='album-cover album-placeholder'; replacement.setAttribute('role','img'); replacement.setAttribute('aria-label',t('No disc artwork')); replacement.textContent='♫'; img.replaceWith(replacement); },{once:true}));
    grid.querySelectorAll('[data-song-menu]').forEach(button => button.onclick = () => openSongActions(button.closest('.media-row')));
+   bindCompactSongRatings(grid);
    const checkedSongs = () => { const ids = [...grid.querySelectorAll('[data-song-check]:checked')].map(input => Number(input.dataset.songCheck)); return state.media.filter(song => ids.includes(song.id)); };
-   const updateSelection = () => { const count = checkedSongs().length; grid.querySelector('[data-selection-count]').innerHTML = ui('{count} selected', {count}); grid.querySelector('[data-selection-actions]').disabled = !count; };
+   const updateSelection = () => {
+    const count = checkedSongs().length;
+    grid.querySelector('[data-selection-toolbar]').hidden = !count;
+    grid.querySelector('[data-selection-count]').innerHTML = ui('{count} selected', {count});
+    grid.querySelector('[data-selection-actions]').disabled = !count;
+   };
    grid.querySelectorAll('[data-song-check]').forEach(input => input.onchange = updateSelection);
    grid.querySelector('[data-selection-clear]').onclick = () => { grid.querySelectorAll('[data-song-check]').forEach(input => input.checked = false); updateSelection(); };
    grid.querySelector('[data-selection-actions]').onclick = e => selectionActions(e.currentTarget, checkedSongs());
    bindCollectionActions(grid.querySelector('[data-collection-actions]'), () => [{kind:'album',key:view.album}], current, data.title);
-   grid.querySelectorAll('[data-collection-play], [data-collection-menu]').forEach(button => button.disabled=!data.songs.length);
+   grid.querySelector('[data-collection-shuffle]').hidden = true;
+   grid.querySelector('[data-collection-menu]').hidden = true;
+   grid.querySelectorAll('[data-collection-play]').forEach(button => button.disabled=!data.songs.length);
+   grid.querySelector('[data-album-more]').onclick = event => albumDetailMore(event.currentTarget, grid, data);
    bindCredits(grid);
    grid.querySelectorAll('.media-row').forEach(row => {
     row.addEventListener('click', e => { if (e.target.closest('[data-song-info], [data-song-menu], [data-artist], input, [data-action]')) return; selectByElement(row); playAlbumCollection(data.songs,Number(row.dataset.index),data.title); });
@@ -186,6 +195,79 @@ export async function renderMusic(grid, isCurrent) {
   grid.querySelector('[data-retry]').onclick = reload;
   grid.querySelector('[data-music-back]').onclick = backMusic;
  }
+}
+function compactSongRating(song) {
+ const value = Number(song.rating || 0);
+ return html`<button type="button" class="btn btn-ghost song-rating-badge" data-song-rating-open aria-label="${value ? `${value} stars` : 'Unrated'}">${value ? '★'.repeat(value) : '☆'}</button><span hidden>${ratingControl('song', song.id, song)}</span>`;
+}
+function bindCompactSongRatings(grid) {
+ grid.querySelectorAll('[data-song-rating-open]').forEach(badge => {
+  badge.onclick = event => {
+   event.stopPropagation();
+   const select = badge.parentElement?.querySelector('[data-music-rating]') || badge.nextElementSibling?.querySelector?.('[data-music-rating]');
+   const wrap = badge.nextElementSibling;
+   if (!select || !wrap) return;
+   wrap.hidden = false;
+   select.focus();
+   const hide = () => { wrap.hidden = true; badge.focus(); select.removeEventListener('blur', onBlur); };
+   const onBlur = () => setTimeout(() => { if (document.activeElement !== select) hide(); }, 0);
+   select.addEventListener('change', () => {
+    // Wait until bindRatings finishes (disabled clears; dataset.saved is authoritative).
+    const sync = () => {
+     if (select.disabled) { requestAnimationFrame(sync); return; }
+     const shown = Number(select.dataset.saved || 0);
+     badge.textContent = shown ? '★'.repeat(shown) : '☆';
+     badge.setAttribute('aria-label', shown ? `${shown} stars` : 'Unrated');
+     hide();
+    };
+    requestAnimationFrame(sync);
+   }, { once: true });
+   select.addEventListener('blur', onBlur, { once: true });
+  };
+ });
+}
+function albumDetailMore(button, grid, data) {
+ const favorite = grid.querySelector('[data-entity-favorite]');
+ const rating = grid.querySelector('[data-music-rating][data-kind="album"]');
+ const ratingWrap = rating?.closest('[hidden], span');
+ const collectionMenu = grid.querySelector('[data-collection-menu]');
+ const items = [
+  ['favorite', favorite?.getAttribute('aria-label') || t('Favorite album')],
+  ['rating', t('Album rating')],
+  ['shuffle', t('Shuffle')],
+  ['collection', t('Queue and offline…')],
+ ].filter(([action]) => action !== 'shuffle' && action !== 'collection' || data.songs?.length);
+ const popover = document.createElement('div');
+ popover.className = 'shortcut-picker'; popover.setAttribute('popover', 'auto');
+ popover.setAttribute('role', 'menu'); popover.setAttribute('aria-label', t('More album actions'));
+ popover.innerHTML = items.map(([action, label]) => html`<button class="btn btn-ghost" data-more="${action}">${esc(label)}</button>`).join('');
+ popover.querySelectorAll('[data-more]').forEach(item => item.onclick = () => {
+  popover.hidePopover();
+  const action = item.dataset.more;
+  if (action === 'favorite') {
+   favorite?.click();
+   queueMicrotask(() => { if (button.isConnected) button.focus(); });
+  } else if (action === 'rating' && rating && ratingWrap) {
+   ratingWrap.hidden = false;
+   rating.focus();
+   const hide = () => { ratingWrap.hidden = true; if (button.isConnected) button.focus(); rating.removeEventListener('change', hide); rating.removeEventListener('blur', onBlur); };
+   const onBlur = () => setTimeout(() => { if (document.activeElement !== rating) hide(); }, 0);
+   rating.addEventListener('change', hide, { once: true });
+   rating.addEventListener('blur', onBlur, { once: true });
+  } else if (action === 'shuffle') grid.querySelector('[data-collection-shuffle]')?.click();
+  else if (action === 'collection') {
+   const restore = event => {
+    if (event.target?.matches?.('.shortcut-picker') && event.newState === 'closed') {
+     document.removeEventListener('toggle', restore, true);
+     queueMicrotask(() => { if (button.isConnected) button.focus(); });
+    }
+   };
+   document.addEventListener('toggle', restore, true);
+   collectionMenu?.click();
+  }
+ });
+ popover.addEventListener('toggle', event => { if (event.newState === 'closed') { popover.remove(); if (button.isConnected) button.focus(); } });
+ document.body.append(popover); popover.showPopover(); popover.querySelector('button')?.focus();
 }
 function cover(album) {
  return album.cover_media_id ? html`<img class="album-cover" src="/api/media/${album.cover_media_id}/thumbnail" alt="Artwork for ${esc(album.title)}">` : html`<div class="album-cover album-placeholder" role="img" aria-label="No album artwork">♫</div>`;
