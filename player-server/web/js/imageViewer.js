@@ -1,6 +1,7 @@
 let els = () => ({});
 let isImageMode = () => false;
 let playNext = () => {};
+let playPrevious = () => {};
 
 let zoomScale = 1;
 let panX = 0;
@@ -26,10 +27,53 @@ export function initImageViewer(options = {}) {
   isImageMode = typeof options.isImageMode === 'function' ? options.isImageMode : isImageMode;
   playNext = typeof options.playNext === 'function' ? options.playNext : playNext;
 
+  playPrevious = typeof options.playPrevious === 'function' ? options.playPrevious : playPrevious;
+
   const e = els();
   e.btnZoomIn?.addEventListener('click', zoomIn);
   e.btnZoomOut?.addEventListener('click', zoomOut);
   e.btnSlideshow?.addEventListener('click', toggleSlideshow);
+
+  // One gesture owns either navigation, zoom, or pan until all fingers lift.
+  let gesture = null;
+  const distance = touches => Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+  e.image?.addEventListener('touchstart', ev => {
+    if (!isImageMode() || cropMode) return;
+    ev.preventDefault();
+    pauseSlideshow();
+    const first = ev.touches[0];
+    if (!gesture) gesture = { x: first.clientX, y: first.clientY, lastX: first.clientX, lastY: first.clientY, swipe: zoomScale <= 1, multi: false };
+    if (ev.touches.length > 1) {
+      gesture.multi = true;
+      gesture.distance = distance(ev.touches);
+      gesture.scale = zoomScale;
+    }
+  }, { passive: false });
+  e.image?.addEventListener('touchmove', ev => {
+    if (!gesture) return;
+    ev.preventDefault();
+    const first = ev.touches[0];
+    if (ev.touches.length > 1) {
+      if (gesture.distance > 0) setImageZoom(gesture.scale * distance(ev.touches) / gesture.distance);
+    } else if (!gesture.multi && !gesture.swipe) {
+      panX += first.clientX - gesture.lastX;
+      panY += first.clientY - gesture.lastY;
+      applyImageTransform();
+    }
+    gesture.lastX = first.clientX;
+    gesture.lastY = first.clientY;
+  }, { passive: false });
+  e.image?.addEventListener('touchend', ev => {
+    if (!gesture || ev.touches.length) return;
+    const dx = gesture.lastX - gesture.x;
+    const dy = gesture.lastY - gesture.y;
+    if (gesture.swipe && !gesture.multi && Math.abs(dx) >= 64 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) playNext({ manual: true });
+      else playPrevious();
+    }
+    gesture = null;
+  });
+  e.image?.addEventListener('touchcancel', () => { gesture = null; });
 
   e.image?.addEventListener('mousedown', (ev) => {
     if (zoomScale > 1) {

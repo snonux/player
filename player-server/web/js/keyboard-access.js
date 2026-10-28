@@ -232,6 +232,8 @@ export function initKeyboardAccess() {
   document.addEventListener('media:actions', event => openMediaActions(event.detail));
   document.addEventListener('click', event => {
     if (event.pointerType !== 'touch') return;
+    // Bulk selection owns thumbnail taps, including the release of a hold.
+    if (event.target.closest?.('#media-grid[data-media-selecting="true"]')) return;
     // Primary media-open is a real button for AT, but on touch it must still
     // open the card action menu (narrow/B8), not activate like a toolbar control.
     const mediaOpen = event.target.closest?.('.media-open');

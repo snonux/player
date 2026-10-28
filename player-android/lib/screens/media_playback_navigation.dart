@@ -27,8 +27,11 @@ Future<void> openMediaPlayback(
   };
   switch (media.type) {
     case 'image':
-      await context.push(AppRoutes.imageViewerPath(id),
-          extra: {...extra, 'mediaUrl': client.streamUrl(media.id)});
+      await context.push(AppRoutes.imageViewerPath(id), extra: {
+        ...extra,
+        'mediaUrl': client.streamUrl(media.id),
+        'sequence': sequence.isEmpty ? [media] : List<Media>.of(sequence)
+      });
     case 'video':
       await context.push(AppRoutes.videoPlayerPath(id),
           extra: {...extra, 'mediaUrl': client.playbackUrl(media)});

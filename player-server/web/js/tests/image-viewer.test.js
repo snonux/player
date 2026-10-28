@@ -2,12 +2,14 @@ import { initImageViewer, zoomIn, zoomOut, resetZoom, panImage, toggleCrop, clea
 
 const failures = [];
 function assert(condition, message) { if (!condition) failures.push(message); }
-const image = { style: {}, addEventListener() {} };
+const handlers = {};
+const image = { style: {}, addEventListener(name, handler) { handlers[name] = handler; } };
 const player = { classList: { toggle() {}, remove() {} }, style: { setProperty() {} } };
 globalThis.window = { addEventListener() {} };
 globalThis.document = { fullscreenElement: null };
 let imageMode = true;
-initImageViewer({ els: () => ({ image, player }), isImageMode: () => imageMode });
+let next = 0, previous = 0;
+initImageViewer({ els: () => ({ image, player }), isImageMode: () => imageMode, playNext: () => next++, playPrevious: () => previous++ });
 resetZoom();
 assert(!panImage(40, 40), 'Fitted images must not pan');
 zoomIn();
@@ -27,5 +29,38 @@ assert(!panImage(40, 40), 'Display crop must retain ownership over zoomed-image 
 clearCropMode();
 assert(panImage(-40, -40), 'Pan resumes after crop is cleared');
 resetZoom();
+const point = (x, y = 100) => ({ clientX: x, clientY: y });
+const touch = (name, touches) => handlers[name]({ touches, preventDefault() {} });
+const swipe = (from, to, y = 100) => {
+  touch('touchstart', [point(from)]);
+  touch('touchmove', [point(to, y)]);
+  touch('touchend', []);
+};
+swipe(200, 100);
+swipe(100, 200);
+assert(next === 1 && previous === 1, 'Fitted image swipes navigate both ways');
+swipe(100, 120);
+swipe(100, 200, 300);
+assert(next === 1 && previous === 1, 'Short and vertical gestures must not navigate');
+touch('touchstart', [point(100), point(200)]);
+touch('touchmove', [point(50), point(250)]);
+touch('touchend', [point(250)]);
+touch('touchmove', [point(400)]);
+touch('touchend', []);
+assert(image.style.transform.endsWith('scale(2)'), 'Two-finger pinch must zoom');
+assert(next === 1 && previous === 1, 'Pinch and remaining-finger movement must not navigate');
+swipe(100, 200);
+assert(image.style.transform.startsWith('translate(100px, 0px)'), 'One finger pans a zoomed image');
+assert(previous === 1, 'Zoomed panning must not navigate');
+resetZoom();
+touch('touchstart', [point(200)]);
+touch('touchmove', [point(100)]);
+touch('touchcancel', []);
+touch('touchend', []);
+assert(next === 1, 'Cancelled gestures must not navigate');
+imageMode = false;
+swipe(200, 100);
+assert(next === 1, 'Inactive viewers ignore touch navigation');
+imageMode = true;
 if (failures.length) { failures.forEach(message => console.error(message)); process.exit(1); }
 console.log('All image viewer tests passed.');

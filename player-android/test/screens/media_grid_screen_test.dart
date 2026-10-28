@@ -124,6 +124,18 @@ class _FakeApiClient extends PlayerApiClient {
   String thumbnailUrl(int mediaId) => '';
 }
 
+class _BulkClient extends _FakeApiClient {
+  final updates = <int>[];
+  bool rejectSecond = false;
+  @override
+  Future<void> updateProgressStatus(
+      {required int mediaId, required String status}) async {
+    expect(status, 'finished');
+    if (mediaId == 2 && rejectSecond) throw Exception('Forbidden');
+    updates.add(mediaId);
+  }
+}
+
 /// [PlayerApiClient] stub that delays [listMedia] until [complete] is called.
 ///
 /// Used to inspect mid-flight loading state before the response arrives.
@@ -455,6 +467,42 @@ Future<void> _pumpScreen(
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets(
+      'long press selects; partial bulk failure retains only failed items for retry',
+      (tester) async {
+    final client = _BulkClient()
+      ..mediaResult = [_kVideo, _kAudio]
+      ..rejectSecond = true;
+    await _pumpScreen(tester, client);
+    await tester.pumpAndSettle();
+    await tester.longPress(find.byKey(const Key('media_card_1')));
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('media_card_2')));
+    await tester.pumpAndSettle();
+    expect(find.text('2 selected'), findsOneWidget);
+    await tester.tap(find.byTooltip('Selected item actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mark as finished'));
+    await tester.pumpAndSettle();
+    expect(client.updates, [1]);
+    expect(find.text('1 selected'), findsOneWidget);
+    expect(find.textContaining('Still selected'), findsOneWidget);
+    client.rejectSecond = false;
+    await tester.tap(find.byTooltip('Selected item actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mark as finished'));
+    await tester.pumpAndSettle();
+    expect(client.updates, [1, 2]);
+    expect(find.byTooltip('Cancel selection'), findsNothing);
+    await tester.longPress(find.byKey(const Key('media_card_1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Cancel selection'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('media_grid')), findsOneWidget);
+    expect(find.text('1 selected'), findsNothing);
+  });
+
   testWidgets(
       'pinching the media library changes actual card size and preserves scrolling',
       (tester) async {

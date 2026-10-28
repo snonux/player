@@ -173,6 +173,7 @@
 
 /* Image viewer inside player */
 .player .media-image {
+  touch-action: none;
   width: 100%;
   height: 100%;
   object-fit: contain;

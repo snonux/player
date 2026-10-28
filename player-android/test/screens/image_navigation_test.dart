@@ -216,6 +216,91 @@ void main() {
     expect(find.byKey(const Key('media_card_9')), findsOneWidget);
   });
 
+  testWidgets('swipes navigate images through errors and stop at sequence ends',
+      (tester) async {
+    final second = Media.fromJson(_image.toJson()
+      ..['id'] = 10
+      ..['file_name'] = 'second.jpg');
+    final audio = Media.fromJson(_image.toJson()
+      ..['id'] = 11
+      ..['type'] = 'audio');
+    final client = _Client(media: audio);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [apiClientProvider.overrideWithValue(client)],
+      child: MaterialApp(
+          home: ImageViewerScreen(
+              mediaId: '9', sequence: [_image, audio, second])),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Image unavailable'), findsOneWidget);
+    final area = find.byKey(const Key('image_viewer_error'));
+    await tester.drag(area, const Offset(-150, 0));
+    await tester.pumpAndSettle();
+    expect(client.mediaIds.last, 10);
+    expect(find.text('2 / 2'), findsOneWidget);
+    final count = client.mediaIds.length;
+    await tester.drag(area, const Offset(-150, 0));
+    await tester.pumpAndSettle();
+    expect(client.mediaIds.length, count);
+    await tester.drag(area, const Offset(0, 150));
+    await tester.pumpAndSettle();
+    expect(client.mediaIds.length, count);
+    await tester.tap(find.byTooltip('Previous image'));
+    await tester.pumpAndSettle();
+    expect(client.mediaIds.last, 9);
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Zoom in'));
+    await tester.pumpAndSettle();
+    final beforePan = client.mediaIds.length;
+    await tester.drag(area, const Offset(-150, 0));
+    await tester.pumpAndSettle();
+    expect(client.mediaIds.length, beforePan,
+        reason: 'Zoomed panning must not change images');
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reset zoom'));
+    await tester.pumpAndSettle();
+    await tester.drag(area, const Offset(-150, 0));
+    await tester.pumpAndSettle();
+    await tester.drag(area, const Offset(150, 0));
+    await tester.pumpAndSettle();
+    expect(client.mediaIds.last, 9);
+  });
+
+  testWidgets(
+      'two fingers pinch without navigation and zoom has menu equivalents',
+      (tester) async {
+    await tester.pumpWidget(const ProviderScope(
+        child: MaterialApp(
+            home: ImageViewerScreen(
+                mediaId: 'shared',
+                isPublicShare: true,
+                imageUrl: 'https://example.invalid/image.jpg'))));
+    await tester.pump();
+    final zoom = find.byKey(const Key('image_viewer_zoom'));
+    final center = tester.getCenter(zoom);
+    final a =
+        await tester.startGesture(center - const Offset(8, 0), pointer: 1);
+    final b =
+        await tester.startGesture(center + const Offset(8, 0), pointer: 2);
+    await a.moveTo(center - const Offset(40, 0));
+    await b.moveTo(center + const Offset(40, 0));
+    await tester.pump();
+    await a.up();
+    await b.up();
+    final controller =
+        tester.widget<InteractiveViewer>(zoom).transformationController!;
+    expect(controller.value.getMaxScaleOnAxis(), greaterThan(1));
+    await tester.tap(find.byTooltip('More options'));
+    await _pumpFrames(tester);
+    expect(find.text('Details'), findsNothing);
+    await tester.tap(find.text('Reset zoom'));
+    await _pumpFrames(tester);
+    expect(controller.value.getMaxScaleOnAxis(), 1);
+    expect(find.byTooltip('Next image'), findsNothing);
+  });
+
   testWidgets('direct image route rejects an audio item before requesting it',
       (tester) async {
     final client = _Client(
@@ -258,8 +343,8 @@ void main() {
     await show('shared', public: true);
     await tester.pumpAndSettle();
     final calls = client.mediaIds.length;
-    expect(find.byTooltip('More options'), findsNothing,
-        reason: 'public shares have no account actions');
+    expect(find.byTooltip('More options'), findsOneWidget,
+        reason: 'public shares retain accessible zoom actions');
     expect(find.byTooltip('Add to favorites'), findsNothing);
     await tester.pump();
     expect(client.mediaIds.length, calls);

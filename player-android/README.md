@@ -26,6 +26,15 @@ add/refresh files and retain absent records. Manual Rescan keeps the server's
 existing deletion policy. Back leaves a scan running; Cancel clears active and
 queued work. Refresh retries a failed connection or status request.
 
+## Select several media items
+
+In a set's thumbnail grid, hold a thumbnail or use the screen menu's **Select
+items**. Tap further thumbnails or checkboxes, then open **Selected item actions**
+to add/remove favorites or mark items finished/not started. Cancel selection or
+Back returns to browsing. Failed updates stay selected so you can retry without
+repeating successful updates. Selection covers loaded items and clears when you
+refresh or change the view. These actions update your personal library state.
+
 ## Music visualizations
 
 The audio player offers **Music visuals**: Spectrum, Waveform, Radial, Mirror,
@@ -335,6 +344,14 @@ fingers over the library to make previews larger or smaller. Five bounded sizes
 are saved on this device and shared across these screens. One-finger scrolling,
 card taps and image-viewer zoom keep their usual behavior. Device-file and
 Downloads lists use icons and retain their normal row layout.
+
+## Image viewer
+
+In the image viewer, swipe left or right to move between pictures in the
+opened list. Pinch with two fingers to zoom; while zoomed, one finger pans
+the image instead of changing pictures. Previous and Next buttons provide
+the same navigation, and More options includes Zoom in, Zoom out and Reset
+zoom. Navigation stops at the first and last picture and skips audio/video.
 
 ## SVG images
 

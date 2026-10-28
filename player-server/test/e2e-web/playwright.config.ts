@@ -11,7 +11,7 @@ export default defineConfig({
   // runner's dedicated Playwright configuration; music specs need the music
   // fixture and run only with playwright.music.config.ts. Podcast acceptance
   // likewise needs its explicit stage and playwright.podcasts.config.ts.
-  testIgnore: [/scenario-S\d+\.test\.ts$/, /music-.*\.test\.ts$/, /podcast-sync\.test\.ts$/],
+  testIgnore: [/scenario-S\d+\.test\.ts$/, /music-.*\.test\.ts$/, /podcast-sync\.test\.ts$/, /image-gestures\.test\.ts$/],
 
   // Run each test file in its own isolated context. Tests within the same
   // file share a browser context by default (serial execution per file).

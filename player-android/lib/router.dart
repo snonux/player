@@ -414,6 +414,9 @@ final routerProvider = Provider<GoRouter>((ref) {
             mediaId: state.pathParameters['mediaId']!,
             imageUrl: imageUrl,
             mediaTitle: title,
+            sequence: state.extra is Map
+                ? ((state.extra as Map)['sequence'] as List<Media>? ?? const [])
+                : const [],
           );
         },
       ),

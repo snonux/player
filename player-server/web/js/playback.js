@@ -226,7 +226,7 @@ export function initPlayer(options = {}) {
     play: playFromSystem, pause: pauseFromSystem,
     previous: options.onSessionPrevious || (() => triggerPrevious({ forcePlay: true })), next: options.onSessionNext || (() => triggerNext({ forcePlay: true })) });
   bindControlButtons(e);
-  initImageViewer({ els, isImageMode, playNext: () => navigateImage(1) });
+  initImageViewer({ els, isImageMode, playNext: options => navigateImage(1, options), playPrevious: () => navigateImage(-1, { manual: true }) });
   initDetach({
     els,
     currentMediaElement,

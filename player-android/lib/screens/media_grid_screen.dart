@@ -74,6 +74,79 @@ class MediaGridScreen extends ConsumerStatefulWidget {
 const _kPageSize = 50;
 
 class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
+  final _selected = <int>{};
+  bool _selecting = false;
+  bool _bulkBusy = false;
+
+  void _cancelSelection() => setState(() {
+        _selecting = false;
+        _selected.clear();
+      });
+
+  void _select(int id) {
+    if (_bulkBusy) return;
+    setState(() {
+      _selecting = true;
+      if (!_selected.add(id)) _selected.remove(id);
+    });
+  }
+
+  Future<void> _bulkAction(String action) async {
+    if (_bulkBusy || _selected.isEmpty) return;
+    final items =
+        (_media ?? []).where((m) => _selected.contains(m.id)).toList();
+    final client = ref.read(apiClientProvider);
+    setState(() => _bulkBusy = true);
+    var failed = 0;
+    for (final item in items) {
+      if (!mounted) return;
+      try {
+        if (action == 'favorite' || action == 'unfavorite') {
+          final desired = action == 'favorite';
+          if (item.favorite != desired) {
+            final confirmed = await client.toggleFavorite(item.id);
+            if (!mounted) return;
+            if (confirmed != desired)
+              throw StateError('Favorite changed; retry');
+            setState(() {
+              _media = _media
+                  ?.map((m) => m.id == item.id
+                      ? _buildMediaWithFavorite(m, confirmed)
+                      : m)
+                  .toList();
+            });
+          }
+        } else {
+          await client.updateProgressStatus(mediaId: item.id, status: action);
+          if (!mounted) return;
+          setState(() {
+            _media = _media
+                ?.map((m) => m.id == item.id
+                    ? Media.fromJson(m.toJson()
+                      ..['position_seconds'] =
+                          action == 'finished' ? m.duration : 0.0)
+                    : m)
+                .toList();
+          });
+        }
+        if (!mounted) return;
+        setState(() => _selected.remove(item.id));
+      } catch (_) {
+        failed++;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _bulkBusy = false;
+      if (_selected.isEmpty) _selecting = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(failed == 0
+            ? 'Updated ${items.length} items'
+            : '$failed items could not be updated. Still selected; try again.')));
+    if (failed == 0 && _hasActiveFilters) await _load();
+  }
+
   // Nullable: null means "not yet loaded" (loading indicator is shown).
   List<Media>? _media;
 
@@ -221,6 +294,8 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     final generation = ++_loadGeneration;
 
     setState(() {
+      _selected.clear();
+      _selecting = false;
       _isLoading = true;
       _error = null;
       // Reset pagination so the first page is fetched from the start.
@@ -368,26 +443,32 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      bottomNavigationBar: const MusicMiniPlayer(),
-      appBar: _buildAppBar(),
-      body: Column(
-        children: [
-          // Search/filter bar sits directly below the AppBar.
-          SearchFilterBar(
-            initialFilter: _filter,
-            onFiltersChanged: _onFiltersChanged,
-            onOpenFilters: _openFilters,
-            scopeLabel: _scopeLabel,
-            resetRevision: _filterResetRevision,
+    return PopScope(
+        canPop: !_selecting && !_bulkBusy,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop && _selecting && !_bulkBusy) _cancelSelection();
+        },
+        child: Scaffold(
+          bottomNavigationBar: const MusicMiniPlayer(),
+          appBar: _buildAppBar(),
+          body: Column(
+            children: [
+              // Search/filter bar sits directly below the AppBar.
+              if (!_selecting)
+                SearchFilterBar(
+                  initialFilter: _filter,
+                  onFiltersChanged: _onFiltersChanged,
+                  onOpenFilters: _openFilters,
+                  scopeLabel: _scopeLabel,
+                  resetRevision: _filterResetRevision,
+                ),
+              if (_isLoading && _media != null)
+                const LinearProgressIndicator(semanticsLabel: 'Updating media'),
+              // The remaining space is occupied by the data body.
+              Expanded(child: _buildBody(context)),
+            ],
           ),
-          if (_isLoading && _media != null)
-            const LinearProgressIndicator(semanticsLabel: 'Updating media'),
-          // The remaining space is occupied by the data body.
-          Expanded(child: _buildBody(context)),
-        ],
-      ),
-    );
+        ));
   }
 
   /// Builds the app bar, showing [widget.setName] when available.
@@ -396,6 +477,35 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   /// The icon is filled and highlighted when the filter is active so the user
   /// always knows at a glance whether the favourites-only view is on.
   AppBar _buildAppBar() {
+    if (_selecting) {
+      return AppBar(
+        leading: IconButton(
+            tooltip: 'Cancel selection',
+            icon: const Icon(Icons.close),
+            onPressed: _bulkBusy ? null : _cancelSelection),
+        title: Text('${_selected.length} selected'),
+        actions: [
+          if (_bulkBusy)
+            const Padding(
+                padding: EdgeInsets.all(12),
+                child: CircularProgressIndicator(
+                    semanticsLabel: 'Updating selected items')),
+          PopupMenuButton<String>(
+            tooltip: 'Selected item actions',
+            enabled: !_bulkBusy && _selected.isNotEmpty,
+            onSelected: _bulkAction,
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'favorite', child: Text('Add to favorites')),
+              PopupMenuItem(
+                  value: 'unfavorite', child: Text('Remove from favorites')),
+              PopupMenuItem(value: 'finished', child: Text('Mark as finished')),
+              PopupMenuItem(
+                  value: 'not_started', child: Text('Mark as not started')),
+            ],
+          ),
+        ],
+      );
+    }
     return AppBar(
       title: Text(_filter.setIds == null
           ? _currentSetName
@@ -406,6 +516,12 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
         const MusicQueueButton(),
         OverflowMenuButton(
           items: (_) => [
+            OverflowMenuItem(
+              key: const Key('media_grid_select'),
+              icon: Icons.checklist,
+              label: 'Select items',
+              onSelected: () => setState(() => _selecting = true),
+            ),
             OverflowMenuItem(
               key: const Key('media_grid_folders'),
               icon: Icons.folder_open,
@@ -456,7 +572,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     // [RefreshIndicator] wraps the scrollable content so pull-to-refresh
     // triggers [_load] on both the grid and the empty-state view.
     return RefreshIndicator(
-      onRefresh: _load,
+      onRefresh: _bulkBusy ? () async {} : _load,
       child: _media == null || _media!.isEmpty
           ? _EmptyView(
               filtered: _hasActiveFilters,
@@ -464,6 +580,10 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
             )
           : _MediaGrid(
               media: _media!,
+              selecting: _selecting,
+              selected: _selected,
+              onSelect: _select,
+              busy: _bulkBusy,
               thumbnailUrlBuilder: _thumbnailUrl,
               onFavoriteToggle: _toggleFavoriteAt,
               onReturn: _load,
@@ -497,6 +617,10 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
 class _MediaGrid extends StatelessWidget {
   const _MediaGrid({
     required this.media,
+    required this.selecting,
+    required this.selected,
+    required this.onSelect,
+    required this.busy,
     required this.thumbnailUrlBuilder,
     required this.onFavoriteToggle,
     required this.onReturn,
@@ -506,6 +630,10 @@ class _MediaGrid extends StatelessWidget {
   });
 
   final List<Media> media;
+  final bool selecting;
+  final Set<int> selected;
+  final ValueChanged<int> onSelect;
+  final bool busy;
   final VoidCallback onReturn;
 
   /// Callback that returns the full thumbnail URL for a given media ID.
@@ -562,6 +690,10 @@ class _MediaGrid extends StatelessWidget {
         delegate: SliverChildBuilderDelegate(
           (context, index) => _MediaCard(
             item: media[index],
+            selecting: selecting,
+            selected: selected.contains(media[index].id),
+            onSelect: () => onSelect(media[index].id),
+            busy: busy,
             sequence: media,
             thumbnailUrl: thumbnailUrlBuilder(media[index].id),
             onFavoriteToggle: () => onFavoriteToggle(index),
@@ -622,6 +754,10 @@ class _MediaGrid extends StatelessWidget {
 class _MediaCard extends ConsumerWidget {
   const _MediaCard({
     required this.item,
+    required this.selecting,
+    required this.selected,
+    required this.onSelect,
+    required this.busy,
     required this.sequence,
     required this.thumbnailUrl,
     required this.onFavoriteToggle,
@@ -629,6 +765,10 @@ class _MediaCard extends ConsumerWidget {
   });
 
   final Media item;
+  final bool selecting;
+  final bool selected;
+  final VoidCallback onSelect;
+  final bool busy;
   final VoidCallback onReturn;
   final List<Media> sequence;
   final String thumbnailUrl;
@@ -640,46 +780,66 @@ class _MediaCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      key: Key('media_card_${item.id}'),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () async {
-          await openMediaPlayback(context, ref, item, sequence: sequence);
-          onReturn();
-        },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Thumbnail fills the full card area.
-            _ThumbnailImage(
-              thumbnailUrl: thumbnailUrl,
-              fileName: item.fileName,
+    return Semantics(
+        selected: selecting ? selected : null,
+        label: selecting ? 'Select ${item.fileName}' : null,
+        child: Card(
+          key: Key('media_card_${item.id}'),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onLongPress: busy ? null : onSelect,
+            onTap: busy
+                ? null
+                : () async {
+                    if (selecting) {
+                      onSelect();
+                      return;
+                    }
+                    await openMediaPlayback(context, ref, item,
+                        sequence: sequence);
+                    onReturn();
+                  },
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Thumbnail fills the full card area.
+                _ThumbnailImage(
+                  thumbnailUrl: thumbnailUrl,
+                  fileName: item.fileName,
+                ),
+                // Info overlay anchored to the bottom of the card.
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _InfoOverlay(item: item),
+                ),
+                // Heart icon anchored to the bottom-right of the card.
+                // Positioned inside the info overlay's gradient area so it blends
+                // visually. [GestureDetector] is used so taps on the icon do NOT
+                // propagate to the [InkWell] above (which would navigate).
+                if (selecting)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Checkbox(
+                        value: selected,
+                        onChanged: busy ? null : (_) => onSelect()),
+                  ),
+                if (!selecting)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: _FavoriteIconButton(
+                      isFavorite: item.favorite,
+                      mediaId: item.id,
+                      onTap: onFavoriteToggle,
+                    ),
+                  ),
+              ],
             ),
-            // Info overlay anchored to the bottom of the card.
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: _InfoOverlay(item: item),
-            ),
-            // Heart icon anchored to the bottom-right of the card.
-            // Positioned inside the info overlay's gradient area so it blends
-            // visually. [GestureDetector] is used so taps on the icon do NOT
-            // propagate to the [InkWell] above (which would navigate).
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: _FavoriteIconButton(
-                isFavorite: item.favorite,
-                mediaId: item.id,
-                onTap: onFavoriteToggle,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+          ),
+        ));
   }
 }
 

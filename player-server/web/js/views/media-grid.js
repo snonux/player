@@ -1,3 +1,4 @@
+import { bindMediaMultiselect } from './media-multiselect.js';
 import { downloadMusic } from '../music-downloads.js';
 import { songActionButtons, bindSongActions } from '../queue-actions.js';
 import { mediaTitle, musicSubtitle } from '../music.js';
@@ -495,6 +496,11 @@ function bindPager(grid) {
 }
 
 function bindMediaItems(grid) {
+  bindMediaMultiselect(grid, async () => {
+    if (state.virtualSet !== 'in-progress' && !state.filters.favorites) return;
+    await loadMedia();
+    grid.querySelector('.media-open, .folder-open, .set-open')?.focus();
+  });
   grid.querySelectorAll('.media-card[data-id], .media-row[data-id]').forEach(row => {
     const song = state.media.find(item => String(item.id) === row.dataset.id);
     if (song?.type === 'audio') row.insertAdjacentHTML('beforeend', songActionButtons(song));
