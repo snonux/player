@@ -113,6 +113,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Available on this device'), findsOneWidget);
     expect(find.text('Play'), findsOneWidget);
+    await tester.tap(find.byTooltip('More episode actions'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Delete downloaded file'));
     await tester.pumpAndSettle();
     expect(find.text('Download'), findsOneWidget);

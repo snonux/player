@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/podcast_library_provider.dart';
 import '../screens/audio_player_screen.dart';
 import '../services/podcast_downloads.dart';
+import 'overflow_menu.dart';
 
 class PodcastDownloadControls extends ConsumerStatefulWidget {
   const PodcastDownloadControls(
@@ -10,11 +11,19 @@ class PodcastDownloadControls extends ConsumerStatefulWidget {
       required this.feed,
       required this.episode,
       this.onPlaybackReturn,
-      this.scope});
+      this.scope,
+      this.completeLabel,
+      this.onToggleComplete,
+      this.detailsTitle,
+      this.detailsBody});
   final String feed;
   final Map<String, Object?> episode;
   final VoidCallback? onPlaybackReturn;
   final String? scope;
+  final String? completeLabel;
+  final VoidCallback? onToggleComplete;
+  final String? detailsTitle;
+  final String? detailsBody;
   @override
   ConsumerState<PodcastDownloadControls> createState() =>
       PodcastDownloadControlsState();
@@ -79,6 +88,70 @@ class PodcastDownloadControlsState
         if (mounted) widget.onPlaybackReturn?.call();
       });
 
+  void _openMore({
+    required PodcastDownloads downloads,
+    required String key,
+    required Object? state,
+  }) {
+    final available = state == 'available';
+    final details = (widget.detailsBody ?? '').trim();
+    showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.completeLabel != null)
+                OverflowMenuItem(
+                  icon: widget.completeLabel == 'Mark uncompleted'
+                      ? Icons.undo
+                      : Icons.check,
+                  label: widget.completeLabel!,
+                  onSelected: busy ? null : widget.onToggleComplete,
+                ),
+              if (available)
+                OverflowMenuItem(
+                  icon: Icons.replay,
+                  label: 'Play from beginning',
+                  onSelected: busy ? null : () => play(fromBeginning: true),
+                ),
+              if (available)
+                OverflowMenuItem(
+                  icon: Icons.delete_outline,
+                  label: 'Delete downloaded file',
+                  onSelected: busy
+                      ? null
+                      : () => run(() => downloads.remove(widget.feed, key)),
+                ),
+              if (details.isNotEmpty)
+                OverflowMenuItem(
+                  icon: Icons.info_outline,
+                  label: 'Episode details',
+                  onSelected: () => showDialog<void>(
+                    context: context,
+                    builder: (dialog) => AlertDialog(
+                      title: Text(widget.detailsTitle ?? 'Episode'),
+                      content: SingleChildScrollView(child: Text(details)),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(dialog),
+                            child: const Text('Close'))
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final downloads = ref.watch(podcastDownloadsProvider);
@@ -95,6 +168,9 @@ class PodcastDownloadControlsState
           final state = snapshot.data?['state'];
           final transferring = state == 'pending' || state == 'downloading';
           final settled = snapshot.connectionState == ConnectionState.done;
+          final hasMenu = widget.completeLabel != null ||
+              state == 'available' ||
+              (widget.detailsBody ?? '').trim().isNotEmpty;
           return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -109,45 +185,47 @@ class PodcastDownloadControlsState
                 if (transferring)
                   Text(
                       state == 'pending' ? 'Download pending' : 'Downloading…'),
-                Wrap(spacing: 8, children: [
-                  if (transferring)
-                    TextButton.icon(
-                        onPressed: () {
-                          downloads.cancel();
-                          setState(_refreshCopy);
-                        },
-                        icon: const Icon(Icons.close),
-                        label: const Text('Cancel download'))
-                  else if (state == 'available') ...[
-                    FilledButton.icon(
-                        onPressed: busy ? null : () => play(),
-                        icon: const Icon(Icons.play_arrow),
-                        label: Text(
-                            (widget.episode['position_seconds'] as num? ?? 0) >
-                                    0
-                                ? 'Resume'
-                                : 'Play')),
-                    TextButton.icon(
-                        onPressed:
-                            busy ? null : () => play(fromBeginning: true),
-                        icon: const Icon(Icons.replay),
-                        label: const Text('Play from beginning')),
-                    TextButton.icon(
-                        onPressed: busy
-                            ? null
-                            : () =>
-                                run(() => downloads.remove(widget.feed, key)),
-                        icon: const Icon(Icons.delete_outline),
-                        label: const Text('Delete downloaded file')),
-                  ] else
-                    TextButton.icon(
-                        onPressed: busy || !settled
-                            ? null
-                            : () =>
-                                run(() => downloads.download(widget.feed, key)),
-                        icon: const Icon(Icons.download),
-                        label: Text(
-                            state == 'failed' ? 'Retry download' : 'Download')),
+                Row(children: [
+                  Expanded(
+                      child: Wrap(spacing: 8, runSpacing: 4, children: [
+                    if (transferring)
+                      TextButton.icon(
+                          onPressed: () {
+                            downloads.cancel();
+                            setState(_refreshCopy);
+                          },
+                          icon: const Icon(Icons.close),
+                          label: const Text('Cancel download'))
+                    else if (state == 'available')
+                      FilledButton.icon(
+                          onPressed: busy ? null : () => play(),
+                          icon: const Icon(Icons.play_arrow),
+                          label: Text(
+                              (widget.episode['position_seconds'] as num? ??
+                                          0) >
+                                      0
+                                  ? 'Resume'
+                                  : 'Play'))
+                    else
+                      TextButton.icon(
+                          onPressed: busy || !settled
+                              ? null
+                              : () => run(
+                                  () => downloads.download(widget.feed, key)),
+                          icon: const Icon(Icons.download),
+                          label: Text(state == 'failed'
+                              ? 'Retry download'
+                              : 'Download')),
+                  ])),
+                  if (hasMenu)
+                    IconButton(
+                      tooltip: 'More episode actions',
+                      style: IconButton.styleFrom(
+                          minimumSize: const Size(48, 48)),
+                      icon: const Icon(Icons.menu),
+                      onPressed: () => _openMore(
+                          downloads: downloads, key: key, state: state),
+                    ),
                 ]),
               ]);
         });

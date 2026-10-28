@@ -6,6 +6,11 @@ import 'package:player_android/screens/standalone_podcasts_screen.dart';
 import 'podcast_browsing_fakes.dart';
 import 'package:player_android/widgets/podcast_download_controls.dart';
 
+Future<void> openEpisodeActions(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('More episode actions').first);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets(
       'account switch hides retained page actions until new scoped rows load',
@@ -29,6 +34,7 @@ void main() {
     final controls = tester
         .widget<PodcastDownloadControls>(find.byType(PodcastDownloadControls));
     expect(controls.scope, 'account:B');
+    await openEpisodeActions(tester);
     await tester.tap(find.text('Mark completed'));
     await tester.pumpAndSettle();
     expect(store.saves.single['scope'], 'account:B');
@@ -37,7 +43,7 @@ void main() {
   testWidgets(
       'return-from-playback refresh keeps current filter page and scroll',
       (tester) async {
-    final repository = BrowsingRepository()..count = 43;
+    final repository = BrowsingRepository()..count = 80;
     await tester.pumpWidget(
         browsingApp(const LocalPodcastEpisodesScreen(), repository));
     await tester.pumpAndSettle();
@@ -74,6 +80,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('My podcast'));
     await tester.pumpAndSettle();
+    await openEpisodeActions(tester);
     await tester.tap(find.text('Mark completed'));
     await tester.pumpAndSettle();
     expect(find.text('Episode 0'), findsNothing);
@@ -90,7 +97,12 @@ void main() {
     expect(find.text('Episode 0'), findsNothing);
     await tester.tap(find.widgetWithText(ChoiceChip, 'Completed'));
     await tester.pumpAndSettle();
-    expect(find.text('Saved position: 0:00:30.000000'), findsOneWidget);
+    expect(
+        find.descendant(
+            of: find.byType(ListTile),
+            matching: find.text('Completed')),
+        findsOneWidget);
+    await openEpisodeActions(tester);
     await tester.tap(find.text('Mark uncompleted'));
     await tester.pumpAndSettle();
     expect(find.text('Episode 0'), findsNothing);
@@ -106,11 +118,13 @@ void main() {
     await tester.pumpWidget(
         browsingApp(const LocalPodcastEpisodesScreen(), repository));
     await tester.pumpAndSettle();
+    await openEpisodeActions(tester);
     await tester.tap(find.text('Mark completed'));
     await tester.pumpAndSettle();
     expect(find.text('Could not save completion. Retry.'), findsOneWidget);
     expect(find.text('Episode 0'), findsOneWidget);
     repository.failSave = false;
+    await openEpisodeActions(tester);
     await tester.tap(find.text('Mark completed'));
     await tester.pumpAndSettle();
     expect(find.text('Episode 0'), findsNothing);

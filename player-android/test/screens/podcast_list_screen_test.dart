@@ -16,8 +16,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(repository.queries.last.$1, 'feed:example/feed');
     expect(repository.queries.last.$2, 'uncompleted');
-    expect(find.text('In progress'), findsOneWidget);
+    expect(find.textContaining('In progress'), findsOneWidget);
+    await tester.tap(find.byTooltip('More episode actions'));
+    await tester.pumpAndSettle();
     expect(find.text('Mark completed'), findsOneWidget);
+    Navigator.of(tester.element(find.text('Mark completed')),
+            rootNavigator: true)
+        .pop();
+    await tester.pumpAndSettle();
     await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.tap(find.text('All podcast episodes'));

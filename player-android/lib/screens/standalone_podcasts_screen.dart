@@ -235,6 +235,24 @@ class _LocalPodcastEpisodesScreenState
     if (scroll.hasClients) scroll.jumpTo(0);
   }
 
+  String _progressSummary(Map<String, Object?> e) {
+    if (e['completed'] == 1) return 'Completed';
+    final position = (e['position_seconds'] as num?) ?? 0;
+    if (position <= 0) return 'Unplayed';
+    return 'In progress · ${_formatClock(position)}';
+  }
+
+  String _formatClock(num seconds) {
+    final total = seconds.round().clamp(0, 24 * 3600);
+    final hours = total ~/ 3600;
+    final minutes = (total % 3600) ~/ 60;
+    final secs = total % 60;
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+    }
+    return '$minutes:${secs.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final scope = ref.watch(podcastScopeProvider).valueOrNull;
@@ -300,41 +318,31 @@ class _LocalPodcastEpisodesScreenState
                                     children: [
                                       if (widget.feedKey == null)
                                         Text(e['podcast_title'] as String),
-                                      Text(e['description'] as String,
-                                          maxLines: 3,
-                                          overflow: TextOverflow.ellipsis),
-                                      Text(e['completed'] == 1
-                                          ? 'Completed'
-                                          : (e['position_seconds'] as num) > 0
-                                              ? 'In progress'
-                                              : 'Unplayed'),
-                                      if ((e['position_seconds'] as num) > 0)
-                                        Text(
-                                            'Saved position: ${Duration(seconds: (e['position_seconds'] as num).round())}'),
-                                      if ((e['duration_seconds'] as num) > 0)
+                                      Text(_progressSummary(e)),
+                                      if ((e['position_seconds'] as num) > 0 &&
+                                          (e['duration_seconds'] as num) > 0)
                                         LinearProgressIndicator(
                                             value: ((e['position_seconds']
                                                         as num) /
                                                     (e['duration_seconds']
                                                         as num))
                                                 .clamp(0.0, 1.0)),
-                                      TextButton.icon(
-                                          onPressed: scope == null ||
-                                                  pending.contains(
-                                                      '${e['scope_feed_key']}:${e['scope_episode_key']}')
-                                              ? null
-                                              : () => complete(e, scope),
-                                          icon: Icon(e['completed'] == 1
-                                              ? Icons.undo
-                                              : Icons.check),
-                                          label: Text(e['completed'] == 1
-                                              ? 'Mark uncompleted'
-                                              : 'Mark completed')),
                                       PodcastDownloadControls(
                                           feed: e['feed_key'] as String,
                                           scope: e['browse_scope'] as String,
                                           episode: e,
-                                          onPlaybackReturn: reload),
+                                          onPlaybackReturn: reload,
+                                          completeLabel: e['completed'] == 1
+                                              ? 'Mark uncompleted'
+                                              : 'Mark completed',
+                                          onToggleComplete: scope == null ||
+                                                  pending.contains(
+                                                      '${e['scope_feed_key']}:${e['scope_episode_key']}')
+                                              ? null
+                                              : () => complete(e, scope),
+                                          detailsTitle: e['title'] as String,
+                                          detailsBody:
+                                              e['description'] as String?),
                                     ])),
                           Row(
                               mainAxisAlignment: MainAxisAlignment.center,
