@@ -814,6 +814,65 @@ body {
 /* Modal sizes */
 .modal-wide { width: min(56rem, 96vw); }
 
+/* Admin modal: section selector + always-visible scan cancel */
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.35rem;
+}
+.admin-section-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 10rem;
+}
+.admin-section-label select {
+  min-height: 2.5rem;
+  min-width: 12rem;
+}
+.admin-section-actions { flex: 1 1 auto; }
+.admin-toolbar #admin-scan-cancel {
+  margin-left: auto;
+  min-height: 2.5rem;
+}
+.admin-scan-status {
+  margin: 0 0 0.75rem;
+  overflow-wrap: anywhere;
+}
+.admin-more-menu {
+  position: fixed;
+  inset: unset;
+  margin: 0;
+  min-width: 12rem;
+  padding: 0.35rem;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 0.5rem);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+.admin-more-menu:popover-open { display: flex; flex-direction: column; gap: 0.1rem; }
+.admin-more-menu .menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.admin-more-menu .menu-item:hover,
+.admin-more-menu .menu-item:focus-visible { background: var(--bg-surface-hover); }
+.admin-more-menu .menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.admin-panel { margin-top: 0.25rem; }
+
 /* Admin lists */
 .admin-list {
   list-style: none;

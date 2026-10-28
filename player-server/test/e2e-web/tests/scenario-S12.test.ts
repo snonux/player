@@ -36,7 +36,8 @@ test('S12: admin panel manages users, permissions and trash from the browser', a
   await expect(remove).toBeVisible();
   const user = (await api('GET', '/admin/users')).find((u: any) => u.username === 'panel-user');
 
-  // Grant a role with the labelled select; a failed change reverts.
+  // Permissions is its own focused workflow (parity with Android).
+  await panel.locator('#admin-section-select').selectOption('permissions');
   const select = panel.getByRole('combobox', { name: `Permission for panel-user on ${set.name}` });
   await select.selectOption('viewer');
   await expect.poll(async () => (await api('GET', '/admin/permissions')).permissions
@@ -66,11 +67,9 @@ test('S12: admin panel manages users, permissions and trash from the browser', a
   await expect(select).toHaveValue('');
   await page.unrouteAll();
 
-  // Trash opens in its own section; the user list stays visible.
-  const trashButton = panel.getByRole('button', { name: 'View trash' });
-  await trashButton.click();
-  await expect(panel.getByRole('button', { name: 'Hide trash' })).toHaveAttribute('aria-expanded', 'true');
-  await expect(remove).toBeVisible();
+  // Trash is its own section; Cancel scan stays on the toolbar.
+  await panel.locator('#admin-section-select').selectOption('trash');
+  await expect(panel.locator('#admin-scan-cancel')).toBeVisible();
   const restore = panel.getByRole('button', { name: `Restore ${item.file_name}` });
   await expect(restore).toBeVisible();
   // Deleted dates are formatted for people, not raw ISO timestamps.
@@ -85,6 +84,7 @@ test('S12: admin panel manages users, permissions and trash from the browser', a
   expect((await api('GET', '/media?limit=1000')).some((m: any) => m.id === item.id)).toBe(true);
 
   // Removing a user asks first; dismissing keeps them.
+  await panel.locator('#admin-section-select').selectOption('users');
   page.once('dialog', dialog => dialog.dismiss());
   await remove.click();
   await expect(remove).toBeVisible();

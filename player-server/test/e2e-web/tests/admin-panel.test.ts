@@ -117,6 +117,8 @@ test('admin panel renders the permissions section', async ({ page }) => {
   await openAuthenticatedPage(page, '/');
   await openAdminModal(page);
 
+  // Permissions is its own focused workflow (parity with Android AdminPermissionsScreen).
+  await page.locator('#admin-section-select').selectOption('permissions');
   const permissions = page.locator('#admin-permissions');
   await expect(permissions).toBeVisible({ timeout: 5_000 });
 
@@ -144,6 +146,9 @@ test('admin rescan button triggers a scan and the scan-progress UI exists', asyn
   await openAuthenticatedPage(page, '/');
   await openAdminModal(page);
 
+  // Rescan is contextual to Library scan; Cancel scan stays on the toolbar.
+  await page.locator('#admin-section-select').selectOption('scan');
+  await expect(page.locator('#admin-scan-cancel')).toBeVisible({ timeout: 5_000 });
   const rescanBtn = page.locator('#admin-rescan');
   await expect(rescanBtn).toBeVisible({ timeout: 5_000 });
 

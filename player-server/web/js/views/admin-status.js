@@ -79,7 +79,12 @@ function renderAdminScanStatus(p) {
   if (cancel) {
     const wasFocused = document.activeElement === cancel;
     cancel.disabled = !busy || p.state === 'cancelling';
-    if (cancel.disabled && wasFocused) document.getElementById('admin-rescan')?.focus();
+    if (cancel.disabled && wasFocused) {
+      // Prefer the contextual rescan control when visible; otherwise the section selector.
+      const rescan = document.getElementById('admin-rescan');
+      if (rescan && !rescan.classList.contains('hidden')) rescan.focus();
+      else document.getElementById('admin-section-select')?.focus();
+    }
   }
   if (settings) settings.textContent = `Watch: ${p.watch_seconds ? `polling every ${p.watch_seconds} seconds` : 'Off'}. Schedule: ${p.interval_minutes ? `every ${p.interval_minutes} minutes` : 'Off'}.`;
   if (!status) return;

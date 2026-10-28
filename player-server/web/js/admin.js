@@ -3,21 +3,33 @@ import { fmtDateTime } from './dom.js';
 import { escapeHtml, toast } from './utils.js';
 import { triggerRescan, refreshScanProgress } from './views/admin-status.js';
 
+const ADMIN_SECTIONS = new Set([
+  'users', 'permissions', 'scan', 'trash', 'libraries', 'identity', 'plugins', 'signin',
+]);
+
 export function initAdmin() {
   const btn = document.getElementById('admin-toggle');
   const modal = document.getElementById('admin-modal');
   const closeBtn = document.getElementById('admin-close');
   const rescanBtn = document.getElementById('admin-rescan');
-  const trashBtn = document.getElementById('admin-trash');
+  const sectionSelect = document.getElementById('admin-section-select');
+  const moreToggle = document.getElementById('admin-more-toggle');
+  const moreMenu = document.getElementById('admin-more-menu');
   const form = document.getElementById('admin-user-form');
 
   btn?.addEventListener('click', () => {
     modal?.classList.add('open');
     refreshAdmin();
-    if (!document.getElementById('admin-trash-section')?.classList.contains('hidden')) refreshTrash();
+    showAdminSection(sectionSelect?.value || 'users');
   });
   closeBtn?.addEventListener('click', () => modal?.classList.remove('open'));
   modal?.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); });
+
+  sectionSelect?.addEventListener('change', () => {
+    showAdminSection(sectionSelect.value);
+  });
+
+  initAdminMoreMenu(moreToggle, moreMenu);
 
   rescanBtn?.addEventListener('click', async () => {
     const returnFocus = document.activeElement === rescanBtn;
@@ -36,37 +48,6 @@ export function initAdmin() {
     catch (err) { toast(err.message || 'Could not cancel scan', 'error'); }
   });
 
-  // Trash has its own section so the user list stays visible; the button
-  // toggles it and reloads the items each time it opens.
-  trashBtn?.addEventListener('click', async () => {
-    const section = document.getElementById('admin-trash-section');
-    const open = section?.classList.contains('hidden');
-    section?.classList.toggle('hidden', !open);
-    trashBtn.setAttribute('aria-expanded', String(Boolean(open)));
-    trashBtn.textContent = open ? 'Hide trash' : 'View trash';
-    if (open) await refreshTrash();
-  });
-
-  const pluginsBtn = document.getElementById('admin-plugins-toggle');
-  pluginsBtn?.addEventListener('click', async () => {
-    const section = document.getElementById('admin-plugins-section');
-    const open = section?.classList.contains('hidden');
-    section?.classList.toggle('hidden', !open);
-    pluginsBtn.setAttribute('aria-expanded', String(Boolean(open)));
-    pluginsBtn.textContent = open ? 'Hide plugins' : 'Plugins';
-    if (open) await refreshPlugins();
-  });
-
-  const librariesBtn = document.getElementById('admin-libraries-toggle');
-  librariesBtn?.addEventListener('click', async () => {
-    const section = document.getElementById('admin-libraries-section');
-    const open = section?.classList.contains('hidden');
-    section?.classList.toggle('hidden', !open);
-    librariesBtn.setAttribute('aria-expanded', String(Boolean(open)));
-    librariesBtn.textContent = open ? 'Hide libraries' : 'Libraries';
-    if (open) await refreshLibraries();
-  });
-
   document.getElementById('admin-library-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -77,16 +58,6 @@ export function initAdmin() {
       await refreshLibraries();
       await refreshAdmin();
     } catch (err) { toast(err.message || 'Could not add library', 'error'); }
-  });
-
-  const identityBtn = document.getElementById('admin-identity-toggle');
-  identityBtn?.addEventListener('click', async () => {
-    const section = document.getElementById('admin-identity-section');
-    const open = section?.classList.contains('hidden');
-    section?.classList.toggle('hidden', !open);
-    identityBtn.setAttribute('aria-expanded', String(Boolean(open)));
-    identityBtn.textContent = open ? 'Hide music identity' : 'Music identity';
-    if (open) await refreshIdentityConflicts();
   });
 
   form?.addEventListener('submit', async (e) => {
@@ -104,6 +75,70 @@ export function initAdmin() {
       await refreshAdmin();
     } catch (err) { toast(err.message, 'error'); }
   });
+}
+
+function initAdminMoreMenu(toggle, menu) {
+  if (!toggle || !menu) return;
+  if (typeof menu.showPopover === 'function') {
+    menu.addEventListener('toggle', (event) => {
+      const open = event.newState === 'open';
+      toggle.setAttribute('aria-expanded', String(open));
+      if (open) {
+        const box = toggle.getBoundingClientRect();
+        menu.style.top = `${Math.round(box.bottom + 4)}px`;
+        menu.style.left = `${Math.round(Math.max(8, box.right - menu.offsetWidth))}px`;
+        menu.querySelector('button:not([disabled])')?.focus();
+      } else if (document.activeElement === document.body || menu.contains(document.activeElement)) {
+        toggle.focus();
+      }
+    });
+    // Mirror header-menu.js: stopPropagation so Escape/j/k stay in the
+    // popover and do not reach keyboard.js closeAllModals for the Admin modal.
+    menu.addEventListener('keydown', (event) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const items = [...menu.querySelectorAll('button')].filter((b) => !b.disabled);
+      const at = items.indexOf(document.activeElement);
+      if (event.key === 'j' || event.key === 'ArrowDown') {
+        items[(at + 1) % items.length]?.focus();
+      } else if (event.key === 'k' || event.key === 'ArrowUp') {
+        items[(at - 1 + items.length) % items.length]?.focus();
+      } else if (event.key === 'Escape') {
+        menu.hidePopover();
+        toggle.focus();
+      } else if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Tab') {
+        return;
+      }
+      if (event.key !== 'Tab') event.stopPropagation();
+      if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Tab') event.preventDefault();
+    });
+  }
+  menu.addEventListener('click', (event) => {
+    const item = event.target.closest('button');
+    if (!item) return;
+    const goto = item.dataset.adminGoto;
+    if (goto) showAdminSection(goto);
+    if (typeof menu.hidePopover === 'function') menu.hidePopover();
+  });
+}
+
+/** Switch the admin modal to one focused workflow; keep Cancel scan in the toolbar. */
+export function showAdminSection(name) {
+  const section = ADMIN_SECTIONS.has(name) ? name : 'users';
+  const select = document.getElementById('admin-section-select');
+  if (select && select.value !== section) select.value = section;
+
+  document.querySelectorAll('[data-admin-panel]').forEach((panel) => {
+    panel.classList.toggle('hidden', panel.dataset.adminPanel !== section);
+  });
+
+  const rescanBtn = document.getElementById('admin-rescan');
+  rescanBtn?.classList.toggle('hidden', section !== 'scan');
+
+  if (section === 'trash') refreshTrash();
+  else if (section === 'plugins') refreshPlugins();
+  else if (section === 'libraries') refreshLibraries();
+  else if (section === 'identity') refreshIdentityConflicts();
+  else if (section === 'users' || section === 'permissions' || section === 'signin') refreshAdmin();
 }
 
 async function refreshAdmin() {

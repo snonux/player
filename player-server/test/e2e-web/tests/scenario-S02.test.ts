@@ -48,6 +48,8 @@ test('S02: podcast manager and episode cards work from the browser', async ({ pa
     // Reach the admin panel from the header menu the keyboard way.
     await (await headerItem(page, '#admin-toggle')).focus();
     await page.keyboard.press('Enter');
+    await page.locator('#admin-more-toggle').focus();
+    await page.keyboard.press('Enter');
     await page.locator('#admin-podcasts').focus();
     await page.keyboard.press('Enter');
     const modal = page.locator('#podcast-modal');

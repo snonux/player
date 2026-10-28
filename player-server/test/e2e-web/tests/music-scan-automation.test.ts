@@ -41,6 +41,9 @@ async function openAdmin(page: Page): Promise<void> {
   await page.locator('body').click({ position: { x: 20, y: 200 } });
   await page.keyboard.press('Shift+A');
   await expect(page.locator('#admin-modal')).toHaveClass(/open/);
+  // Library scan is a focused admin workflow; Cancel scan stays on the toolbar.
+  await page.locator('#admin-section-select').selectOption('scan');
+  await expect(page.locator('#admin-scan-cancel')).toBeVisible();
   await expect(page.locator('#admin-scan-status')).not.toContainText('Loading');
 }
 

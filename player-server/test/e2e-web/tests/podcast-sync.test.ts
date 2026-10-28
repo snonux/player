@@ -58,12 +58,16 @@ async function actionByKeyboard(p: Page, target: Locator) {
   await expect(target).toBeFocused();
   await p.keyboard.press('Enter');
 }
+async function openPodcastsFromAdmin(p: Page) {
+  await p.locator('#admin-more-toggle').click();
+  await p.locator('#admin-podcasts').click();
+  await expect(p.locator('#podcast-modal')).toHaveClass(/open/);
+}
 async function manager(p: Page) {
   await p.keyboard.press('Escape');
   await p.getByRole('button', { name: 'Admin settings', exact: true }).click();
   await expect(p.locator('#admin-modal')).toHaveClass(/open/);
-  await p.locator('#admin-podcasts').click();
-  await expect(p.locator('#podcast-modal')).toHaveClass(/open/);
+  await openPodcastsFromAdmin(p);
 }
 async function catalogFeed(p: Page) {
   const response = await p.request.get('/api/v1/podcasts');
@@ -106,8 +110,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       await page.locator('body').click();
       await page.keyboard.press('A');
       await expect(page.locator('#admin-modal')).toHaveClass(/open/);
-      await page.locator('#admin-podcasts').click();
-      await expect(page.locator('#podcast-modal')).toHaveClass(/open/);
+      await openPodcastsFromAdmin(page);
       for (const publisher of state.feeds) {
         await page.locator('#podcast-url').fill(publisher.url);
         await page.locator('#podcast-url').press('Enter');

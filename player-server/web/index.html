@@ -490,17 +490,48 @@
   </div>
 </div>
 
-<!-- Admin Modal -->
+<!-- Admin Modal: one focused workflow at a time (parity with Android admin screens). -->
 <div id="admin-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-title">
-    <div class="modal modal-wide">
+  <div class="modal modal-wide">
     <div class="modal-header">
       <h3 id="admin-title">Admin</h3>
       <div class="spacer"></div>
       <button id="admin-close" class="icon-btn" aria-label="Close">✕</button>
     </div>
-    <div class="flex gap-4 flex-wrap">
-      <section class="flex-1-18">
-        <h4 class="my-1 text-90">Users</h4>
+
+    <div class="admin-toolbar" role="toolbar" aria-label="Administration">
+      <label class="admin-section-label text-xs" for="admin-section-select">Section
+        <select id="admin-section-select" aria-controls="admin-panels">
+          <option value="users">Users</option>
+          <option value="permissions">Permissions</option>
+          <option value="scan">Library scan</option>
+          <option value="trash">Trash</option>
+          <optgroup label="Advanced">
+            <option value="libraries">Libraries</option>
+            <option value="identity">Music identity</option>
+            <option value="plugins">Plugins</option>
+            <option value="signin">Sign-in</option>
+          </optgroup>
+        </select>
+      </label>
+      <div id="admin-section-actions" class="admin-section-actions flex gap-2 flex-wrap">
+        <button id="admin-rescan" class="btn btn-primary btn-sm hidden" type="button">Trigger rescan</button>
+      </div>
+      <button id="admin-more-toggle" class="icon-btn" type="button" popovertarget="admin-more-menu" title="More admin actions" aria-label="More admin actions" aria-haspopup="true" aria-expanded="false">⋮</button>
+      <div id="admin-more-menu" class="admin-more-menu" popover aria-label="More admin actions">
+        <button id="admin-podcasts" class="menu-item" type="button">Podcasts</button>
+        <button type="button" class="menu-item" data-admin-goto="libraries">Libraries</button>
+        <button type="button" class="menu-item" data-admin-goto="identity">Music identity</button>
+        <button type="button" class="menu-item" data-admin-goto="plugins">Plugins</button>
+        <button type="button" class="menu-item" data-admin-goto="signin">Sign-in</button>
+      </div>
+      <button id="admin-scan-cancel" class="btn btn-sm" type="button" disabled title="Cancel the running library scan">Cancel scan</button>
+    </div>
+    <p id="admin-scan-status" class="admin-scan-status text-xs" role="status" aria-live="polite">Loading scan status…</p>
+
+    <div id="admin-panels">
+      <section id="admin-users-section" class="admin-panel" data-admin-panel="users" aria-labelledby="admin-users-title">
+        <h4 id="admin-users-title" class="my-1 text-90">Users</h4>
         <div id="admin-users"></div>
         <form id="admin-user-form" class="mt-2">
           <input name="username" placeholder="Username" required autocomplete="off">
@@ -511,57 +542,58 @@
           <button type="submit" class="btn btn-primary btn-sm mt-1">Add user</button>
         </form>
       </section>
-      <section class="flex-1-18">
-        <h4 class="my-1 text-90">Permissions</h4>
+
+      <section id="admin-permissions-section" class="admin-panel hidden" data-admin-panel="permissions" aria-labelledby="admin-permissions-title">
+        <h4 id="admin-permissions-title" class="my-1 text-90">Permissions</h4>
         <div id="admin-permissions"></div>
       </section>
+
+      <section id="admin-scan-section" class="admin-panel hidden" data-admin-panel="scan" aria-labelledby="admin-scan-title">
+        <h4 id="admin-scan-title" class="my-1 text-90">Library scan</h4>
+        <p class="text-muted text-xs mb-1">Manual rescans use the existing deletion policy. Automatic watch/schedule scans retain absent records. Cancel stays available above while a scan runs.</p>
+        <details id="admin-scan-options" class="mt-2">
+          <summary tabindex="0">Scan settings</summary>
+          <p id="admin-scan-settings" class="text-xs">Loading effective settings…</p>
+          <p class="text-muted text-xs">Configure on the server, then restart: SCAN_WATCH_SECONDS=30 enables source polling (0 disables; 10–86400 seconds). SCAN_INTERVAL_MINUTES=60 schedules scans (0 disables; 1–10080 minutes). Both default off. Roots are managed in Libraries. Polling checks file names, size and modification time; a same-size edit with unchanged time needs a manual rescan. Generated caches are ignored.</p>
+        </details>
+      </section>
+
+      <section id="admin-trash-section" class="admin-panel hidden" data-admin-panel="trash" aria-labelledby="admin-trash-title">
+        <h4 id="admin-trash-title" class="my-1 text-90">Trash</h4>
+        <div id="admin-trash-list"></div>
+      </section>
+
+      <section id="admin-libraries-section" class="admin-panel hidden" data-admin-panel="libraries" aria-labelledby="admin-libraries-title">
+        <h4 id="admin-libraries-title" class="my-1 text-90">Libraries</h4>
+        <p class="text-muted text-xs mb-1">Independent music roots. Access grants the same viewer/owner roles as Permissions on every set in that library. Single-library installs need no Music selector.</p>
+        <div id="admin-libraries-status" class="text-muted text-xs mb-1" role="status" aria-live="polite"></div>
+        <div id="admin-libraries"></div>
+        <form id="admin-library-form" class="mt-2 flex gap-2 flex-wrap align-end">
+          <label class="text-xs">Name<input name="name" required autocomplete="off" aria-label="Library name"></label>
+          <label class="text-xs">Path<input name="root_path" required autocomplete="off" placeholder="/media/other" aria-label="Library filesystem path"></label>
+          <button type="submit" class="btn btn-primary btn-sm">Add library</button>
+        </form>
+      </section>
+
+      <section id="admin-identity-section" class="admin-panel hidden" data-admin-panel="identity" aria-labelledby="admin-identity-title">
+        <h4 id="admin-identity-title" class="my-1 text-90">Music identity</h4>
+        <p class="text-muted text-xs mb-1">Normal moves and renames keep playlists and history automatically. Only ambiguous matches appear here — keep separate (safe) or merge into the older song.</p>
+        <div id="admin-identity-status" class="text-muted text-xs mb-1" role="status" aria-live="polite"></div>
+        <div id="admin-identity-conflicts"></div>
+      </section>
+
+      <section id="admin-plugins-section" class="admin-panel hidden" data-admin-panel="plugins" aria-labelledby="admin-plugins-title">
+        <h4 id="admin-plugins-title" class="my-1 text-90">Plugins</h4>
+        <p class="text-muted text-xs mb-1">Optional extensions. Music playback works without them. No marketplace — install on the server filesystem.</p>
+        <div id="admin-plugins-status" class="text-muted text-xs mb-1" role="status" aria-live="polite"></div>
+        <div id="admin-plugins"></div>
+      </section>
+
+      <section id="admin-auth-section" class="admin-panel hidden" data-admin-panel="signin" aria-labelledby="admin-auth-title">
+        <h4 id="admin-auth-title" class="my-1 text-90">Sign-in</h4>
+        <p id="admin-auth-help" class="text-muted text-xs">Loading authentication settings…</p>
+      </section>
     </div>
-    <div class="flex gap-2 flex-wrap mt-3">
-      <button id="admin-rescan" class="btn btn-primary btn-sm">Trigger rescan</button>
-      <button id="admin-scan-cancel" class="btn btn-sm" disabled>Cancel scan</button>
-      <button id="admin-trash" class="btn btn-danger btn-sm" aria-expanded="false" aria-controls="admin-trash-section">View trash</button>
-      <button id="admin-podcasts" class="btn btn-primary btn-sm">Podcasts</button>
-      <button id="admin-plugins-toggle" class="btn btn-primary btn-sm" aria-expanded="false" aria-controls="admin-plugins-section">Plugins</button>
-      <button id="admin-libraries-toggle" class="btn btn-primary btn-sm" aria-expanded="false" aria-controls="admin-libraries-section">Libraries</button>
-      <button id="admin-identity-toggle" class="btn btn-primary btn-sm" aria-expanded="false" aria-controls="admin-identity-section">Music identity</button>
-    </div>
-    <p id="admin-scan-status" class="text-xs mt-2" role="status" aria-live="polite">Loading scan status…</p>
-    <details id="admin-scan-options" class="mt-2">
-      <summary tabindex="0">Scan settings</summary>
-      <p id="admin-scan-settings" class="text-xs">Loading effective settings…</p>
-      <p class="text-muted text-xs">Configure on the server, then restart: SCAN_WATCH_SECONDS=30 enables source polling (0 disables; 10–86400 seconds). SCAN_INTERVAL_MINUTES=60 schedules scans (0 disables; 1–10080 minutes). Both default off. Roots are managed in Libraries. Polling checks file names, size and modification time; a same-size edit with unchanged time needs a manual rescan. Automatic scans retain absent records; manual rescans use the existing deletion policy. Generated caches are ignored.</p>
-    </details>
-    <section id="admin-auth-section" class="mt-3" aria-labelledby="admin-auth-title">
-      <h4 id="admin-auth-title" class="my-1 text-90">Sign-in</h4>
-      <p id="admin-auth-help" class="text-muted text-xs">Loading authentication settings…</p>
-    </section>
-    <section id="admin-trash-section" class="hidden mt-3" aria-labelledby="admin-trash-title">
-      <h4 id="admin-trash-title" class="my-1 text-90">Trash</h4>
-      <div id="admin-trash-list"></div>
-    </section>
-    <section id="admin-plugins-section" class="hidden mt-3" aria-labelledby="admin-plugins-title">
-      <h4 id="admin-plugins-title" class="my-1 text-90">Plugins</h4>
-      <p class="text-muted text-xs mb-1">Optional extensions. Music playback works without them. No marketplace — install on the server filesystem.</p>
-      <div id="admin-plugins-status" class="text-muted text-xs mb-1" role="status" aria-live="polite"></div>
-      <div id="admin-plugins"></div>
-    </section>
-    <section id="admin-libraries-section" class="hidden mt-3" aria-labelledby="admin-libraries-title">
-      <h4 id="admin-libraries-title" class="my-1 text-90">Libraries</h4>
-      <p class="text-muted text-xs mb-1">Independent music roots. Access grants the same viewer/owner roles as Permissions on every set in that library. Single-library installs need no Music selector.</p>
-      <div id="admin-libraries-status" class="text-muted text-xs mb-1" role="status" aria-live="polite"></div>
-      <div id="admin-libraries"></div>
-      <form id="admin-library-form" class="mt-2 flex gap-2 flex-wrap align-end">
-        <label class="text-xs">Name<input name="name" required autocomplete="off" aria-label="Library name"></label>
-        <label class="text-xs">Path<input name="root_path" required autocomplete="off" placeholder="/media/other" aria-label="Library filesystem path"></label>
-        <button type="submit" class="btn btn-primary btn-sm">Add library</button>
-      </form>
-    </section>
-    <section id="admin-identity-section" class="hidden mt-3" aria-labelledby="admin-identity-title">
-      <h4 id="admin-identity-title" class="my-1 text-90">Music identity</h4>
-      <p class="text-muted text-xs mb-1">Normal moves and renames keep playlists and history automatically. Only ambiguous matches appear here — keep separate (safe) or merge into the older song.</p>
-      <div id="admin-identity-status" class="text-muted text-xs mb-1" role="status" aria-live="polite"></div>
-      <div id="admin-identity-conflicts"></div>
-    </section>
   </div>
 </div>
 
