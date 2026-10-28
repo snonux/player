@@ -82,13 +82,13 @@ def editing(run, songs):
     # Wait for the newest snackbar before its Undo; queue Undo is equivalent
     # and remains discoverable after the short-lived snackbar has gone.
     queue.queue()
-    assert adrv.tap('^Undo$')
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Undo$')
     assert order() == expected, order()
     app_ui.back()
     proof, wav = queue.output(run, c, 'm14-native-play-now', lambda: action(c['title'], 'Play now'))
     queue.queue()
     assert order()[1] == c['title'], order()
-    assert adrv.tap('^Undo$')
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Undo$')
     assert order() == expected, order()
     assert sequence.state()['state'] != 'PLAYING', sequence.state()
     run.record('single/batch FIFO displayed order, duplicate occurrences, no seek, Play now audible and Undo paused', True,
@@ -162,7 +162,7 @@ def themes(run, songs, fresh=True):
 def boundaries(run, songs):
     base_album(run, songs)
     queue.queue()
-    assert adrv.tap('^Clear queue$')
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Clear queue$')
     app_ui.back()
     before = sequence.state()
     action(songs[2]['title'], 'Add to queue')

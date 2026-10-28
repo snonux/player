@@ -346,6 +346,9 @@ def resolve_session_prompt():
         labels = app_ui.labels()
         if 'Replace' in labels and any('Replace saved session?' in l for l in labels):
             adrv.tap('^Replace$'); time.sleep(1); continue
+        if adrv.find('^More options$'):
+            adrv.tap('^More options$')
+            labels = app_ui.labels()
         if 'Replace saved session' in labels:
             adrv.tap('^Replace saved session$'); time.sleep(1); continue
         if 'Continue session' in labels:

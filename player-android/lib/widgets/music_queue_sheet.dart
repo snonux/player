@@ -10,6 +10,7 @@ import '../services/playback_request.dart';
 import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
 import 'music_autoplay_control.dart';
+import 'overflow_menu.dart';
 import 'saved_queue_controls.dart';
 
 /// Shared entry point on the player and library screens; no new player route.
@@ -28,7 +29,7 @@ class MusicQueueButton extends ConsumerWidget {
               offlineOnly: offlineOnly)));
 }
 
-class _MusicQueueSheet extends StatelessWidget {
+class _MusicQueueSheet extends ConsumerWidget {
   const _MusicQueueSheet(this.handler, {this.offlineOnly = false});
   final bool offlineOnly;
   final PlayerAudioHandler handler;
@@ -45,13 +46,57 @@ class _MusicQueueSheet extends StatelessWidget {
     }
   }
 
+  bool _shuffleBusy(MusicQueueState q) =>
+      q.busy || q.restoreFailed || (!q.shuffle && q.shuffleEligible < 2);
+
+  List<Widget> _queueMoreItems(
+      BuildContext context, WidgetRef ref, MusicQueueState q) {
+    final shuffleLocked =
+        q.busy || q.restoreFailed || q.shuffleEligible < 2;
+    return [
+      if (!offlineOnly) ...savedQueueMenuItems(context, ref),
+      if (!offlineOnly)
+        saveQueuePlaylistMenuItem(context, ref, q,
+            label: context.tr('Save as playlist')),
+      if (q.shuffle)
+        OverflowMenuItem(
+            icon: Icons.shuffle,
+            label: context.tr('Reshuffle remaining'),
+            onSelected: shuffleLocked
+                ? null
+                : () => handler.shuffleQueue(reshuffle: true)),
+      if (q.index >= 0 &&
+          q.entries[q.index].request is ServerPlaybackRequest)
+        OverflowMenuItem(
+            icon: Icons.open_in_new,
+            label: context.tr('Open current item'),
+            onSelected: () {
+              final request =
+                  q.entries[q.index].request as ServerPlaybackRequest;
+              Navigator.pop(context);
+              context.push(AppRoutes.mediaDetailPath(request.mediaId));
+            }),
+      OverflowMenuItem(
+          icon: Icons.clear_all,
+          label: context.tr('Clear queue'),
+          onSelected: q.busy || q.entries.isEmpty
+              ? null
+              : () => _run(context, handler.clearQueue)),
+      OverflowMenuItem(
+          icon: Icons.undo,
+          label: context.tr('Undo'),
+          onSelected: q.busy || !q.canUndo ? null : handler.undoQueue),
+    ];
+  }
+
   @override
-  Widget build(BuildContext context) => SizedBox(
+  Widget build(BuildContext context, WidgetRef ref) => SizedBox(
       height: MediaQuery.sizeOf(context).height * .92,
       child: StreamBuilder<void>(
           stream: handler.queueChanges,
           builder: (context, _) {
             final q = handler.musicQueue;
+            final shuffleDisabled = _shuffleBusy(q);
             return CustomScrollView(slivers: [
               SliverToBoxAdapter(
                   child: Column(children: [
@@ -73,78 +118,112 @@ class _MusicQueueSheet extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(context
                           .tr('Playing from: {name}', {'name': q.label}))),
-                Wrap(alignment: WrapAlignment.center, children: [
-                  Semantics(
-                      selected: q.shuffle,
-                      child: TextButton.icon(
-                          style: TextButton.styleFrom(
-                              minimumSize: const Size(48, 48),
-                              foregroundColor: q.shuffle
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant),
-                          onPressed: q.busy ||
-                                  q.restoreFailed ||
-                                  (!q.shuffle && q.shuffleEligible < 2)
-                              ? null
-                              : handler.shuffleQueue,
-                          icon: const Icon(Icons.shuffle),
-                          label: Text(context.tr('Shuffle: {mode}', {
-                            'mode': context.tr(q.shuffle
-                                ? (q.shuffleMode == 'albums'
-                                    ? context.tr('Albums')
-                                    : context.tr('Tracks'))
-                                : context.tr('Off'))
-                          })))),
-                  PopupMenuButton<String>(
-                      tooltip: context.tr('Shuffle options'),
-                      enabled:
-                          !q.busy && !q.restoreFailed && q.shuffleEligible >= 2,
-                      onSelected: (mode) => handler.shuffleQueue(mode: mode),
-                      itemBuilder: (_) => [
-                            PopupMenuItem(
-                                value: 'tracks',
-                                child: Text(context.tr('Shuffle tracks'))),
-                            if (!offlineOnly)
-                              PopupMenuItem(
-                                  value: 'albums',
-                                  child: Text(context.tr('Shuffle albums'))),
-                          ],
-                      child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 16),
-                          child: Text(context.tr('Shuffle options ▾')))),
-                  if (q.shuffle)
-                    TextButton(
-                        style: TextButton.styleFrom(
-                            minimumSize: const Size(48, 48)),
-                        onPressed:
-                            q.busy || q.restoreFailed || q.shuffleEligible < 2
-                                ? null
-                                : () => handler.shuffleQueue(reshuffle: true),
-                        child: Text(context.tr('Reshuffle remaining'))),
-                  Semantics(
-                      selected: q.repeat != MusicRepeat.off,
-                      child: TextButton.icon(
-                          style: TextButton.styleFrom(
-                              minimumSize: const Size(48, 48),
-                              foregroundColor: q.repeat == MusicRepeat.off
-                                  ? Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant
-                                  : Theme.of(context).colorScheme.primary),
-                          onPressed: q.busy || q.restoreFailed
-                              ? null
-                              : handler.cycleQueueRepeat,
-                          icon: Icon(q.repeat == MusicRepeat.one
-                              ? Icons.repeat_one
-                              : Icons.repeat),
-                          label: Text(context.tr('Repeat: {mode}', {
-                            'mode': context.tr(q.repeat.name[0].toUpperCase() +
-                                q.repeat.name.substring(1))
-                          })))),
-                ]),
+                Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      PopupMenuButton<String>(
+                          tooltip: context.tr('Shuffle options'),
+                          enabled: !q.busy &&
+                              !q.restoreFailed &&
+                              (q.shuffle || q.shuffleEligible >= 2),
+                          onSelected: (action) {
+                            if (action == 'toggle') {
+                              handler.shuffleQueue();
+                            } else if (action == 'reshuffle') {
+                              handler.shuffleQueue(reshuffle: true);
+                            } else {
+                              handler.shuffleQueue(mode: action);
+                            }
+                          },
+                          itemBuilder: (_) => [
+                                PopupMenuItem(
+                                    value: 'toggle',
+                                    enabled: !shuffleDisabled || q.shuffle,
+                                    child: Text(
+                                        '${context.tr('Shuffle')}: ${context.tr(q.shuffle ? (q.shuffleMode == 'albums' ? 'Albums' : 'Tracks') : 'Off')} · Toggle')),
+                                PopupMenuItem(
+                                    value: 'tracks',
+                                    enabled: !shuffleDisabled,
+                                    child:
+                                        Text(context.tr('Shuffle tracks'))),
+                                if (!offlineOnly)
+                                  PopupMenuItem(
+                                      value: 'albums',
+                                      enabled: !shuffleDisabled,
+                                      child: Text(
+                                          context.tr('Shuffle albums'))),
+                                if (q.shuffle)
+                                  PopupMenuItem(
+                                      value: 'reshuffle',
+                                      enabled: !shuffleDisabled,
+                                      child: Text(
+                                          context.tr('Reshuffle remaining'))),
+                              ],
+                          child: Semantics(
+                              selected: q.shuffle,
+                              child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 12),
+                                  child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.shuffle,
+                                                color: q.shuffle
+                                                    ? Theme.of(context)
+                                                        .colorScheme
+                                                        .primary
+                                                    : Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurfaceVariant),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                                context.tr('Shuffle: {mode}', {
+                                                  'mode': context.tr(q.shuffle
+                                                      ? (q.shuffleMode ==
+                                                              'albums'
+                                                          ? context
+                                                              .tr('Albums')
+                                                          : context
+                                                              .tr('Tracks'))
+                                                      : context.tr('Off'))
+                                                }),
+                                                style: TextStyle(
+                                                    color: q.shuffle
+                                                        ? Theme.of(context)
+                                                            .colorScheme
+                                                            .primary
+                                                        : Theme.of(context)
+                                                            .colorScheme
+                                                            .onSurfaceVariant)),
+                                          ]))))),
+                      Semantics(
+                          selected: q.repeat != MusicRepeat.off,
+                          child: TextButton.icon(
+                              style: TextButton.styleFrom(
+                                  minimumSize: const Size(48, 48),
+                                  foregroundColor: q.repeat == MusicRepeat.off
+                                      ? Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant
+                                      : Theme.of(context).colorScheme.primary),
+                              onPressed: q.busy || q.restoreFailed
+                                  ? null
+                                  : handler.cycleQueueRepeat,
+                              icon: Icon(q.repeat == MusicRepeat.one
+                                  ? Icons.repeat_one
+                                  : Icons.repeat),
+                              label: Text(context.tr('Repeat: {mode}', {
+                                'mode': context.tr(
+                                    q.repeat.name[0].toUpperCase() +
+                                        q.repeat.name.substring(1))
+                              })))),
+                      OverflowMenuButton(
+                          key: const Key('queue_more_button'),
+                          items: (_) => _queueMoreItems(context, ref, q)),
+                    ]),
                 MusicAutoplayControl(
                     enabled: q.autoplayEnabled,
                     available: !offlineOnly && q.autoplayAvailable,
@@ -180,17 +259,6 @@ class _MusicQueueSheet extends StatelessWidget {
                   TextButton(
                       onPressed: q.busy ? null : handler.retryQueueRestore,
                       child: Text(context.tr('Retry restore'))),
-                if (q.index >= 0 &&
-                    q.entries[q.index].request is ServerPlaybackRequest)
-                  TextButton(
-                      onPressed: () {
-                        final request =
-                            q.entries[q.index].request as ServerPlaybackRequest;
-                        Navigator.pop(context);
-                        context
-                            .push(AppRoutes.mediaDetailPath(request.mediaId));
-                      },
-                      child: Text(context.tr('Open current item'))),
               ])),
               if (q.entries.isEmpty)
                 SliverToBoxAdapter(
@@ -284,24 +352,6 @@ class _MusicQueueSheet extends StatelessWidget {
                                             child: Text(context.tr('Remove'))),
                                       ])));
                     }),
-              SliverToBoxAdapter(
-                  child: SafeArea(
-                      top: false,
-                      child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Wrap(spacing: 12, children: [
-                            if (!offlineOnly) SaveQueuePlaylistButton(queue: q),
-                            TextButton(
-                                onPressed: q.busy || q.entries.isEmpty
-                                    ? null
-                                    : () => _run(context, handler.clearQueue),
-                                child: Text(context.tr('Clear queue'))),
-                            TextButton(
-                                onPressed: q.busy || !q.canUndo
-                                    ? null
-                                    : handler.undoQueue,
-                                child: Text(context.tr('Undo'))),
-                          ]))))
             ]);
           }));
 }

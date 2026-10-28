@@ -23,6 +23,9 @@ class OverflowMenuButton extends StatelessWidget {
             ? null
             : () => showModalBottomSheet<void>(
                   context: context,
+                  // Queue and other sheets nest this menu; root navigator keeps
+                  // the sheet visible above the host modal.
+                  useRootNavigator: true,
                   isScrollControlled: true,
                   useSafeArea: true,
                   showDragHandle: true,

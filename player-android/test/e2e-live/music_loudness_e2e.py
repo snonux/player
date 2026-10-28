@@ -333,6 +333,7 @@ def restore_queue(run, original):
     with run.client.opener.open(request) as response:
         accepted = json.load(response)
     run.touch('^Now Playing queue$')
+    run.touch('^More options$')
     run.touch('^Continue session$')
     assert adrv.wait('^Replace$', timeout=20)
     run.touch('^Replace$')

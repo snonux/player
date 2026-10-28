@@ -217,12 +217,12 @@ def persistence(run):
     assert adrv.wait('^Repeat: One$', timeout=25), app_ui.labels()
     recovery.queue_action(3, a['title'], 'Remove')
     assert sequence.state()['state'] != 'PLAYING'
-    assert adrv.tap('^Undo$')
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Undo$')
     assert snapshot(run)['repeat'] == 'one'
-    assert adrv.tap('^Clear queue$'); assert adrv.tap('^Undo$')
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Clear queue$'); assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Undo$')
     assert snapshot(run)['repeat'] == 'one'
     assert sequence.state()['state'] != 'PLAYING'
-    assert adrv.tap('^Clear queue$'); wait_saved(run, lambda s: not s['entries'])
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Clear queue$'); wait_saved(run, lambda s: not s['entries'])
     app_ui.back(); recovery.restart(run); queue_ui.queue()
     assert adrv.wait('Queue is empty') and adrv.find('^Repeat: One$'), app_ui.labels()
     assert not snapshot(run)['entries'] and snapshot(run)['repeat'] == 'one'

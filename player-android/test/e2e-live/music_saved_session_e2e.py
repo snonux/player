@@ -126,9 +126,13 @@ def main():
     def queue():
         assert app_ui.go_home(), app_ui.labels()
         assert adrv.tap('^Now Playing queue$'), app_ui.labels()
+        assert adrv.wait('^Now Playing$'), app_ui.labels()
+        assert adrv.tap('^More options$'), app_ui.labels()
         assert adrv.wait('^Continue session$'), app_ui.labels()
 
     def confirm(action, replace=True):
+        if not adrv.find('^' + re.escape(action) + '$'):
+            assert adrv.tap('^More options$'), app_ui.labels()
         assert adrv.tap('^' + re.escape(action) + '$'), app_ui.labels()
         assert adrv.wait('^Replace$'), app_ui.labels()
         if replace:
@@ -162,7 +166,7 @@ def main():
         try:
             login(auth['user'])
             queue()
-            assert adrv.tap('^Continue session$')
+            assert adrv.tap('^Continue session$')  # menu already open from queue()
             time.sleep(.5)
             if adrv.find('^Replace$'):
                 assert adrv.tap('^Replace$')

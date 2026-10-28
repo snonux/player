@@ -144,7 +144,7 @@ def editing(run, songs):
                data=proof, artifacts=[wav])
     action(a['title'], 'Remove')
     assert row_order([s['title'] for s in songs]) == [c['title'], b['title']]
-    assert adrv.tap('^Undo$')
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Undo$')
     assert row_order([s['title'] for s in songs]) == [a['title'], c['title'], b['title']]
     # The source is already paused at its measured position; removal must flush
     # B's identity, stop it, and Undo must not start it again.
@@ -152,12 +152,12 @@ def editing(run, songs):
     assert sequence.state()['state'] != 'PLAYING'
     saved = run.viewer.request('GET', f'/api/v1/media/{b["id"]}')['progress']
     assert saved['position_seconds'] >= 2 and saved['user_id'] == run.viewer_id and saved['media_id'] == b['id'], saved
-    assert adrv.tap('^Undo$')
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Undo$')
     assert sequence.state()['state'] != 'PLAYING'
-    assert adrv.tap('^Clear queue$')
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Clear queue$')
     assert adrv.wait('Queue is empty'), app_ui.labels()
     assert sequence.state()['state'] != 'PLAYING'
-    assert adrv.tap('^Undo$')
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Undo$')
     assert row_order([s['title'] for s in songs]) == [a['title'], c['title'], b['title']]
     assert sequence.state()['state'] != 'PLAYING'
     proof, wav = output(run, c, 'm13-native-clear-undo-resume', lambda: jump(c['title']))
@@ -217,9 +217,9 @@ def retained(run, songs):
     queue()
     before = sequence.state()
     action(songs[0]['title'], 'Remove')
-    assert adrv.tap('^Undo$')
-    assert adrv.tap('^Clear queue$')
-    assert adrv.tap('^Undo$')
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Undo$')
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Clear queue$')
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Undo$')
     after = sequence.state()
     assert after['title'] == before['title'] and abs(after['position_ms'] - before['position_ms']) < 1000, (before, after)
     app_ui.back()
@@ -252,7 +252,7 @@ def errors(run, songs):
     adrv.adb('reverse', '--remove', f'tcp:{port}')
     try:
         action(songs[2]['title'], 'Remove')
-        assert adrv.tap('^Undo$')
+        assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Undo$')
         assert row_order([s['title'] for s in songs]) == [s['title'] for s in songs]
         run.record('offline queue edits and Undo require no network', True, artifacts=[run.shot('m13-native-offline-edit')])
     finally:

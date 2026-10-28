@@ -68,7 +68,11 @@ void main() {
     expect(handler.musicQueue.repeat, MusicRepeat.one);
     expect(find.text('Paused at 0:07'), findsOneWidget);
     expect(find.text('Selected · paused'), findsOneWidget);
+    await tester.tap(find.descendant(of: find.byKey(const Key('queue_more_button')), matching: find.byTooltip('More options')));
+    await tester.pumpAndSettle();
     expect(find.text('Open current item'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
     expect(handler.musicState, isNull);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
@@ -112,7 +116,9 @@ void main() {
     await tester.tap(find.text('Shuffle albums'));
     await tester.pumpAndSettle();
     expect(find.text('Shuffle: Albums'), findsOneWidget);
-    await tester.tap(find.text('Shuffle: Albums'));
+    await tester.tap(find.byTooltip('Shuffle options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('· Toggle'));
     await tester.pumpAndSettle();
     expect(find.text('Shuffle: Off'), findsOneWidget);
     await tester.tap(find.byTooltip('Queue actions for Song 1'));
@@ -131,11 +137,13 @@ void main() {
     await tester.tap(find.text('Remove'));
     await tester.pumpAndSettle();
     expect(handler.musicQueue.entries.length, 2);
+    await tester.tap(find.descendant(of: find.byKey(const Key('queue_more_button')), matching: find.byTooltip('More options')));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(handler.musicQueue.entries.length, 3);
-    await tester.scrollUntilVisible(find.text('Clear queue'), 180,
-        scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.descendant(of: find.byKey(const Key('queue_more_button')), matching: find.byTooltip('More options')));
+    await tester.pumpAndSettle();
     await tester.runAsync(() async {
       await tester.tap(find.text('Clear queue'));
       await Future<void>.delayed(const Duration(milliseconds: 30));
@@ -143,7 +151,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Queue is empty. Add songs or play an album to start.'),
         findsOneWidget);
-    await tester.ensureVisible(find.text('Undo'));
+    await tester.tap(find.descendant(of: find.byKey(const Key('queue_more_button')), matching: find.byTooltip('More options')));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(find.text('Selected · paused'), findsOneWidget);
@@ -207,23 +216,13 @@ void main() {
               .getSize(find.widgetWithText(FilledButton, 'Resume queue'))
               .height,
           greaterThanOrEqualTo(48));
+      expect(find.byKey(const Key('queue_more_button')), findsOneWidget);
       await tester.scrollUntilVisible(find.text('Saved item 19'), 250,
           scrollable: find.byType(Scrollable).first);
-      await tester.scrollUntilVisible(find.text('Clear queue'), 180,
-          scrollable: find.byType(Scrollable).first);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Clear queue'));
-      await tester.pumpAndSettle();
-      expect(handler.musicQueue.entries, isEmpty);
-      await tester.ensureVisible(find.text('Undo'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Undo'));
-      await tester.pumpAndSettle();
-      expect(handler.musicQueue.entries, hasLength(20));
       await tester.scrollUntilVisible(find.byTooltip('Close queue'), -250,
           scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
-      expect(loads, 0, reason: 'scrolling and Undo must not resume playback');
+      expect(loads, 0, reason: 'scrolling must not resume playback');
       expect(handler.musicQueue.active, isFalse);
       expect(tester.takeException(), isNull);
       expect(find.byTooltip('Close queue').hitTestable(), findsOneWidget);

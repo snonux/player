@@ -144,7 +144,7 @@ def journey(run):
     time.sleep(2)
     same_queue(after, snapshot(run))
     assert sequence.state()['state'] != 'PLAYING', sequence.state()
-    assert adrv.find('^Open current item$'), app_ui.labels()
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.find('^Open current item$'), app_ui.labels()
     shots = []
     for theme, system in [('light', 'no'), ('dark', 'yes')]:
         adrv.adb('shell', 'cmd', 'uimode', 'night', system)
@@ -186,7 +186,7 @@ def journey(run):
     same_queue(progressed, restored)
     run.record('actual logout/admin sign-in hides all prior queue metadata; original user recovers own exact session', True,
                data={'viewer_id': run.viewer_id, 'restored': restored}, artifacts=[shot])
-    assert adrv.tap('^Clear queue$'), app_ui.labels()
+    assert adrv.tap('^More options$'), app_ui.labels(); assert adrv.tap('^Clear queue$'), app_ui.labels()
     wait_saved(run, lambda s: not s['entries'])
     app_ui.back(); restart(run); queue_ui.queue()
     assert adrv.wait('Queue is empty'), app_ui.labels()

@@ -10,6 +10,46 @@ import '../providers/auth_state_provider.dart';
 import '../services/music_queue.dart';
 import '../services/playback_request.dart';
 import '../utils/error_mappers.dart';
+import 'overflow_menu.dart';
+
+Future<void> saveQueueAsPlaylist(
+    BuildContext context, WidgetRef ref, MusicQueueState queue) async {
+  final auth = ref.read(authStateProvider).valueOrNull;
+  final mutations = ref.read(credentialMutationQueueProvider);
+  final origin = ref.read(playerBaseUrlProvider).origin;
+  if (auth?.isAuthenticated != true || !mutations.credentialsEnabled) {
+    return;
+  }
+  final user = auth!.user!.id, epoch = mutations.generation;
+  final api = ref.read(apiClientProvider);
+  final requests = queue.entries.map((entry) => entry.request).toList();
+  if (requests.any((request) =>
+      request is! ServerPlaybackRequest ||
+      request.userId != user ||
+      request.serverOrigin != origin)) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+            'This queue belongs to a different account. Open music for this account first.')));
+    return;
+  }
+  bool current() =>
+      mutations.credentialsEnabled &&
+      mutations.generation == epoch &&
+      mutations.credentialOrigin == origin &&
+      identical(api, ref.read(apiClientProvider)) &&
+      ref.read(authStateProvider).valueOrNull?.user?.id == user;
+  final ids =
+      requests.cast<ServerPlaybackRequest>().map((r) => r.mediaId).toList();
+  final id = await showDialog<String>(
+      context: context,
+      builder: (_) => QueuePlaylistDialog(
+          api: api, mediaIds: ids, epoch: epoch, current: current));
+  if (!context.mounted || id == null || !current()) return;
+  final router = GoRouter.of(context);
+  Navigator.of(context).pop();
+  router.push(
+      '${AppRoutes.musicPlaylists}?playlist=${Uri.encodeComponent(id)}');
+}
 
 /// Saves a snapshot independently of playback or later queue edits.
 class SaveQueuePlaylistButton extends ConsumerWidget {
@@ -23,48 +63,19 @@ class SaveQueuePlaylistButton extends ConsumerWidget {
       label: Text(context.tr('Save as playlist')),
       onPressed: queue.busy || queue.restoreFailed || queue.entries.isEmpty
           ? null
-          : () async {
-              final auth = ref.read(authStateProvider).valueOrNull;
-              final mutations = ref.read(credentialMutationQueueProvider);
-              final origin = ref.read(playerBaseUrlProvider).origin;
-              if (auth?.isAuthenticated != true ||
-                  !mutations.credentialsEnabled) {
-                return;
-              }
-              final user = auth!.user!.id, epoch = mutations.generation;
-              final api = ref.read(apiClientProvider);
-              final requests =
-                  queue.entries.map((entry) => entry.request).toList();
-              if (requests.any((request) =>
-                  request is! ServerPlaybackRequest ||
-                  request.userId != user ||
-                  request.serverOrigin != origin)) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text(
-                        'This queue belongs to a different account. Open music for this account first.')));
-                return;
-              }
-              bool current() =>
-                  mutations.credentialsEnabled &&
-                  mutations.generation == epoch &&
-                  mutations.credentialOrigin == origin &&
-                  identical(api, ref.read(apiClientProvider)) &&
-                  ref.read(authStateProvider).valueOrNull?.user?.id == user;
-              final ids = requests
-                  .cast<ServerPlaybackRequest>()
-                  .map((r) => r.mediaId)
-                  .toList();
-              final id = await showDialog<String>(
-                  context: context,
-                  builder: (_) => QueuePlaylistDialog(
-                      api: api, mediaIds: ids, epoch: epoch, current: current));
-              if (!context.mounted || id == null || !current()) return;
-              final router = GoRouter.of(context);
-              Navigator.of(context).pop();
-              router.push(
-                  '${AppRoutes.musicPlaylists}?playlist=${Uri.encodeComponent(id)}');
-            });
+          : () => saveQueueAsPlaylist(context, ref, queue));
 }
+
+/// Overflow row for the queue More menu. Pass the queue-sheet [host] context.
+OverflowMenuItem saveQueuePlaylistMenuItem(
+        BuildContext host, WidgetRef ref, MusicQueueState queue,
+        {required String label}) =>
+    OverflowMenuItem(
+        icon: Icons.playlist_add,
+        label: label,
+        onSelected: queue.busy || queue.restoreFailed || queue.entries.isEmpty
+            ? null
+            : () => saveQueueAsPlaylist(host, ref, queue));
 
 class QueuePlaylistDialog extends StatefulWidget {
   const QueuePlaylistDialog(

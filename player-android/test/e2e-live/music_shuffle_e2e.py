@@ -190,7 +190,9 @@ def core(run):
         assert mixed['entries'][:before['index']+1] == before['entries'][:before['index']+1]
         assert sorted(e['id'] for e in mixed['entries']) == sorted(e['id'] for e in before['entries'])
         assert abs(mixed['position'] - before['position']) < .1, (before, mixed)
+        touch('^More options$')
         touch('^Reshuffle remaining$')
+        touch('^More options$')
         touch('^Undo$')
         stable_queue(mixed, snapshot(run))
         off = toggle(run, False)
