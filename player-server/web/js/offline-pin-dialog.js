@@ -2,6 +2,7 @@ import { initDownloadQuality } from './download-quality.js';
 import { beginPlaybackIntent, isPlaybackIntent } from './playback-intent.js';
 import { API } from './api.js';
 import { state } from './state.js';
+import { focusSelectedCard } from './selection.js';
 import { resolveCollections } from './collection-resolver.js';
 import { insertQueue } from './queue.js';
 import { offlinePinStatus, pinMusicCollection, unpinMusicCollection } from './offline-pins.js';
@@ -23,7 +24,13 @@ export function showOfflinePin(collection, title, opener = document.activeElemen
   close.textContent=busy?'Cancel and close':'Close';
  }
  async function refresh() { row=await offlinePinStatus(collection); if(current())render(); }
- function finish() { if(closed)return; closed=true; controller?.abort(); overlay.remove(); if(opener?.isConnected)opener.focus(); }
+ function finish() {
+  if(closed)return;
+  closed=true; controller?.abort(); overlay.remove();
+  if(state.user !== account || document.querySelector('.modal-overlay.open'))return;
+  if(opener?.isConnected && !opener.disabled && opener.getClientRects().length)opener.focus();
+  else focusSelectedCard();
+ }
  close.onclick=finish;
  overlay.onkeydown=event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();finish();}};
  overlay.addEventListener('modalbeforeclose',event=>{event.preventDefault();finish();});

@@ -33,10 +33,11 @@ export function bindCollectionActions(root, collections, current, sourceLabel = 
  more.onclick = event => menu(event.currentTarget, owner);
  const pin = root.querySelector('[data-collection-pin]');
  owner.pinUpdate = bindOfflinePinButton(pin, collections, current, sourceLabel);
- // Restore focus to the visible More control after the pin dialog closes.
+ // Detail pages hide this nested More control behind the entity's More menu.
  if (pin) pin.onclick = () => {
   const selected = collections();
-  if (current() && selected.length === 1 && ['album', 'playlist'].includes(selected[0].kind)) showOfflinePin(selected[0], sourceLabel, more);
+  const opener = more.getClientRects().length ? more : root.closest('.music-heading')?.querySelector('[data-album-more], [data-playlist-more]') || more;
+  if (current() && selected.length === 1 && ['album', 'playlist'].includes(selected[0].kind)) showOfflinePin(selected[0], sourceLabel, opener);
  };
  return owner;
 }
