@@ -1,14 +1,19 @@
 // Widget tests for AdminPermissionsScreen (admin_permissions_screen.dart).
 //
 // Tests cover:
-//   1. Permission matrix renders with user rows and set columns.
-//   2. Checking a checkbox calls grantPermission.
-//   3. Unchecking a checkbox calls revokePermission.
-//   4. Admin rows are disabled (cannot toggle).
-//   5. Optimistic toggle reverts on error.
-//   6. Loading spinner shown before first data fetch completes.
-//   7. Empty-state shown when no users or sets are returned.
-//   8. Error-state shown when the load throws.
+//   1. User editor renders with user picker and searchable set roles.
+//   2. Selecting Viewer calls grantPermission with role viewer.
+//   3. Selecting Owner calls grantPermission with role owner.
+//   4. Selecting — calls revokePermission.
+//   5. Admin users show a banner; role dropdowns are disabled.
+//   6. Optimistic role change reverts on error.
+//   7. Loading spinner shown before first data fetch completes.
+//   8. Empty-state shown when no users or sets are returned.
+//   9. Error-state shown when the load throws.
+//  10. Advanced matrix is reachable from the overflow menu.
+//  11. Set search filters the set list.
+//  12. Set search text survives Advanced matrix round-trip.
+//  13. User picker filters by username.
 //
 // Riverpod providers are overridden with fakes so tests run without a real
 // server or OS keychain.
@@ -45,14 +50,8 @@ class _FakeTokenStorage implements TokenStorage {
 }
 
 /// Controllable [PlayerApiClient] stub for [AdminPermissionsScreen] tests.
-///
-/// [listUsers], [listSets], [listPermissions], [grantPermission], and
-/// [revokePermission] are the primary subjects.  All other methods remain
-/// [UnimplementedError] — the screen calls only these.
 class _FakeApiClient extends PlayerApiClient {
   _FakeApiClient() : super(dio: Dio(BaseOptions(baseUrl: 'http://test.local')));
-
-  // ---- listUsers ----
 
   List<User>? usersResult;
   Object? usersError;
@@ -63,8 +62,6 @@ class _FakeApiClient extends PlayerApiClient {
     return usersResult!;
   }
 
-  // ---- listSets ----
-
   List<MediaSet>? setsResult;
   Object? setsError;
 
@@ -73,8 +70,6 @@ class _FakeApiClient extends PlayerApiClient {
     if (setsError != null) throw setsError!;
     return setsResult!;
   }
-
-  // ---- listPermissions ----
 
   Map<String, dynamic>? permsResult;
   Object? permsError;
@@ -85,11 +80,10 @@ class _FakeApiClient extends PlayerApiClient {
     return permsResult!;
   }
 
-  // ---- grantPermission ----
-
   Object? grantError;
   int? grantedUserId;
   int? grantedSetId;
+  String? grantedRole;
   int grantCallCount = 0;
 
   @override
@@ -100,11 +94,10 @@ class _FakeApiClient extends PlayerApiClient {
   }) async {
     grantedUserId = userId;
     grantedSetId = setId;
+    grantedRole = role;
     grantCallCount++;
     if (grantError != null) throw grantError!;
   }
-
-  // ---- revokePermission ----
 
   Object? revokeError;
   int? revokedUserId;
@@ -123,8 +116,7 @@ class _FakeApiClient extends PlayerApiClient {
   }
 }
 
-/// [PlayerApiClient] stub that suspends all three parallel loads until
-/// [complete] is called — used to inspect the mid-flight loading state.
+/// Suspends all three parallel loads until [complete] is called.
 class _DelayedFakeApiClient extends PlayerApiClient {
   _DelayedFakeApiClient() : super(dio: Dio());
 
@@ -156,12 +148,10 @@ class _DelayedFakeApiClient extends PlayerApiClient {
 // Sample data helpers
 // ---------------------------------------------------------------------------
 
-/// Builds a minimal [User] with the given [id], [username], and [isAdmin] flag.
 User _makeUser({required int id, required String username, bool isAdmin = false}) {
   return User(id: id, username: username, isAdmin: isAdmin);
 }
 
-/// Builds a minimal [MediaSet] with the given [id] and [name].
 MediaSet _makeSet({required int id, required String name}) {
   return MediaSet(
     id: id,
@@ -172,32 +162,25 @@ MediaSet _makeSet({required int id, required String name}) {
   );
 }
 
-/// Builds an empty permission-matrix response (no explicit permissions).
 Map<String, dynamic> _emptyPerms() => {'permissions': <dynamic>[]};
 
-/// Builds a permission-matrix response with a single (userId, setId) pair.
-Map<String, dynamic> _permsWithGrant({required int userId, required int setId}) {
+Map<String, dynamic> _permsWithGrant({
+  required int userId,
+  required int setId,
+  String role = 'viewer',
+}) {
   return {
     'permissions': [
-      {'user_id': userId, 'set_id': setId, 'role': 'viewer'},
+      {'user_id': userId, 'set_id': setId, 'role': role},
     ],
   };
 }
 
-// Pre-built test fixtures.
 final _kAdmin = _makeUser(id: 1, username: 'alice', isAdmin: true);
 final _kBob = _makeUser(id: 2, username: 'bob');
 final _kSetA = _makeSet(id: 10, name: 'Movies');
 final _kSetB = _makeSet(id: 20, name: 'Music');
 
-// ---------------------------------------------------------------------------
-// Helper: pump AdminPermissionsScreen inside a minimal ProviderScope.
-// ---------------------------------------------------------------------------
-
-/// Pumps [AdminPermissionsScreen] with a [ProviderScope] that overrides
-/// [apiClientProvider] with [fakeClient] and [tokenStorageProvider] with an
-/// in-memory fake.  [MaterialApp] is sufficient because the screen does not
-/// navigate away — it only shows SnackBars.
 Future<void> _pumpPermsScreen(
   WidgetTester tester,
   PlayerApiClient fakeClient,
@@ -213,28 +196,39 @@ Future<void> _pumpPermsScreen(
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+/// Finds the [DropdownButton] under the role widget keyed by [permKey].
+Finder _roleDropdown(Key permKey) {
+  return find.descendant(
+    of: find.byKey(permKey),
+    matching: find.byType(DropdownButton<String>),
+  );
+}
+
+/// Opens the role dropdown keyed by [permKey] and taps the menu item with
+/// [label] (—, Viewer, or Owner).
+Future<void> _selectRole(
+  WidgetTester tester, {
+  required Key permKey,
+  required String label,
+}) async {
+  await tester.tap(_roleDropdown(permKey));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(label).last);
+  await tester.pumpAndSettle();
+}
 
 void main() {
-  // --------------------------------------------------------------------------
-  // Loading state
-  // --------------------------------------------------------------------------
-
   group('loading state', () {
     testWidgets('shows loading spinner while parallel loads are in flight',
         (tester) async {
       final fakeClient = _DelayedFakeApiClient();
 
       await _pumpPermsScreen(tester, fakeClient);
-      // One pump so addPostFrameCallback fires but Futures have not resolved.
       await tester.pump();
 
       expect(find.byKey(const Key('admin_perms_loading')), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
-      // Resolve to avoid dangling-async warnings.
       fakeClient.complete(
         users: [_kAdmin, _kBob],
         sets: [_kSetA],
@@ -244,12 +238,8 @@ void main() {
     });
   });
 
-  // --------------------------------------------------------------------------
-  // Matrix rendering
-  // --------------------------------------------------------------------------
-
-  group('matrix rendering', () {
-    testWidgets('renders DataTable with user rows and set columns',
+  group('user editor', () {
+    testWidgets('renders user picker and set roles for the default user',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..usersResult = [_kAdmin, _kBob]
@@ -259,54 +249,136 @@ void main() {
       await _pumpPermsScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('admin_perms_table')), findsOneWidget);
-      // User names visible in the table.
-      expect(find.text('alice'), findsOneWidget);
-      expect(find.text('bob'), findsOneWidget);
-      // Set names visible as column headers.
+      expect(find.byKey(const Key('admin_perms_user_select')), findsOneWidget);
+      expect(find.byKey(const Key('admin_perms_set_search')), findsOneWidget);
+      // Default selection prefers the first non-admin (bob).
+      expect(find.byKey(const Key('perm_2_10')), findsOneWidget);
+      expect(find.byKey(const Key('perm_2_20')), findsOneWidget);
       expect(find.text('Movies'), findsOneWidget);
       expect(find.text('Music'), findsOneWidget);
+      // Matrix is not shown by default.
+      expect(find.byKey(const Key('admin_perms_table')), findsNothing);
     });
 
-    testWidgets('checkbox checked when permission exists', (tester) async {
+    testWidgets('set search filters the list', (tester) async {
       final fakeClient = _FakeApiClient()
-        ..usersResult = [_kAdmin, _kBob]
-        ..setsResult = [_kSetA]
-        ..permsResult = _permsWithGrant(userId: 2, setId: 10);
+        ..usersResult = [_kBob]
+        ..setsResult = [_kSetA, _kSetB]
+        ..permsResult = _emptyPerms();
 
       await _pumpPermsScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      // bob (id=2) has permission on setA (id=10) — checkbox should be checked.
-      final checkbox = tester.widget<Checkbox>(
-        find.byKey(const Key('perm_2_10')),
+      await tester.enterText(
+        find.byKey(const Key('admin_perms_set_search')),
+        'mus',
       );
-      expect(checkbox.value, isTrue);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('admin_perms_set_tile_20')), findsOneWidget);
+      expect(find.byKey(const Key('admin_perms_set_tile_10')), findsNothing);
+      expect(find.text('Music'), findsWidgets);
     });
 
-    testWidgets('checkbox unchecked when no permission exists', (tester) async {
+    testWidgets('set search text survives Advanced matrix round-trip',
+        (tester) async {
       final fakeClient = _FakeApiClient()
-        ..usersResult = [_kAdmin, _kBob]
+        ..usersResult = [_kBob]
+        ..setsResult = [_kSetA, _kSetB]
+        ..permsResult = _emptyPerms();
+
+      await _pumpPermsScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('admin_perms_set_search')),
+        'mus',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('admin_perms_menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Advanced matrix'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('admin_perms_table')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('admin_perms_exit_matrix')));
+      await tester.pumpAndSettle();
+
+      final search = tester.widget<TextField>(
+        find.byKey(const Key('admin_perms_set_search')),
+      );
+      expect(search.controller?.text, equals('mus'));
+      expect(find.byKey(const Key('admin_perms_set_tile_20')), findsOneWidget);
+      expect(find.byKey(const Key('admin_perms_set_tile_10')), findsNothing);
+    });
+
+    testWidgets('user picker filters by username', (tester) async {
+      final carol = _makeUser(id: 3, username: 'carol');
+      final fakeClient = _FakeApiClient()
+        ..usersResult = [_kAdmin, _kBob, carol]
         ..setsResult = [_kSetA]
         ..permsResult = _emptyPerms();
 
       await _pumpPermsScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      // bob (id=2) has no permission on setA (id=10) — checkbox should be unchecked.
-      final checkbox = tester.widget<Checkbox>(
-        find.byKey(const Key('perm_2_10')),
+      await tester.tap(find.byKey(const Key('admin_perms_user_search')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('admin_perms_user_search')),
+        'car',
       );
-      expect(checkbox.value, isFalse);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('admin_perms_user_option_3')), findsOneWidget);
+      expect(find.byKey(const Key('admin_perms_user_option_2')), findsNothing);
+      expect(find.byKey(const Key('admin_perms_user_option_1')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('admin_perms_user_option_3')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('perm_3_10')), findsOneWidget);
+      expect(find.byKey(const Key('perm_2_10')), findsNothing);
+    });
+
+    testWidgets('role dropdown shows viewer when permission exists',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..usersResult = [_kBob]
+        ..setsResult = [_kSetA]
+        ..permsResult = _permsWithGrant(userId: 2, setId: 10);
+
+      await _pumpPermsScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      final dropdown = tester.widget<DropdownButton<String>>(
+        _roleDropdown(const Key('perm_2_10')),
+      );
+      expect(dropdown.value, equals('viewer'));
+    });
+
+    testWidgets('role dropdown shows owner when owner permission exists',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..usersResult = [_kBob]
+        ..setsResult = [_kSetA]
+        ..permsResult =
+            _permsWithGrant(userId: 2, setId: 10, role: 'owner');
+
+      await _pumpPermsScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      final dropdown = tester.widget<DropdownButton<String>>(
+        _roleDropdown(const Key('perm_2_10')),
+      );
+      expect(dropdown.value, equals('owner'));
     });
   });
 
-  // --------------------------------------------------------------------------
-  // Checking a checkbox (grant)
-  // --------------------------------------------------------------------------
-
   group('grant permission', () {
-    testWidgets('checking a checkbox calls grantPermission', (tester) async {
+    testWidgets('selecting Viewer calls grantPermission with viewer',
+        (tester) async {
       final fakeClient = _FakeApiClient()
         ..usersResult = [_kBob]
         ..setsResult = [_kSetA]
@@ -315,13 +387,36 @@ void main() {
       await _pumpPermsScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      // bob has no permission on setA; tap the checkbox to grant.
-      await tester.tap(find.byKey(const Key('perm_2_10')));
-      await tester.pumpAndSettle();
+      await _selectRole(
+        tester,
+        permKey: const Key('perm_2_10'),
+        label: 'Viewer',
+      );
 
       expect(fakeClient.grantCallCount, equals(1));
       expect(fakeClient.grantedUserId, equals(2));
       expect(fakeClient.grantedSetId, equals(10));
+      expect(fakeClient.grantedRole, equals('viewer'));
+    });
+
+    testWidgets('selecting Owner calls grantPermission with owner',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..usersResult = [_kBob]
+        ..setsResult = [_kSetA]
+        ..permsResult = _emptyPerms();
+
+      await _pumpPermsScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      await _selectRole(
+        tester,
+        permKey: const Key('perm_2_10'),
+        label: 'Owner',
+      );
+
+      expect(fakeClient.grantCallCount, equals(1));
+      expect(fakeClient.grantedRole, equals('owner'));
     });
 
     testWidgets('optimistic grant reverts on error and shows SnackBar',
@@ -342,18 +437,17 @@ void main() {
       await _pumpPermsScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      // Tap the unchecked checkbox — the optimistic update will check it,
-      // then revert it when the API returns 403.
-      await tester.tap(find.byKey(const Key('perm_2_10')));
-      await tester.pumpAndSettle();
-
-      // After error: checkbox should be reverted to unchecked.
-      final checkbox = tester.widget<Checkbox>(
-        find.byKey(const Key('perm_2_10')),
+      await _selectRole(
+        tester,
+        permKey: const Key('perm_2_10'),
+        label: 'Viewer',
       );
-      expect(checkbox.value, isFalse);
 
-      // Error SnackBar shown.
+      final dropdown = tester.widget<DropdownButton<String>>(
+        _roleDropdown(const Key('perm_2_10')),
+      );
+      expect(dropdown.value, equals(''));
+
       expect(
         find.byKey(const Key('admin_perms_error_snackbar')),
         findsOneWidget,
@@ -362,12 +456,8 @@ void main() {
     });
   });
 
-  // --------------------------------------------------------------------------
-  // Unchecking a checkbox (revoke)
-  // --------------------------------------------------------------------------
-
   group('revoke permission', () {
-    testWidgets('unchecking a checkbox calls revokePermission', (tester) async {
+    testWidgets('selecting — calls revokePermission', (tester) async {
       final fakeClient = _FakeApiClient()
         ..usersResult = [_kBob]
         ..setsResult = [_kSetA]
@@ -376,9 +466,11 @@ void main() {
       await _pumpPermsScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      // bob has permission on setA; tap the checkbox to revoke.
-      await tester.tap(find.byKey(const Key('perm_2_10')));
-      await tester.pumpAndSettle();
+      await _selectRole(
+        tester,
+        permKey: const Key('perm_2_10'),
+        label: '—',
+      );
 
       expect(fakeClient.revokeCallCount, equals(1));
       expect(fakeClient.revokedUserId, equals(2));
@@ -403,18 +495,17 @@ void main() {
       await _pumpPermsScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      // Tap the checked checkbox to revoke — the optimistic update unchecks it,
-      // then reverts it when the API returns 404.
-      await tester.tap(find.byKey(const Key('perm_2_10')));
-      await tester.pumpAndSettle();
-
-      // After error: checkbox should be reverted to checked.
-      final checkbox = tester.widget<Checkbox>(
-        find.byKey(const Key('perm_2_10')),
+      await _selectRole(
+        tester,
+        permKey: const Key('perm_2_10'),
+        label: '—',
       );
-      expect(checkbox.value, isTrue);
 
-      // Error SnackBar shown.
+      final dropdown = tester.widget<DropdownButton<String>>(
+        _roleDropdown(const Key('perm_2_10')),
+      );
+      expect(dropdown.value, equals('viewer'));
+
       expect(
         find.byKey(const Key('admin_perms_error_snackbar')),
         findsOneWidget,
@@ -423,12 +514,8 @@ void main() {
     });
   });
 
-  // --------------------------------------------------------------------------
-  // Admin rows are disabled
-  // --------------------------------------------------------------------------
-
-  group('admin rows', () {
-    testWidgets('admin user checkbox has null onChanged (disabled)',
+  group('admin users', () {
+    testWidgets('admin selection shows banner and disabled role dropdown',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..usersResult = [_kAdmin]
@@ -438,32 +525,16 @@ void main() {
       await _pumpPermsScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      // Admin checkbox for setA — should be disabled.
-      final checkbox = tester.widget<Checkbox>(
-        find.byKey(const Key('perm_1_10')),
+      expect(find.byKey(const Key('admin_perms_admin_banner')), findsOneWidget);
+
+      final dropdown = tester.widget<DropdownButton<String>>(
+        _roleDropdown(const Key('perm_1_10')),
       );
-      expect(checkbox.onChanged, isNull);
+      expect(dropdown.onChanged, isNull);
+      expect(dropdown.value, equals('owner'));
     });
 
-    testWidgets('admin user checkbox is always checked regardless of perms data',
-        (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..usersResult = [_kAdmin]
-        ..setsResult = [_kSetA]
-        // Admins have no explicit permission row — but should show as checked.
-        ..permsResult = _emptyPerms();
-
-      await _pumpPermsScreen(tester, fakeClient);
-      await tester.pumpAndSettle();
-
-      final checkbox = tester.widget<Checkbox>(
-        find.byKey(const Key('perm_1_10')),
-      );
-      // Admins always have access; the UI reflects this with a checked, disabled cell.
-      expect(checkbox.value, isTrue);
-    });
-
-    testWidgets('tapping admin checkbox does NOT call grantPermission',
+    testWidgets('disabled admin dropdown does not call grantPermission',
         (tester) async {
       final fakeClient = _FakeApiClient()
         ..usersResult = [_kAdmin]
@@ -473,9 +544,7 @@ void main() {
       await _pumpPermsScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
-      // Tapping a disabled Checkbox widget is a no-op — the tap should not
-      // propagate to grantPermission.
-      await tester.tap(find.byKey(const Key('perm_1_10')));
+      await tester.tap(_roleDropdown(const Key('perm_1_10')));
       await tester.pumpAndSettle();
 
       expect(fakeClient.grantCallCount, equals(0));
@@ -483,9 +552,55 @@ void main() {
     });
   });
 
-  // --------------------------------------------------------------------------
-  // Empty state
-  // --------------------------------------------------------------------------
+  group('advanced matrix', () {
+    testWidgets('overflow menu opens the matrix with role dropdowns',
+        (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..usersResult = [_kAdmin, _kBob]
+        ..setsResult = [_kSetA, _kSetB]
+        ..permsResult = _emptyPerms();
+
+      await _pumpPermsScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('admin_perms_menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Advanced matrix'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('admin_perms_table')), findsOneWidget);
+      expect(find.text('Permissions matrix'), findsOneWidget);
+      // Both users appear in the matrix.
+      expect(find.text('alice'), findsOneWidget);
+      expect(find.text('bob'), findsWidgets);
+      expect(find.byKey(const Key('perm_2_10')), findsOneWidget);
+      expect(find.byKey(const Key('perm_1_10')), findsOneWidget);
+    });
+
+    testWidgets('matrix grant still calls grantPermission', (tester) async {
+      final fakeClient = _FakeApiClient()
+        ..usersResult = [_kBob]
+        ..setsResult = [_kSetA]
+        ..permsResult = _emptyPerms();
+
+      await _pumpPermsScreen(tester, fakeClient);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('admin_perms_menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Advanced matrix'));
+      await tester.pumpAndSettle();
+
+      await _selectRole(
+        tester,
+        permKey: const Key('perm_2_10'),
+        label: 'Owner',
+      );
+
+      expect(fakeClient.grantCallCount, equals(1));
+      expect(fakeClient.grantedRole, equals('owner'));
+    });
+  });
 
   group('empty state', () {
     testWidgets('shows empty-state when listUsers returns []', (tester) async {
@@ -498,7 +613,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('admin_perms_empty')), findsOneWidget);
-      expect(find.byKey(const Key('admin_perms_table')), findsNothing);
+      expect(find.byKey(const Key('admin_perms_user_select')), findsNothing);
     });
 
     testWidgets('shows empty-state when listSets returns []', (tester) async {
@@ -511,13 +626,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('admin_perms_empty')), findsOneWidget);
-      expect(find.byKey(const Key('admin_perms_table')), findsNothing);
     });
   });
-
-  // --------------------------------------------------------------------------
-  // Error state
-  // --------------------------------------------------------------------------
 
   group('error state', () {
     testWidgets('shows error when any parallel load throws', (tester) async {
@@ -533,7 +643,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('admin_perms_error')), findsOneWidget);
-      expect(find.byKey(const Key('admin_perms_table')), findsNothing);
       expect(find.textContaining('Could not reach the server'), findsOneWidget);
     });
 
@@ -551,7 +660,6 @@ void main() {
 
       expect(find.byKey(const Key('admin_perms_retry')), findsOneWidget);
 
-      // Fix the error so the retry succeeds.
       fakeClient
         ..usersError = null
         ..usersResult = [_kBob];
@@ -559,8 +667,7 @@ void main() {
       await tester.tap(find.byKey(const Key('admin_perms_retry')));
       await tester.pumpAndSettle();
 
-      // After successful retry the matrix is visible.
-      expect(find.byKey(const Key('admin_perms_table')), findsOneWidget);
+      expect(find.byKey(const Key('admin_perms_user_select')), findsOneWidget);
     });
   });
 }
