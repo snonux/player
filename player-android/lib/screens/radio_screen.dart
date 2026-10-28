@@ -9,6 +9,7 @@ import '../providers/radio_provider.dart';
 import '../services/radio_controller.dart';
 import '../utils/error_mappers.dart';
 import '../widgets/authenticated_network_image.dart';
+import '../widgets/overflow_menu.dart';
 
 /// Stations requested per explorer page.
 const radioPageSize = 50;
@@ -69,8 +70,20 @@ class _RadioExploreTabState extends ConsumerState<RadioExploreTab>
   final List<RadioStation> _stations = [];
   bool _loading = false;
   bool _hasMore = false;
+  bool _filtersOpen = false;
   String? _error;
   int _generation = 0;
+
+  String _filtersSummary(Duration dwell) {
+    final parts = <String>[];
+    if (_query.tag != null) parts.add(_query.tag!);
+    if (_query.country != null) {
+      parts.add(_countryName ?? _query.country!);
+    }
+    parts.add(_query.order.label);
+    parts.add('${dwell.inSeconds} s');
+    return parts.join(' · ');
+  }
 
   @override
   bool get wantKeepAlive => true;
@@ -205,64 +218,132 @@ class _RadioExploreTabState extends ConsumerState<RadioExploreTab>
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+            child: Row(
               children: [
-                _FilterChip(
-                  key: const Key('radio_filter_genre'),
-                  icon: Icons.label_outline,
-                  label: _query.tag == null ? 'Genre' : 'Genre: ${_query.tag}',
-                  active: _query.tag != null,
-                  onPressed: _pickTag,
-                  onClear: () => _apply(_query.copyWith(tag: () => null)),
-                ),
-                _FilterChip(
-                  key: const Key('radio_filter_country'),
-                  icon: Icons.public,
-                  label: _query.country == null
-                      ? 'Country'
-                      : 'Country: ${_countryName ?? _query.country}',
-                  active: _query.country != null,
-                  onPressed: _pickCountry,
-                  onClear: () => _apply(_query.copyWith(country: () => null)),
-                ),
-                PopupMenuButton<RadioOrder>(
-                  key: const Key('radio_order_menu'),
-                  tooltip: 'Sort order',
-                  initialValue: _query.order,
-                  onSelected: (order) => _apply(_query.copyWith(order: order)),
-                  itemBuilder: (_) => [
-                    for (final order in RadioOrder.values)
-                      PopupMenuItem(
-                        key: Key('radio_order_${order.apiValue}'),
-                        value: order,
-                        child: Text(order.label),
-                      ),
-                  ],
-                  child: Chip(
-                    avatar: const Icon(Icons.sort, size: 18),
-                    label: Text('Sort: ${_query.order.label}'),
-                  ),
+                if (!radio.exploring)
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      key: const Key('radio_auto_explore_button'),
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48)),
+                      icon: const Icon(Icons.shuffle),
+                      label: const Text('Auto explore'),
+                      onPressed: () => radio.startExplore(_query),
+                    ),
+                  )
+                else
+                  const Spacer(),
+                IconButton(
+                  key: const Key('radio_filters_button'),
+                  tooltip: 'Filters and explore options',
+                  style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+                  icon: Icon(_filtersOpen ? Icons.menu_open : Icons.menu),
+                  onPressed: () =>
+                      setState(() => _filtersOpen = !_filtersOpen),
                 ),
               ],
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: FilledButton.tonalIcon(
-              key: const Key('radio_auto_explore_button'),
-              style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48)),
-              icon: const Icon(Icons.shuffle),
-              label: Text(radio.exploring
-                  ? 'Restart auto explore with these filters'
-                  : 'Auto explore'),
-              onPressed: () => radio.startExplore(_query),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: Text(
+              _filtersSummary(radio.dwell),
+              key: const Key('radio_filters_summary'),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ),
+          if (_filtersOpen)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _FilterChip(
+                        key: const Key('radio_filter_genre'),
+                        icon: Icons.label_outline,
+                        label: _query.tag == null
+                            ? 'Genre'
+                            : 'Genre: ${_query.tag}',
+                        active: _query.tag != null,
+                        onPressed: _pickTag,
+                        onClear: () =>
+                            _apply(_query.copyWith(tag: () => null)),
+                      ),
+                      _FilterChip(
+                        key: const Key('radio_filter_country'),
+                        icon: Icons.public,
+                        label: _query.country == null
+                            ? 'Country'
+                            : 'Country: ${_countryName ?? _query.country}',
+                        active: _query.country != null,
+                        onPressed: _pickCountry,
+                        onClear: () =>
+                            _apply(_query.copyWith(country: () => null)),
+                      ),
+                      PopupMenuButton<RadioOrder>(
+                        key: const Key('radio_order_menu'),
+                        tooltip: 'Sort order',
+                        initialValue: _query.order,
+                        onSelected: (order) =>
+                            _apply(_query.copyWith(order: order)),
+                        itemBuilder: (_) => [
+                          for (final order in RadioOrder.values)
+                            PopupMenuItem(
+                              key: Key('radio_order_${order.apiValue}'),
+                              value: order,
+                              child: Text(order.label),
+                            ),
+                        ],
+                        child: Chip(
+                          avatar: const Icon(Icons.sort, size: 18),
+                          label: Text('Sort: ${_query.order.label}'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Next station after',
+                      style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 4),
+                  SegmentedButton<Duration>(
+                    key: const Key('radio_explore_dwell'),
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact),
+                    segments: [
+                      for (final d in radioExploreDwellChoices)
+                        ButtonSegment(
+                          value: d,
+                          label: Text('${d.inSeconds}s',
+                              key: Key('radio_dwell_${d.inSeconds}')),
+                          tooltip:
+                              'Stay ${d.inSeconds} seconds per station',
+                        ),
+                    ],
+                    selected: {radio.dwell},
+                    onSelectionChanged: (s) => radio.setDwell(s.first),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Auto explore plays random stations of these filters, one after another.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
           if (_error != null)
             _Message(
               key: const Key('radio_explore_error'),
@@ -604,12 +685,19 @@ class RadioNowPlayingBar extends ConsumerWidget {
                       }),
                       onPressed: radio.togglePause,
                     ),
-                  BookmarkStationButton(station: station),
                   IconButton(
                     key: const Key('radio_stop'),
                     tooltip: 'Stop radio',
                     icon: const Icon(Icons.stop),
                     onPressed: radio.stop,
+                  ),
+                  IconButton(
+                    key: const Key('radio_station_more'),
+                    tooltip: 'More station actions',
+                    style:
+                        IconButton.styleFrom(minimumSize: const Size(48, 48)),
+                    icon: const Icon(Icons.more_vert),
+                    onPressed: () => _openStationMore(context, ref, station),
                   ),
                 ],
               ),
@@ -620,8 +708,44 @@ class RadioNowPlayingBar extends ConsumerWidget {
       ),
     );
   }
+
+  void _openStationMore(
+      BuildContext context, WidgetRef ref, RadioStation station) {
+    final radio = ref.read(radioControllerProvider);
+    final bookmarked = radio.isBookmarked(station);
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            OverflowMenuItem(
+              key: const Key('radio_now_bookmark'),
+              icon: bookmarked ? Icons.bookmark : Icons.bookmark_border,
+              label: bookmarked ? 'Remove bookmark' : 'Bookmark station',
+              onSelected: radio.isBookmarkPending(station)
+                  ? null
+                  : () async {
+                      final messenger = ScaffoldMessenger.maybeOf(context);
+                      try {
+                        await radio.toggleBookmark(station);
+                      } catch (error) {
+                        messenger?.showSnackBar(
+                            SnackBar(content: Text(radioErrorMessage(error))));
+                      }
+                    },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
+/// Keep / Next while auto-exploring. Stop lives on the now-playing bar
+/// (same as [RadioController.stopExplore]); dwell lives under Filters.
 class _ExploreControls extends ConsumerWidget {
   const _ExploreControls();
 
@@ -644,22 +768,6 @@ class _ExploreControls extends ConsumerWidget {
                 child: Text('Auto explore · $countdown',
                     key: const Key('radio_explore_countdown')),
               ),
-              SegmentedButton<Duration>(
-                key: const Key('radio_explore_dwell'),
-                showSelectedIcon: false,
-                style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                segments: [
-                  for (final d in radioExploreDwellChoices)
-                    ButtonSegment(
-                      value: d,
-                      label: Text('${d.inSeconds}s',
-                          key: Key('radio_dwell_${d.inSeconds}')),
-                      tooltip: 'Stay ${d.inSeconds} seconds per station',
-                    ),
-                ],
-                selected: {radio.dwell},
-                onSelectionChanged: (s) => radio.setDwell(s.first),
-              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -668,6 +776,8 @@ class _ExploreControls extends ConsumerWidget {
               Expanded(
                 child: FilledButton.icon(
                   key: const Key('radio_explore_keep'),
+                  style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48)),
                   icon: const Icon(Icons.check),
                   label: const Text('Keep'),
                   onPressed: radio.keep,
@@ -677,18 +787,11 @@ class _ExploreControls extends ConsumerWidget {
               Expanded(
                 child: OutlinedButton.icon(
                   key: const Key('radio_explore_next'),
+                  style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48)),
                   icon: const Icon(Icons.skip_next),
                   label: const Text('Next'),
                   onPressed: radio.exploreNext,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  key: const Key('radio_explore_stop'),
-                  icon: const Icon(Icons.stop),
-                  label: const Text('Stop'),
-                  onPressed: radio.stopExplore,
                 ),
               ),
             ],

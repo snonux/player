@@ -63,13 +63,21 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> openFilters(WidgetTester tester) async {
+    await tester.tap(find.byKey(const Key('radio_filters_button')));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('explore lists popular stations and filters by genre and country',
       (tester) async {
     await pumpScreen(tester);
     expect(find.text('Station a'), findsOneWidget);
     expect(find.text('Station b'), findsOneWidget);
     expect(api.searches.first['order'], RadioOrder.popular);
+    expect(find.byKey(const Key('radio_filters_summary')), findsOneWidget);
+    expect(find.textContaining('Popular'), findsWidgets);
 
+    await openFilters(tester);
     await tester.tap(find.byKey(const Key('radio_filter_genre')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('radio_picker_jazz')));
@@ -105,12 +113,14 @@ void main() {
     expect(find.text('Station c'), findsOneWidget);
     expect(find.text('Station a'), findsNothing);
 
+    await openFilters(tester);
     await tester.tap(find.byKey(const Key('radio_order_menu')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('radio_order_votes')));
     await tester.pumpAndSettle();
     expect(api.searches.last['order'], RadioOrder.votes);
     expect(find.text('Sort: Most votes'), findsOneWidget);
+    expect(find.textContaining('Most votes'), findsWidgets);
   });
 
   testWidgets('tapping a station plays it and shows the now-playing bar',
@@ -165,20 +175,23 @@ void main() {
   testWidgets('auto explore counts down, skips, keeps and stops',
       (tester) async {
     await pumpScreen(tester);
+    await openFilters(tester);
+    await tester.tap(find.byKey(const Key('radio_dwell_15')));
+    await tester.pump();
+    expect(find.textContaining('15 s'), findsOneWidget);
+
     await tester.tap(find.byKey(const Key('radio_auto_explore_button')));
     await tester.pump();
     await tester.pump();
     expect(engine.started, hasLength(1));
     expect(api.searches.last['order'], RadioOrder.random);
     expect(find.textContaining('Tuning in'), findsOneWidget);
+    expect(find.byKey(const Key('radio_auto_explore_button')), findsNothing);
 
     engine.emitPlaying(true);
     await tester.pump();
-    expect(find.text('Auto explore · Next station in 30 s'), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('radio_dwell_15')));
-    await tester.pump();
     expect(find.text('Auto explore · Next station in 15 s'), findsOneWidget);
+
     ticker.tick(5);
     await tester.pump();
     expect(find.text('Auto explore · Next station in 10 s'), findsOneWidget);
@@ -196,11 +209,13 @@ void main() {
     expect(find.byKey(const Key('radio_explore_keep')), findsNothing);
     expect(radio.station?.uuid, kept);
     expect(find.text('Live'), findsOneWidget);
+    expect(find.byKey(const Key('radio_auto_explore_button')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('radio_auto_explore_button')));
     await tester.pump();
     await tester.pump();
-    await tester.tap(find.byKey(const Key('radio_explore_stop')));
+    // Stop on the now-playing bar ends explore and playback (parity with web).
+    await tester.tap(find.byKey(const Key('radio_stop')));
     await tester.pump();
     expect(radio.exploring, isFalse);
     expect(find.byKey(const Key('radio_now_playing')), findsNothing);
