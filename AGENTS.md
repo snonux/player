@@ -12,6 +12,44 @@ Do not commit local media, generated Android files, local databases, coverage fi
 
 Prefer component-local commands from the relevant README before adding root-level tooling.
 
+## Shared UI design principles
+
+Apply these principles to every Android screen and web view, including dialogs,
+players, settings, and administration. Aim for a snappy, uncomplicated listening
+and browsing experience: KISS, less is more, and content comes first.
+
+- Aim for at most five visible primary buttons per screen where practical.
+  Consider the whole visible screen, including navigation, player chrome, and
+  repeated row actions. This is a design target, not a reason to hide essential
+  playback controls, form fields, or accessible navigation.
+- Preserve every feature when simplifying a screen. Put less-used and advanced
+  actions in a clearly labeled hamburger menu, with logical groups or focused
+  subpages. Keep frequent actions immediately reachable; avoid duplicate
+  buttons and multiple competing menus for the same action.
+- Keep playlists, queues, and other lists compact. Prioritize titles, concise
+  metadata, and playback status; use small artwork and expandable descriptions
+  or details. Avoid repeating full action toolbars on every row. Reclaim space
+  through layout and disclosure, not tiny text or smaller touch targets.
+- Use consistent labels, icons, and menu placement across screens. Distinguish
+  navigation from item actions. All features must remain discoverable even when
+  optional shortcuts are hidden; do not bury ordinary music navigation in
+  Settings. Group advanced settings into focused categories.
+- Design for comfortable touch use and thumb reach on Android and narrow web
+  layouts. Preserve at least 48dp Android and 44 CSS pixel web touch targets,
+  readable text, visible focus, accessible names, and keyboard navigation.
+  Do not make actions available only on hover or through an unlabeled gesture.
+- Match controls to context: keep core music transport prominent, and retain
+  convenient seek/resume controls for podcasts and video. Separate destructive
+  actions from routine playback and preserve confirmation where appropriate.
+- Keep interaction responsive. Avoid blocking browsing or playback on optional
+  metadata, artwork, or background work. Show clear loading, progress, empty,
+  error, and retry states without filling the screen with technical detail.
+- Verify UI changes in Chrome, Firefox, and the native Android app. Exercise
+  small screens, landscape, long titles, enlarged text, and relevant offline,
+  read-only, and error states. Check that menus retain every previous action,
+  lists leave useful room for content, and primary journeys remain quick.
+  Measure responsiveness before claiming a performance improvement.
+
 ## Feature parity and verification
 
 All features must work in the web UI in Google Chrome, the web UI in Mozilla
