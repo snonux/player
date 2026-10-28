@@ -12,6 +12,14 @@ export function readNavigationPreferences() {
 export function coldLanding(preferences, { search = '', hash = '', historyNavigation = false } = {}) {
   return search || hash || historyNavigation ? 'library' : normalizeNavigation(preferences).landing;
 }
+function openMusicView(openCollection, name) {
+  document.getElementById('settings-modal')?.classList.remove('open');
+  document.addEventListener('library:navigated', () => {
+    const target = document.querySelector('#media-grid .selected, #media-grid button, #media-grid [tabindex="0"]');
+    (target || document.getElementById('settings-toggle'))?.focus();
+  }, { once: true });
+  openCollection(name);
+}
 export function initNavigationPreferences(openCollection) {
   let value = readNavigationPreferences();
   function render() {
@@ -38,20 +46,13 @@ export function initNavigationPreferences(openCollection) {
   document.getElementById('navigation-landing')?.addEventListener('change', e => save({ ...value, landing: e.target.value, visible: { ...value.visible, [e.target.value]: true } }));
   for (const name of musicSections) {
     document.getElementById(`navigation-${name}`)?.addEventListener('change', e => save({ ...value, visible: { ...value.visible, [name]: e.target.checked } }));
-    document.getElementById(`all-music-${name}`)?.addEventListener('click', () => {
-      document.getElementById('settings-modal')?.classList.remove('open');
-      document.addEventListener('library:navigated', () => {
-        const target = document.querySelector('#media-grid .selected, #media-grid button, #media-grid [tabindex="0"]');
-        (target || document.getElementById('settings-toggle'))?.focus();
-      }, { once: true });
-      openCollection(name);
-    });
   }
-  document.getElementById('navigation-reset')?.addEventListener('click', () => save(normalizeNavigation()));
-  document.getElementById('all-music-views')?.addEventListener('click', () => {
-    document.getElementById('settings-modal')?.classList.add('open');
-    document.getElementById('all-music-albums')?.focus();
+  document.querySelectorAll('[data-music-open]').forEach(btn => {
+    const name = btn.getAttribute('data-music-open');
+    if (!musicSections.includes(name)) return;
+    btn.addEventListener('click', () => openMusicView(openCollection, name));
   });
+  document.getElementById('navigation-reset')?.addEventListener('click', () => save(normalizeNavigation()));
   window.addEventListener('storage', e => { if (e.key === key || e.key === null) { value = readNavigationPreferences(); render(); } });
   render();
 }

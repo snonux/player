@@ -184,6 +184,23 @@ body {
   align-items: center;
   justify-content: space-between;
 }
+/* Direct music destinations stay reachable when shortcuts are hidden. */
+.sidebar .all-music-views {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.sidebar .all-music-views > summary {
+  list-style: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.sidebar .all-music-views > summary::-webkit-details-marker { display: none; }
+.sidebar .all-music-views > .btn {
+  width: calc(100% - 0.75rem);
+  margin-inline-start: 0.75rem;
+  box-sizing: border-box;
+}
 
 /* Main layout */
 .page {

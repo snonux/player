@@ -77,7 +77,12 @@
     <button id="menu-close" class="icon-btn btn-sm" title="Close">✕</button>
   </div>
   <div class="sidebar-header"><h2 data-i18n="Music">Music</h2></div>
-  <button id="all-music-views" class="btn btn-ghost" data-i18n="All music views">All music views</button>
+  <details class="all-music-views">
+    <summary class="btn btn-ghost" data-i18n="All music views">All music views</summary>
+    <button type="button" class="btn btn-ghost" data-music-open="albums" data-i18n="Open Albums">Open Albums</button>
+    <button type="button" class="btn btn-ghost" data-music-open="artists" data-i18n="Open Artists">Open Artists</button>
+    <button type="button" class="btn btn-ghost" data-music-open="playlists" data-i18n="Open Playlists">Open Playlists</button>
+  </details>
   <button id="music-albums" class="btn btn-ghost" data-i18n="Albums">Albums</button>
   <button id="music-playlists" class="btn btn-ghost" data-i18n="Playlists">Playlists</button>
   <button id="music-artists" class="btn btn-ghost" data-i18n="Artists">Artists</button>
@@ -140,7 +145,7 @@
     <p class="text-muted text-sm" data-i18n="Saved on this device for all accounts.">Saved on this device for all accounts.</p>
     <p id="language-status" role="status" aria-live="polite"></p>
     <h4 data-i18n="Navigation">Navigation</h4>
-    <p class="text-muted text-sm">Saved on this device for all accounts. Hiding shortcuts does not restrict access. Explicit links keep their destination.</p>
+    <p class="text-muted text-sm">Saved on this device for all accounts. Hidden shortcuts remain available in All music views. Explicit links keep their destination.</p>
     <div class="appearance-controls">
       <label>Initial collection <select id="navigation-landing"><option value="library" data-i18n="Library">Library</option><option value="albums" data-i18n="Albums">Albums</option><option value="artists" data-i18n="Artists">Artists</option><option value="playlists" data-i18n="Playlists">Playlists</option></select></label>
       <label><input id="navigation-albums" type="checkbox"> Show Albums shortcut</label>
@@ -151,9 +156,9 @@
     <p id="navigation-status" role="status"></p>
     <h4 data-i18n="All music views">All music views</h4>
     <div class="appearance-controls">
-      <button id="all-music-albums" class="btn btn-ghost" data-i18n="Open Albums">Open Albums</button>
-      <button id="all-music-artists" class="btn btn-ghost" data-i18n="Open Artists">Open Artists</button>
-      <button id="all-music-playlists" class="btn btn-ghost" data-i18n="Open Playlists">Open Playlists</button>
+      <button type="button" id="all-music-albums" class="btn btn-ghost" data-music-open="albums" data-i18n="Open Albums">Open Albums</button>
+      <button type="button" id="all-music-artists" class="btn btn-ghost" data-music-open="artists" data-i18n="Open Artists">Open Artists</button>
+      <button type="button" id="all-music-playlists" class="btn btn-ghost" data-music-open="playlists" data-i18n="Open Playlists">Open Playlists</button>
     </div>
     <h4>Notifications</h4>
     <p class="text-muted text-sm">Optional song announcements when the player window is in the background. Enabling asks for browser permission. Track names may appear on your desktop or lock screen.</p>
