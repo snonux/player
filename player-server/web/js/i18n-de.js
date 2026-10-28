@@ -202,6 +202,8 @@ export const german = {
   "Open artist": "Interpreten öffnen",
   "Open folder": "Ordner öffnen",
   "Navigation": "Navigation",
+  "Account": "Konto",
+  "API Tokens": "API-Token",
   "Initial collection": "Startansicht",
   "Reset navigation": "Navigation zurücksetzen",
   "All music views": "Alle Musikansichten",

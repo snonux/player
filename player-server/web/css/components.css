@@ -391,6 +391,27 @@ label {
 .listening-history ol { padding-inline-start: 1.5rem; }
 .listening-history li { margin-block: .5rem; }
 
+/* Account › API Tokens: compact rows, 44px targets, wrap long secret values. */
+.account-tokens { overflow-wrap: anywhere; margin-block-start: 1rem; }
+.api-tokens-actions { display: flex; flex-wrap: wrap; gap: var(--gap, .5rem); margin-block: .5rem; }
+.api-tokens-actions .btn { min-height: 44px; }
+.api-token-list { list-style: none; padding: 0; margin: .5rem 0 0; }
+.api-token-list li {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: var(--gap, .5rem); padding-block: .5rem; border-top: 1px solid var(--border);
+  min-height: 44px;
+}
+.api-token-list li .btn { min-height: 44px; }
+.api-token-create label { display: grid; gap: .25rem; margin-block: .5rem; }
+.api-token-create input { min-height: var(--control-height, 44px); max-width: 100%; }
+.api-token-secret {
+  display: block; margin-block: .75rem; padding: .75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--bg-elevated, var(--bg-body)); border: 1px solid var(--border);
+  overflow-wrap: anywhere; user-select: all;
+}
+.api-token-plaintext, .api-token-revoke { margin-block: .75rem; }
+
 /* Share descriptions retain author line breaks and fit narrow guest pages. */
 .share-description { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Global sync stays quiet and wraps on touch-sized viewports. */

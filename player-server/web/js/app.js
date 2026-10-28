@@ -10,6 +10,7 @@ import { initGlobalSyncControls } from './global-sync-controls.js';
 import { initHeaderMenu } from './header-menu.js';
 import { setPodcastAccount } from './podcast-episode-state.js';
 import { initListeningHistory } from './listening-history.js';
+import { initAPITokens } from './api-tokens.js';
 import { initSongNotifications, clearSongNotifications } from './song-notifications.js';
 import { initPlaybackCache, releasePlaybackCache, setPlaybackCacheAccount } from './playback-cache.js';
 import { initNavigationPreferences, readNavigationPreferences, coldLanding } from './navigation-preferences.js';
@@ -243,6 +244,7 @@ async function initApp() {
   const openCollection = name => openAlbums('', '', name === 'artists', name === 'playlists');
   initNavigationPreferences(openCollection);
   initListeningHistory();
+  initAPITokens();
   initPlaybackCache(() => { const q = queueState(); return q.entries[q.index + 1]?.media; });
   initOfflinePinLibrary();
   document.addEventListener('music:song-info', toggleMediaInfo);

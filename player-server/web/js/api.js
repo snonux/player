@@ -68,6 +68,13 @@ export const API = {
   logout: () => api('/api/logout', { method: 'POST' }),
   bootstrap: (username, password) => api('/api/bootstrap', { method: 'POST', body: { username, password } }),
   authStatus: () => api('/api/v1/auth/status'),
+  // API tokens: plaintext appears only on create; list never returns secrets.
+  listAPITokens: () => api('/api/v1/auth/tokens'),
+  createAPIToken: (name, expiresInDays) => api('/api/v1/auth/tokens', {
+    method: 'POST',
+    body: expiresInDays == null ? { name } : { name, expires_in_days: expiresInDays },
+  }),
+  revokeAPIToken: (id) => api(`/api/v1/auth/tokens/${id}`, { method: 'DELETE' }),
   config: () => api('/api/config'),
   syncConfig: () => api('/api/config', { quietAuth: true }),
   playlistRules: (id,rules) => api(`/api/playlists/${encodeURIComponent(id)}/rules`,{method:'PUT',body:{rules}}),
