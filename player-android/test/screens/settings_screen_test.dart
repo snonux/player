@@ -60,21 +60,24 @@ class _FakeTokenStorage implements TokenStorage {
 /// Uses [AsyncNotifier] the same way the production notifier does, but
 /// bypasses [SharedPreferences] so tests have no disk I/O.
 class _FakeSettingsNotifier extends SettingsNotifier {
-  _FakeSettingsNotifier(this._initialUrl);
+  _FakeSettingsNotifier(this._initialUrl,
+      {this.destination = LibraryDestination.server});
 
   final String _initialUrl;
+  final LibraryDestination destination;
 
   // Captures the last URL passed to setServerBaseUrl for test assertions.
   String? savedUrl;
 
   @override
-  Future<AppSettings> build() async => AppSettings(serverBaseUrl: _initialUrl);
+  Future<AppSettings> build() async =>
+      AppSettings(serverBaseUrl: _initialUrl, destination: destination);
 
   @override
   Future<void> setServerBaseUrl(String url) async {
     savedUrl = url;
     // Mirror the production implementation: update in-memory state immediately.
-    state = AsyncData(AppSettings(serverBaseUrl: url));
+    state = AsyncData(AppSettings(serverBaseUrl: url, destination: destination));
   }
 }
 
@@ -140,11 +143,13 @@ Future<({_FakeTokenStorage storage, _FakeSettingsNotifier settings})>
   WidgetTester tester, {
   String initialToken = 'alice',
   String initialUrl = 'http://10.0.2.2:8080',
+  LibraryDestination destination = LibraryDestination.server,
   _FakeThemeNotifier? themeNotifier,
   User? currentUser,
 }) async {
   final fakeStorage = _FakeTokenStorage().._token = initialToken;
-  final fakeSettings = _FakeSettingsNotifier(initialUrl);
+  final fakeSettings =
+      _FakeSettingsNotifier(initialUrl, destination: destination);
 
   // A minimal GoRouter that renders SettingsScreen at '/'.  The /login and
   // /admin/users routes are included so that context.go calls inside the
@@ -196,6 +201,12 @@ Future<({_FakeTokenStorage storage, _FakeSettingsNotifier settings})>
   return (storage: fakeStorage, settings: fakeSettings);
 }
 
+Future<void> _openSettingsCategory(WidgetTester tester, Key categoryKey) async {
+  await tester.ensureVisible(find.byKey(categoryKey));
+  await tester.tap(find.byKey(categoryKey));
+  await tester.pumpAndSettle();
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -205,15 +216,67 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
   });
+
+  testWidgets('settings root shows short category entry points', (tester) async {
+    await _pumpSettingsScreen(tester,
+        currentUser: const User(id: 1, username: 'alice', isAdmin: true));
+
+    expect(find.byKey(const Key('settings_category_account')), findsOneWidget);
+    expect(
+        find.byKey(const Key('settings_category_appearance')), findsOneWidget);
+    expect(
+        find.byKey(const Key('settings_category_headphones')), findsOneWidget);
+    expect(
+        find.byKey(const Key('settings_category_automation')), findsOneWidget);
+    expect(find.byKey(const Key('settings_category_music')), findsOneWidget);
+    expect(find.byKey(const Key('settings_category_servers')), findsOneWidget);
+    expect(find.byKey(const Key('settings_category_sharing')), findsOneWidget);
+    expect(find.byKey(const Key('settings_category_administration')),
+        findsOneWidget);
+    // Nested controls stay off the root until a category is opened.
+    expect(find.byKey(const Key('settings_theme_toggle')), findsNothing);
+    expect(find.byKey(const Key('settings_logout')), findsNothing);
+    expect(find.byKey(const Key('settings_base_url')), findsNothing);
+    expect(find.byKey(const Key('settings_manage_users')), findsNothing);
+  });
+
+  testWidgets('local library keeps disconnect variants without account music',
+      (tester) async {
+    await _pumpSettingsScreen(tester,
+        destination: LibraryDestination.local);
+
+    expect(find.byKey(const Key('settings_connect_server')), findsOneWidget);
+    expect(find.byKey(const Key('settings_category_appearance')), findsOneWidget);
+    expect(
+        find.byKey(const Key('settings_category_headphones')), findsOneWidget);
+    expect(
+        find.byKey(const Key('settings_category_automation')), findsOneWidget);
+    expect(find.byKey(const Key('settings_category_servers')), findsOneWidget);
+    expect(find.byKey(const Key('settings_category_account')), findsNothing);
+    expect(find.byKey(const Key('settings_category_music')), findsNothing);
+    expect(find.byKey(const Key('settings_category_sharing')), findsNothing);
+    expect(find.byKey(const Key('settings_category_administration')),
+        findsNothing);
+
+    await _openSettingsCategory(
+        tester, const Key('settings_category_servers'));
+    expect(find.byKey(const Key('settings_base_url')), findsOneWidget);
+  });
+
   testWidgets('admin drilldown returns to Settings with Up', (tester) async {
     await _pumpSettingsScreen(tester,
         currentUser: const User(id: 1, username: 'admin', isAdmin: true));
+    await _openSettingsCategory(
+        tester, const Key('settings_category_administration'));
     await tester.ensureVisible(find.byKey(const Key('settings_manage_users')));
     await tester.tap(find.byKey(const Key('settings_manage_users')));
     await tester.pumpAndSettle();
     expect(find.text('Admin Users'), findsOneWidget);
     expect(find.byType(BackButton), findsOneWidget);
 
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.text('Administration'), findsWidgets);
     await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
     expect(find.byType(SettingsScreen), findsOneWidget);
@@ -261,6 +324,7 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
     expect(find.byType(BackButton), findsOneWidget);
 
+    await _openSettingsCategory(tester, const Key('settings_category_account'));
     await tester.tap(find.byKey(const Key('settings_api_tokens')));
     await tester.pumpAndSettle();
     expect(find.byType(ApiTokensScreen), findsOneWidget);
@@ -268,9 +332,13 @@ void main() {
 
     await tester.binding.handlePopRoute(); // Android hardware Back
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('settings_api_tokens')), findsOneWidget);
+
+    await tester.tap(find.byType(BackButton)); // back to Settings root
+    await tester.pumpAndSettle();
     expect(find.byType(SettingsScreen), findsOneWidget);
 
-    await tester.tap(find.byType(BackButton)); // app-bar Up
+    await tester.tap(find.byType(BackButton)); // app-bar Up to library
     await tester.pumpAndSettle();
     expect(find.byType(SetsListScreen), findsOneWidget);
   });
@@ -283,7 +351,8 @@ void main() {
       await _pumpSettingsScreen(tester,
           currentUser: const User(id: 1, username: 'alice', isAdmin: false));
 
-      // The settings_username widget should show the stored token value.
+      await _openSettingsCategory(
+          tester, const Key('settings_category_account'));
       expect(find.byKey(const Key('settings_username')), findsOneWidget);
       expect(find.text('alice'), findsOneWidget);
     });
@@ -320,6 +389,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await _openSettingsCategory(
+          tester, const Key('settings_category_account'));
       // When the token is null, the username row shows the fallback '—'.
       expect(find.text('—'), findsOneWidget);
     });
@@ -337,7 +408,8 @@ void main() {
         initialUrl: 'https://player.example.com',
       );
 
-      // The URL field should be seeded with the persisted value.
+      await _openSettingsCategory(
+          tester, const Key('settings_category_servers'));
       final field = tester.widget<TextField>(
         find.byKey(const Key('settings_base_url')),
       );
@@ -350,7 +422,8 @@ void main() {
         initialUrl: 'http://10.0.2.2:8080',
       );
 
-      // Edit the URL field.
+      await _openSettingsCategory(
+          tester, const Key('settings_category_servers'));
       await tester.ensureVisible(find.byKey(const Key('settings_base_url')));
       await tester.tap(find.byKey(const Key('settings_base_url')));
       await tester.pump();
@@ -359,12 +432,10 @@ void main() {
         'https://new-server.example.com',
       );
 
-      // Tap Save URL.
       await tester.ensureVisible(find.byKey(const Key('settings_save_url')));
       await tester.tap(find.byKey(const Key('settings_save_url')));
       await tester.pumpAndSettle();
 
-      // The fake notifier should have captured the new URL.
       expect(
         result.settings.savedUrl,
         equals('https://new-server.example.com'),
@@ -376,6 +447,8 @@ void main() {
         (tester) async {
       final result = await _pumpSettingsScreen(tester);
 
+      await _openSettingsCategory(
+          tester, const Key('settings_category_servers'));
       await tester.ensureVisible(find.byKey(const Key('settings_base_url')));
       await tester.tap(find.byKey(const Key('settings_base_url')));
       await tester.pump();
@@ -384,7 +457,6 @@ void main() {
         'http://192.168.1.100:8080',
       );
 
-      // Simulate the "Done" keyboard action.
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
 
@@ -400,13 +472,13 @@ void main() {
         initialUrl: 'http://10.0.2.2:8080',
       );
 
-      // Clear the field and tap Save.
+      await _openSettingsCategory(
+          tester, const Key('settings_category_servers'));
       await tester.enterText(find.byKey(const Key('settings_base_url')), '');
       await tester.ensureVisible(find.byKey(const Key('settings_save_url')));
       await tester.tap(find.byKey(const Key('settings_save_url')));
       await tester.pumpAndSettle();
 
-      // Nothing should have been saved since the field was blank.
       expect(result.settings.savedUrl, isNull);
     });
   });
@@ -421,7 +493,8 @@ void main() {
       final fakeTheme = _FakeThemeNotifier();
       await _pumpSettingsScreen(tester, themeNotifier: fakeTheme);
 
-      // The segmented button should be present with the system segment selected.
+      await _openSettingsCategory(
+          tester, const Key('settings_category_appearance'));
       final button = tester.widget<SegmentedButton<ThemeMode>>(
         find.byKey(const Key('settings_theme_toggle')),
       );
@@ -433,20 +506,17 @@ void main() {
       final fakeTheme = _FakeThemeNotifier();
       await _pumpSettingsScreen(tester, themeNotifier: fakeTheme);
 
-      // Scroll the segmented button into view before tapping — the settings
-      // screen content may exceed the test viewport height.
+      await _openSettingsCategory(
+          tester, const Key('settings_category_appearance'));
       await tester
           .ensureVisible(find.byKey(const Key('settings_theme_toggle')));
       await tester.pumpAndSettle();
 
-      // Tap the "Dark" segment label.
       await tester.tap(find.text('Dark'));
       await tester.pumpAndSettle();
 
-      // The fake notifier should have received ThemeMode.dark.
       expect(fakeTheme.capturedMode, equals(ThemeMode.dark));
 
-      // The widget should also reflect the new theme state visually.
       final button = tester.widget<SegmentedButton<ThemeMode>>(
         find.byKey(const Key('settings_theme_toggle')),
       );
@@ -479,6 +549,7 @@ void main() {
             scaffoldMessengerKey: appMessengerKey, routerConfig: router),
       ));
       await tester.pumpAndSettle();
+      await _openSettingsCategory(tester, const Key('settings_category_account'));
       await tester.tap(find.byKey(const Key('settings_logout')));
       await tester.pumpAndSettle();
       expect(find.text('Login'), findsOneWidget);
@@ -489,6 +560,8 @@ void main() {
         (tester) async {
       await _pumpSettingsScreen(tester);
 
+      await _openSettingsCategory(
+          tester, const Key('settings_category_account'));
       expect(find.byKey(const Key('settings_logout')), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
@@ -505,7 +578,8 @@ void main() {
       expect(prefs.getBool('auth_session_present'), isTrue);
       expect(prefs.getString('auth_user'), isNotNull);
 
-      // Tap the logout button.
+      await _openSettingsCategory(
+          tester, const Key('settings_category_account'));
       await tester.tap(find.byKey(const Key('settings_logout')));
       await tester.pumpAndSettle();
 
@@ -515,13 +589,10 @@ void main() {
 
     testWidgets('tapping logout updates auth state to unauthenticated',
         (tester) async {
-      // Capture the auth state notifier to inspect state after logout.
       AuthState? capturedState;
       final fakeStorage = _FakeTokenStorage().._token = 'bob';
       final fakeSettings = _FakeSettingsNotifier('http://10.0.2.2:8080');
 
-      // Minimal GoRouter: '/' renders SettingsScreen, '/login' is the redirect
-      // target so context.go('/login') in the logout handler does not throw.
       final router = GoRouter(
         initialLocation: '/',
         routes: [
@@ -529,7 +600,6 @@ void main() {
             path: '/',
             builder: (_, __) => Consumer(
               builder: (context, ref, _) {
-                // Watch and capture auth state for post-logout assertion.
                 final authAsync = ref.watch(authStateProvider);
                 authAsync.whenData((s) => capturedState = s);
                 return const SettingsScreen();
@@ -555,10 +625,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await _openSettingsCategory(
+          tester, const Key('settings_category_account'));
       await tester.tap(find.byKey(const Key('settings_logout')));
       await tester.pumpAndSettle();
 
-      // After logout the auth state should be unauthenticated.
       expect(capturedState?.isUnauthenticated, isTrue);
     });
   });
@@ -577,7 +648,10 @@ void main() {
         currentUser: adminUser,
       );
 
-      // Scroll to ensure the admin section is rendered in the viewport.
+      expect(find.byKey(const Key('settings_category_administration')),
+          findsOneWidget);
+      await _openSettingsCategory(
+          tester, const Key('settings_category_administration'));
       await tester.ensureVisible(
         find.byKey(const Key('settings_manage_users')),
       );
@@ -601,7 +675,8 @@ void main() {
         currentUser: regularUser,
       );
 
-      // The admin tile must not be present for a non-admin user.
+      expect(find.byKey(const Key('settings_category_administration')),
+          findsNothing);
       expect(find.byKey(const Key('settings_manage_users')), findsNothing);
       expect(find.byKey(const Key('settings_libraries')), findsNothing);
       expect(find.byKey(const Key('settings_music_identity')), findsNothing);
@@ -610,10 +685,10 @@ void main() {
 
     testWidgets('hides admin section when currentUserProvider returns null',
         (tester) async {
-      // No currentUser override → currentUserProvider returns null (loading
-      // or unauthenticated) → admin section stays hidden.
       await _pumpSettingsScreen(tester, initialToken: 'alice');
 
+      expect(find.byKey(const Key('settings_category_administration')),
+          findsNothing);
       expect(find.byKey(const Key('settings_manage_users')), findsNothing);
     });
   });
