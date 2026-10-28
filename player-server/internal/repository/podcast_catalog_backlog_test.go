@@ -27,7 +27,7 @@ func TestDeferredPodcastCatalogQuotaSurvivesDeletion(t *testing.T) {
 	feed, err := f.s.GetFeedByKey(ctx, created.FeedKey)
 	f.must(err)
 	f.must(f.s.DeleteFeed(ctx, feed.ID))
-	f.must(f.s.CreateDeferredPodcastFeeds(ctx, f.now.Add(59*time.Minute), 15))
+	f.must(f.s.CreateDeferredPodcastFeeds(ctx, f.now.Add(59*time.Minute), 15, ""))
 	if f.countFeeds(deferred.FeedKey) != 0 {
 		t.Fatal("catalog deletion reset the hourly quota")
 	}
@@ -37,7 +37,7 @@ func TestDeferredPodcastCatalogQuotaSurvivesDeletion(t *testing.T) {
 	if f.countFeeds("feed:bob.example.com/rss") != 1 {
 		t.Fatal("quota leaked between accounts")
 	}
-	f.must(f.s.CreateDeferredPodcastFeeds(ctx, f.now.Add(time.Hour), 15))
+	f.must(f.s.CreateDeferredPodcastFeeds(ctx, f.now.Add(time.Hour), 15, ""))
 	feed, err = f.s.GetFeedByKey(ctx, deferred.FeedKey)
 	f.must(err)
 	if feed == nil || feed.CreatedBy == nil || *feed.CreatedBy != f.alice || feed.AutoDownload || feed.CheckIntervalMinutes != 15 {
@@ -49,7 +49,7 @@ func TestDeferredPodcastCatalogQuotaSurvivesDeletion(t *testing.T) {
 	if n := f.rowCount(`SELECT COUNT(*) FROM set_permissions`); n != 0 {
 		t.Fatalf("background catalog creation granted %d permissions", n)
 	}
-	f.must(f.s.CreateDeferredPodcastFeeds(ctx, f.now.Add(time.Hour), 15))
+	f.must(f.s.CreateDeferredPodcastFeeds(ctx, f.now.Add(time.Hour), 15, ""))
 	if f.countFeeds(deferred.FeedKey) != 1 {
 		t.Fatal("backlog processing is not idempotent")
 	}

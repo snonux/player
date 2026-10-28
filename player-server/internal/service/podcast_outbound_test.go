@@ -123,8 +123,16 @@ func newCheckerFixture(t *testing.T) *checkerFixture {
 	now := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
 	f.admin, _ = store.CreateUser(ctx, &model.User{Username: "admin", PasswordHash: "h", IsAdmin: true, CreatedAt: now})
 	f.user, _ = store.CreateUser(ctx, &model.User{Username: "user", PasswordHash: "h", CreatedAt: now})
-	f.setID, _ = store.CreateSet(ctx, &model.Set{Name: "podcast", RootPath: "podcast", IsPodcast: true, CreatedAt: now})
-	f.svc = NewPodcastServiceWithLogger(store, &clock.MockClock{T: now}, t.TempDir(), NewAccessHelper(store), nil, nil,
+	mediaRoot := t.TempDir()
+	lib, err := store.EnsureDefaultMusicLibrary(ctx, mediaRoot, now)
+	if err != nil {
+		t.Fatalf("register default library: %v", err)
+	}
+	f.setID, err = store.CreateSet(ctx, &model.Set{LibraryID: lib.ID, Name: "podcast", RootPath: "podcast", IsPodcast: true, CreatedAt: now})
+	if err != nil {
+		t.Fatalf("create managed podcast set: %v", err)
+	}
+	f.svc = NewPodcastServiceWithLogger(store, &clock.MockClock{T: now}, mediaRoot, NewAccessHelper(store), nil, nil,
 		&http.Client{Timeout: 5 * time.Second}, 60, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	f.svc.fetchPolicy = FeedFetchPolicy{MaxAttempts: 1}
 	return f

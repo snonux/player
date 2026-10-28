@@ -52,6 +52,7 @@ type podcastSyncService struct {
 	store         PodcastSyncStore
 	clock         clock.Clock
 	checkInterval int
+	mediaRoot     string
 }
 
 var _ PodcastSyncService = (*podcastSyncService)(nil)
@@ -66,11 +67,12 @@ type syncValidation struct {
 
 // NewPodcastSyncService creates the sync service. checkInterval is the
 // refresh interval, in minutes, of catalog feeds a subscription creates.
-func NewPodcastSyncService(store PodcastSyncStore, clk clock.Clock, checkInterval int) *podcastSyncService {
+// mediaRoot selects the registered library for the managed podcast set.
+func NewPodcastSyncService(store PodcastSyncStore, clk clock.Clock, checkInterval int, mediaRoot string) *podcastSyncService {
 	if checkInterval <= 0 {
 		checkInterval = 60
 	}
-	return &podcastSyncService{store: store, clock: clk, checkInterval: checkInterval}
+	return &podcastSyncService{store: store, clock: clk, checkInterval: checkInterval, mediaRoot: mediaRoot}
 }
 
 // Sync validates the request, applies the valid subscription and episode
@@ -84,7 +86,7 @@ func (s *podcastSyncService) Sync(ctx context.Context, userID int64, req model.P
 	}
 	now := s.clock.Now()
 	in := model.PodcastSyncBatch{Epoch: req.Epoch, Limit: req.Limit, Scope: req.Scope, Now: now,
-		CheckIntervalMinutes: s.checkInterval}
+		CheckIntervalMinutes: s.checkInterval, MediaRoot: s.mediaRoot}
 	if req.Since != nil {
 		in.Since = *req.Since
 	}

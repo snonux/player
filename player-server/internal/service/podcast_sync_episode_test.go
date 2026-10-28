@@ -151,7 +151,7 @@ func TestPodcastSyncClampedEpisodeRetryOnRealStore(t *testing.T) {
 	}
 	now1 := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	clk := &clock.MockClock{T: now1}
-	svc := NewPodcastSyncService(store, clk, 60)
+	svc := NewPodcastSyncService(store, clk, 60, "")
 	sync := func(item model.PodcastEpisodeEdit) *model.PodcastSyncResponse {
 		t.Helper()
 		out, err := svc.Sync(ctx, user, model.PodcastSyncRequest{Episodes: []model.PodcastEpisodeEdit{item}})
@@ -199,7 +199,7 @@ func TestPodcastSyncDoesNotReportRejectedEditsAsClamped(t *testing.T) {
 		return &model.PodcastSyncResponse{Clamped: []string{}, Rejected: []model.PodcastSyncRejection{
 			{EditID: in.Episodes[0].Position.EditID, Reason: model.PodcastRejectInvalidKey}}}, nil
 	}
-	svc := NewPodcastSyncService(store, &clock.MockClock{T: now}, 0)
+	svc := NewPodcastSyncService(store, &clock.MockClock{T: now}, 0, "")
 	item := epEdit(func(e *model.PodcastEpisodeEdit) {
 		e.Position.ObservedMS = now.Add(time.Hour).UnixMilli()
 		e.Completion.ObservedMS = now.Add(time.Hour).UnixMilli()

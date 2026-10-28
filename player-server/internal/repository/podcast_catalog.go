@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ type PodcastCatalogRepo interface {
 	GetFeedByKey(ctx context.Context, key string) (*model.PodcastFeed, error)
 	// CreateDeferredPodcastFeeds retries catalog creation for active
 	// subscriptions skipped by the hourly quota, without fetching.
-	CreateDeferredPodcastFeeds(ctx context.Context, now time.Time, checkInterval int) error
+	CreateDeferredPodcastFeeds(ctx context.Context, now time.Time, checkInterval int, mediaRoot string) error
 	// IngestFeedEpisodes matches the episodes of one fetched feed document
 	// against the feed's catalog episodes (podcast.MatchEpisodes), creates
 	// the new ones, refreshes the enclosure of the known ones and records
@@ -135,7 +136,7 @@ func ensureCatalogFeed(ctx context.Context, tx *sql.Tx, userID int64, sub model.
 	if recent >= MaxCatalogFeedsPerUserHour {
 		return nil
 	}
-	setID, err := podcastSetID(ctx, tx, in.Now)
+	setID, err := podcastSetID(ctx, tx, in.Now, in.MediaRoot)
 	if err != nil {
 		return err
 	}
@@ -163,26 +164,31 @@ func catalogFetchURL(sub model.PodcastSubscription) string {
 	return "https://" + strings.TrimPrefix(sub.FeedKey, "feed:")
 }
 
-// podcastSetID returns the id of the shared podcast set, creating its row
-// (but no directory) when it does not exist yet. Like the service's
-// findPodcastSet it prefers a podcast set rooted at "podcast", then any
-// podcast set, then a plain set at that root, which becomes the podcast set.
-func podcastSetID(ctx context.Context, tx *sql.Tx, now time.Time) (int64, error) {
-	var id int64
-	var isPodcast bool
-	err := tx.QueryRowContext(ctx, `SELECT id, is_podcast FROM sets WHERE is_podcast = 1 OR root_path = ?
-ORDER BY is_podcast DESC, root_path = ? DESC, id LIMIT 1`, podcastSetRoot, podcastSetRoot).Scan(&id, &isPodcast)
-	if err == nil {
-		if !isPodcast {
-			_, err = tx.ExecContext(ctx, `UPDATE sets SET is_podcast = 1 WHERE id = ?`, id)
+// podcastSetID creates or reuses the managed set in the library registered
+// for MEDIA_ROOT. Ordinary sets and other libraries are never repurposed.
+// Sync only creates database rows: it must work with read-only media mounts.
+func podcastSetID(ctx context.Context, tx *sql.Tx, now time.Time, mediaRoot string) (int64, error) {
+	root := mediaRoot
+	if root != "" {
+		var err error
+		root, err = filepath.Abs(root)
+		if err != nil {
+			return 0, fmt.Errorf("resolve podcast library: %w", err)
 		}
-		return id, err
+	}
+	var libraryID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM music_libraries WHERE root_path = ?`, root).Scan(&libraryID); err != nil {
+		return 0, fmt.Errorf("find podcast library: %w", err)
+	}
+	var id int64
+	err := tx.QueryRowContext(ctx, `SELECT id FROM sets WHERE library_id = ? AND is_podcast = 1 AND root_path = ? ORDER BY id LIMIT 1`, libraryID, podcastSetRoot).Scan(&id)
+	if err == nil {
+		return id, nil
 	}
 	if err != sql.ErrNoRows {
 		return 0, fmt.Errorf("find podcast set: %w", err)
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO sets (name, root_path, is_podcast, created_at) VALUES (?, ?, 1, ?)`,
-		podcastSetRoot, podcastSetRoot, now)
+	res, err := tx.ExecContext(ctx, `INSERT INTO sets (library_id, name, root_path, is_podcast, created_at) VALUES (?, ?, ?, 1, ?)`, libraryID, podcastSetRoot, podcastSetRoot, now)
 	if err != nil {
 		return 0, fmt.Errorf("create podcast set: %w", err)
 	}

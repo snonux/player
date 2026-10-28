@@ -160,9 +160,11 @@ type PodcastCompletionRegister struct {
 // validation: edits that passed the shape checks (clocks already clamped)
 // and either the pull parameters or a scope.
 type PodcastSyncBatch struct {
-	Epoch string
-	Since int64
-	Limit int
+	// MediaRoot identifies the registered default library for managed podcasts.
+	MediaRoot string
+	Epoch     string
+	Since     int64
+	Limit     int
 	// Scope, when set, replaces the cursor pull by the current registers
 	// of that one episode (the pre-playback request).
 	Scope         *PodcastSyncScope

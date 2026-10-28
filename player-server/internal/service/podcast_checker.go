@@ -36,7 +36,7 @@ func newPodcastFeedChecker(svc *podcastService) *podcastFeedChecker {
 
 // CheckFeeds refreshes all podcast feeds that are due for a check.
 func (s *podcastFeedChecker) CheckFeeds(ctx context.Context) error {
-	if err := s.store.CreateDeferredPodcastFeeds(ctx, s.clock.Now(), s.checkInterval); err != nil {
+	if err := s.store.CreateDeferredPodcastFeeds(ctx, s.clock.Now(), s.checkInterval, s.mediaRoot); err != nil {
 		return fmt.Errorf("create deferred podcast feeds: %w", err)
 	}
 	before := s.clock.Now().Add(-time.Duration(s.checkInterval) * time.Minute)

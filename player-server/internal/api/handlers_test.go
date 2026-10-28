@@ -2339,8 +2339,8 @@ func (m *mockPingStore) ToggleEpisodeCompletion(ctx context.Context, userID, epi
 	return m.store.ToggleEpisodeCompletion(ctx, userID, episodeID, now)
 }
 
-func (m *mockPingStore) CreateDeferredPodcastFeeds(ctx context.Context, now time.Time, checkInterval int) error {
-	return m.store.CreateDeferredPodcastFeeds(ctx, now, checkInterval)
+func (m *mockPingStore) CreateDeferredPodcastFeeds(ctx context.Context, now time.Time, checkInterval int, mediaRoot string) error {
+	return m.store.CreateDeferredPodcastFeeds(ctx, now, checkInterval, mediaRoot)
 }
 
 func (m *mockPingStore) ListPlaylists(ctx context.Context, user int64) ([]model.Playlist, error) {

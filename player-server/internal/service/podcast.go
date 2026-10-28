@@ -60,6 +60,7 @@ type PodcastServiceStore interface {
 	repository.PodcastEpisodeStateRepo
 	repository.PodcastEpisodeViewRepo
 	repository.SetRepo
+	repository.MusicLibraryRepo
 	repository.SetPermissionRepo
 	repository.MediaRepo
 	repository.UserRepo

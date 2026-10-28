@@ -191,7 +191,7 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 		ProgressSvc:     service.NewProgressService(store, clk),
 		AuthSvc:         service.NewAuthService(store, clk, hasher, sm, tm),
 		PodcastSvc:      podcastSvc,
-		PodcastSyncSvc:  service.NewPodcastSyncService(store, clk, cfg.PodcastCheckMinutes),
+		PodcastSyncSvc:  service.NewPodcastSyncService(store, clk, cfg.PodcastCheckMinutes, cfg.MediaRoot),
 		PlaybackHintSvc: service.NewPlaybackHintsService(helper),
 		Scanner:         fsScanner,
 		Scans:           adminSvc,

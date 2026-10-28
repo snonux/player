@@ -40,7 +40,7 @@ INSERT INTO podcast_catalog_creations (user_id, created_at)
 // themselves are the durable backlog: tombstones cancel pending creation,
 // and a restart requires no queue reconstruction. One transaction serializes
 // quota accounting with subscription edits and administrative removal.
-func (s *SQLite) CreateDeferredPodcastFeeds(ctx context.Context, now time.Time, checkInterval int) error {
+func (s *SQLite) CreateDeferredPodcastFeeds(ctx context.Context, now time.Time, checkInterval int, mediaRoot string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("create deferred feeds: %w", err)
@@ -70,7 +70,7 @@ ORDER BY s.subscription_ms, s.user_id, s.feed_key`)
 			return err
 		}
 		if err := ensureCatalogFeed(ctx, tx, userID, sub.PodcastSubscription,
-			model.PodcastSyncBatch{Now: now, CheckIntervalMinutes: checkInterval}); err != nil {
+			model.PodcastSyncBatch{Now: now, CheckIntervalMinutes: checkInterval, MediaRoot: mediaRoot}); err != nil {
 			return err
 		}
 	}

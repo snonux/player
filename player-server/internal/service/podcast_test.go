@@ -25,6 +25,9 @@ func setupPodcastService(t *testing.T) (*podcastService, *repository.MockStore) 
 	mediaRoot := t.TempDir()
 	clk := &clock.MockClock{T: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)}
 	store := repository.NewMockStore()
+	store.MockMusicLibraryRepo.ListMusicLibrariesFunc = func(context.Context) ([]model.MusicLibrary, error) {
+		return []model.MusicLibrary{{ID: 1, RootPath: mediaRoot}}, nil
+	}
 	helper := &accessHelper{store: store}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := NewPodcastService(store, clk, mediaRoot, helper, nil, nil, &http.Client{Timeout: DefaultHTTPClientTimeout}, 60)

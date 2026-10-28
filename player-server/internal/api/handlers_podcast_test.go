@@ -107,6 +107,10 @@ func setupPodcastE2E(t *testing.T) (srv *Server, store repository.Store, sm auth
 	authSvc := service.NewAuthService(dbStore, clk, hasher, sm, auth.NewTokenManager())
 
 	mediaRoot := t.TempDir()
+	// This direct server fixture bypasses app wiring, which registers MEDIA_ROOT.
+	if _, err := dbStore.EnsureDefaultMusicLibrary(ctx, mediaRoot, now); err != nil {
+		t.Fatalf("register default library: %v", err)
+	}
 	helper := service.NewAccessHelper(dbStore)
 	prober := &probe.MockProber{}
 	thumbGen := &thumb.MockGenerator{}

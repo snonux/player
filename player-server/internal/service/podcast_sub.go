@@ -78,50 +78,49 @@ func (s *podcastSubscriptionService) SubscribeFeed(ctx context.Context, feedURL,
 	return feed, nil
 }
 
-func (s *podcastSubscriptionService) ensurePodcastSet(ctx context.Context, userID int64) (*model.Set, error) {
-	set, err := s.findPodcastSet(ctx)
+// podcastLibrary resolves the library registered for MEDIA_ROOT. Podcast files
+// are served and downloaded under that root, regardless of other libraries.
+func (s *podcastSubscriptionService) podcastLibrary(ctx context.Context) (*model.MusicLibrary, error) {
+	libs, err := s.store.ListMusicLibraries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("find podcast library: %w", err)
+	}
+	root, err := filepath.Abs(s.mediaRoot)
 	if err != nil {
 		return nil, err
 	}
-	setPath := filepath.Join(s.podcastService.mediaRoot, podcastSetName)
-	if set == nil {
-		set, err = s.createPodcastSet(ctx, userID)
-		if err != nil {
-			return nil, err
+	for _, lib := range libs {
+		if lib.RootPath == root {
+			return &lib, nil
 		}
 	}
-	if err := os.MkdirAll(setPath, 0o755); err != nil {
-		return nil, fmt.Errorf("mkdir podcast set path: %w", err)
-	}
-	if err := s.podcastService.store.GrantPermission(ctx, &model.SetPermission{
-		SetID:     set.ID,
-		UserID:    userID,
-		Role:      model.RoleOwner,
-		CreatedAt: s.podcastService.clock.Now(),
-	}); err != nil {
-		return nil, fmt.Errorf("grant permission: %w", err)
-	}
-	return set, nil
+	return nil, fmt.Errorf("podcast library for media root is not registered")
 }
 
-func (s *podcastSubscriptionService) findPodcastSet(ctx context.Context) (*model.Set, error) {
-	sets, err := s.podcastService.store.ListSets(ctx)
+func (s *podcastSubscriptionService) ensurePodcastSet(ctx context.Context, userID int64) (*model.Set, error) {
+	lib, err := s.podcastLibrary(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sets, err := s.store.ListSets(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for _, set := range sets {
-		if set.IsPodcast && (set.RootPath == podcastSetName || strings.EqualFold(set.Name, podcastSetName)) {
-			if set.Name != podcastSetName || set.RootPath != podcastSetName {
-				set.Name = podcastSetName
-				set.RootPath = podcastSetName
-				if err := s.podcastService.store.UpdateSet(ctx, &set); err != nil {
-					return nil, fmt.Errorf("update podcast set: %w", err)
-				}
-			}
-			return &set, nil
+		if set.LibraryID != lib.ID || !set.IsPodcast || set.RootPath != podcastSetName {
+			continue
 		}
+		cleanup, err := s.preparePodcastDirectory()
+		if err != nil {
+			return nil, err
+		}
+		if err := s.store.GrantPermission(ctx, &model.SetPermission{SetID: set.ID, UserID: userID, Role: model.RoleOwner, CreatedAt: s.clock.Now()}); err != nil {
+			cleanup()
+			return nil, fmt.Errorf("grant permission: %w", err)
+		}
+		return &set, nil
 	}
-	return nil, nil
+	return s.createPodcastSet(ctx, userID, lib.ID)
 }
 
 // findExistingFeed returns the catalog feed whose key (or one of whose
@@ -167,39 +166,61 @@ func (s *podcastSubscriptionService) verifyAdmin(ctx context.Context, userID int
 	return nil
 }
 
-func (s *podcastSubscriptionService) createPodcastSet(ctx context.Context, userID int64) (*model.Set, error) {
-	setPath := filepath.Join(s.podcastService.mediaRoot, podcastSetName)
-	// Create the directory first so we can clean it up easily on DB errors.
-	if err := os.MkdirAll(setPath, 0o755); err != nil {
-		return nil, fmt.Errorf("mkdir set path: %w", err)
+func (s *podcastSubscriptionService) preparePodcastDirectory() (func(), error) {
+	setPath := filepath.Join(s.mediaRoot, podcastSetName)
+	if !confinedPath(s.mediaRoot, setPath) {
+		return nil, ErrForbidden
 	}
-
-	set := &model.Set{
-		Name:      podcastSetName,
-		RootPath:  podcastSetName,
-		IsPodcast: true,
-		CreatedAt: s.podcastService.clock.Now(),
+	// Only this call's empty directory may be removed on failure. Existing
+	// folders (including unindexed files) belong to the library owner.
+	created := false
+	if err := os.Mkdir(setPath, 0o755); err == nil {
+		created = true
+	} else if !errors.Is(err, os.ErrExist) {
+		return nil, mutationError(err)
+	} else {
+		info, err := os.Stat(setPath)
+		if err != nil {
+			return nil, mutationError(err)
+		}
+		if !info.IsDir() {
+			return nil, fmt.Errorf("podcast set path is not a directory")
+		}
 	}
-	setID, err := s.podcastService.store.CreateSet(ctx, set)
-	if err != nil {
-		os.RemoveAll(setPath)
-		return nil, fmt.Errorf("create set: %w", err)
+	cleanup := func() {
+		if created {
+			_ = os.Remove(setPath)
+		}
 	}
-	set.ID = setID
-
-	perm := &model.SetPermission{SetID: setID, UserID: userID, Role: model.RoleOwner}
-	if err := s.podcastService.store.GrantPermission(ctx, perm); err != nil {
-		_ = s.podcastService.store.DeleteSet(ctx, setID)
-		os.RemoveAll(setPath)
-		return nil, fmt.Errorf("grant permission: %w", err)
+	// Reusing an existing folder may require only database metadata writes.
+	// Keep read-only subscriptions working when the feed folder also exists.
+	if created {
+		if err := writableMediaDir(s.mediaRoot, setPath); err != nil {
+			cleanup()
+			return nil, err
+		}
 	}
-
-	return set, nil
+	return cleanup, nil
 }
 
-func (s *podcastSubscriptionService) rollbackSet(ctx context.Context, setID int64, setPath string) {
-	_ = s.podcastService.store.DeleteSet(ctx, setID)
-	os.RemoveAll(setPath)
+func (s *podcastSubscriptionService) createPodcastSet(ctx context.Context, userID, libraryID int64) (*model.Set, error) {
+	cleanup, err := s.preparePodcastDirectory()
+	if err != nil {
+		return nil, err
+	}
+	set := &model.Set{LibraryID: libraryID, Name: podcastSetName, RootPath: podcastSetName, IsPodcast: true, CreatedAt: s.clock.Now()}
+	id, err := s.store.CreateSet(ctx, set)
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("create set: %w", err)
+	}
+	set.ID = id
+	if err := s.store.GrantPermission(ctx, &model.SetPermission{SetID: id, UserID: userID, Role: model.RoleOwner, CreatedAt: s.clock.Now()}); err != nil {
+		_ = s.store.DeleteSet(ctx, id)
+		cleanup()
+		return nil, fmt.Errorf("grant permission: %w", err)
+	}
+	return set, nil
 }
 
 func (s *podcastSubscriptionService) createPodcastFeed(ctx context.Context, parsed *podcast.ParsedFeed, setID int64, feedURL string) (*model.PodcastFeed, error) {

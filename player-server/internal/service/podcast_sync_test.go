@@ -26,7 +26,7 @@ func syncTestService(t *testing.T, now time.Time) (*podcastSyncService, *model.P
 		}
 		return out, nil
 	}
-	return NewPodcastSyncService(store, &clock.MockClock{T: now}, 0), got
+	return NewPodcastSyncService(store, &clock.MockClock{T: now}, 0, ""), got
 }
 
 const validEdit = "abcdefghijklmnop"
@@ -155,7 +155,7 @@ func TestPodcastSyncStoreError(t *testing.T) {
 	store.PodcastSyncRepo.SyncPodcastFunc = func(context.Context, int64, model.PodcastSyncBatch) (*model.PodcastSyncResponse, error) {
 		return nil, boom
 	}
-	svc := NewPodcastSyncService(store, &clock.MockClock{T: time.Now()}, 30)
+	svc := NewPodcastSyncService(store, &clock.MockClock{T: time.Now()}, 30, "")
 	if _, err := svc.Sync(context.Background(), 1, model.PodcastSyncRequest{}); !errors.Is(err, boom) {
 		t.Fatalf("err = %v", err)
 	}
@@ -181,7 +181,7 @@ func TestPodcastSyncClampRetryOnRealStore(t *testing.T) {
 	}
 	now1 := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	clk := &clock.MockClock{T: now1}
-	svc := NewPodcastSyncService(store, clk, 60)
+	svc := NewPodcastSyncService(store, clk, 60, "")
 	sync := func(e model.PodcastSubscriptionEdit) *model.PodcastSyncResponse {
 		t.Helper()
 		out, err := svc.Sync(ctx, user, model.PodcastSyncRequest{Subscriptions: []model.PodcastSubscriptionEdit{e}})
