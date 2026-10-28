@@ -155,6 +155,12 @@ abstract final class AppRoutes {
   /// Lists soft-deleted media items and allows restore or hard-delete.
   static const adminTrash = '/admin/trash';
 
+  /// Route for admin music library roots (add/rename/remove/access).
+  static const adminLibraries = '/admin/libraries';
+
+  /// Route for admin music identity conflict recovery.
+  static const adminMusicIdentity = '/admin/music-identity';
+
   /// Route for the API token management screen.
   ///
   /// Allows any authenticated user to list, create, and revoke their own

@@ -585,6 +585,11 @@ void main() {
 
       expect(find.byKey(const Key('settings_manage_users')), findsOneWidget);
       expect(find.text('Manage Users'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('settings_libraries')));
+      expect(find.byKey(const Key('settings_libraries')), findsOneWidget);
+      await tester
+          .ensureVisible(find.byKey(const Key('settings_music_identity')));
+      expect(find.byKey(const Key('settings_music_identity')), findsOneWidget);
     });
 
     testWidgets('hides Manage Users tile when current user is not admin',
@@ -598,6 +603,8 @@ void main() {
 
       // The admin tile must not be present for a non-admin user.
       expect(find.byKey(const Key('settings_manage_users')), findsNothing);
+      expect(find.byKey(const Key('settings_libraries')), findsNothing);
+      expect(find.byKey(const Key('settings_music_identity')), findsNothing);
       expect(find.text('Administration'), findsNothing);
     });
 

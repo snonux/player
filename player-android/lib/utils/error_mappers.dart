@@ -419,6 +419,58 @@ String adminTrashErrorMessage(Object error) {
   return 'Unexpected error. Please try again.';
 }
 
+/// Maps admin library API failures to a UI string.
+///
+///   - 403: caller is not an admin.
+///   - 404: library or user no longer exists.
+///   - 409: last library / library still has sets (server message preferred).
+///   - 400/501: prefer the server body message when present.
+String adminLibraryErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 403) {
+      return 'You do not have permission to manage libraries.';
+    }
+    if (error.response?.statusCode == 404) {
+      return 'Library or user not found. Please refresh and try again.';
+    }
+    if (error.response?.statusCode == 501) {
+      return 'Music libraries are unavailable on this server.';
+    }
+    if (error.response?.statusCode == 400 ||
+        error.response?.statusCode == 409) {
+      final serverMsg = dioErrorMessage(error);
+      if (!serverMsg.startsWith('Server error')) return serverMsg;
+      return error.response?.statusCode == 409
+          ? 'Library cannot be removed while it still has sets.'
+          : 'Invalid library request. Check the name and path and try again.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
+
+/// Maps music-identity conflict API failures to a UI string.
+String adminIdentityErrorMessage(Object error) {
+  if (error is DioException) {
+    if (error.response?.statusCode == 403) {
+      return 'You do not have permission to manage music identity.';
+    }
+    if (error.response?.statusCode == 404) {
+      return 'Conflict not found. It may already have been resolved.';
+    }
+    if (error.response?.statusCode == 501) {
+      return 'Music identity recovery is unavailable on this server.';
+    }
+    if (error.response?.statusCode == 400) {
+      final serverMsg = dioErrorMessage(error);
+      if (!serverMsg.startsWith('Server error')) return serverMsg;
+      return 'Invalid resolve action. Refresh and try again.';
+    }
+    return dioConnectionErrorMessage(error);
+  }
+  return 'Unexpected error. Please try again.';
+}
+
 /// Maps any thrown object from [PlayerApiClient.listAPITokens],
 /// [PlayerApiClient.createAPIToken], or [PlayerApiClient.revokeAPIToken] to a
 /// human-readable UI string.

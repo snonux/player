@@ -1,6 +1,8 @@
 export 'media.dart';
 export 'media_filter.dart';
 export 'media_set.dart';
+export 'music_identity_conflict.dart';
+export 'music_library.dart';
 export 'note.dart';
 export 'playback_hint.dart';
 export 'podcast_episode.dart';

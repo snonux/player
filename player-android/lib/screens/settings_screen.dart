@@ -602,6 +602,26 @@ class _AdminSection extends ConsumerWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => context.push(AppRoutes.adminTrash),
         ),
+
+        ListTile(
+          key: const Key('settings_libraries'),
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.library_music_outlined),
+          title: const Text('Libraries'),
+          subtitle: const Text('Advanced: music roots and library access'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.push(AppRoutes.adminLibraries),
+        ),
+
+        ListTile(
+          key: const Key('settings_music_identity'),
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.fingerprint_outlined),
+          title: const Text('Music identity'),
+          subtitle: const Text('Advanced: resolve ambiguous song matches'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.push(AppRoutes.adminMusicIdentity),
+        ),
       ],
     );
   }

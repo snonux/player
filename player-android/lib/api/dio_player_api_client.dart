@@ -1258,6 +1258,101 @@ class DioPlayerApiClient extends PlayerApiClient
   }
 
   // ---------------------------------------------------------------------------
+  // Admin – Libraries
+  // ---------------------------------------------------------------------------
+
+  @override
+  Future<List<MusicLibrary>> listAdminLibraries() async {
+    final response =
+        await rawDio.get<List<dynamic>>('$_kApiV1/admin/libraries');
+    return (response.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(MusicLibrary.fromJson)
+        .toList();
+  }
+
+  @override
+  Future<MusicLibrary> createLibrary({
+    required String name,
+    required String rootPath,
+  }) async {
+    final response = await rawDio.post<Map<String, dynamic>>(
+      '$_kApiV1/admin/libraries',
+      data: {'name': name, 'root_path': rootPath},
+    );
+    return MusicLibrary.fromJson(response.data!);
+  }
+
+  @override
+  Future<MusicLibrary> renameLibrary({
+    required int libraryId,
+    required String name,
+  }) async {
+    final response = await rawDio.put<Map<String, dynamic>>(
+      '$_kApiV1/admin/libraries/$libraryId',
+      data: {'name': name},
+    );
+    return MusicLibrary.fromJson(response.data!);
+  }
+
+  @override
+  Future<void> deleteLibrary(int libraryId) async {
+    await rawDio.delete<void>('$_kApiV1/admin/libraries/$libraryId');
+  }
+
+  @override
+  Future<void> grantLibraryAccess({
+    required int libraryId,
+    required int userId,
+    required String role,
+  }) async {
+    await rawDio.post<void>(
+      '$_kApiV1/admin/libraries/$libraryId/access',
+      data: {'user_id': userId, 'role': role},
+    );
+  }
+
+  @override
+  Future<void> revokeLibraryAccess({
+    required int libraryId,
+    required int userId,
+  }) async {
+    await rawDio.delete<void>(
+      '$_kApiV1/admin/libraries/$libraryId/access',
+      data: {'user_id': userId},
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admin – Music identity
+  // ---------------------------------------------------------------------------
+
+  @override
+  Future<List<MusicIdentityConflict>> listMusicIdentityConflicts() async {
+    final response = await rawDio
+        .get<List<dynamic>>('$_kApiV1/admin/music-identity/conflicts');
+    return (response.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(MusicIdentityConflict.fromJson)
+        .toList();
+  }
+
+  @override
+  Future<void> resolveMusicIdentityConflict({
+    required int conflictId,
+    required String action,
+    int? candidateMediaId,
+  }) async {
+    await rawDio.post<void>(
+      '$_kApiV1/admin/music-identity/conflicts/$conflictId/resolve',
+      data: {
+        'action': action,
+        if (candidateMediaId != null) 'candidate_media_id': candidateMediaId,
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // API Tokens
   // ---------------------------------------------------------------------------
 

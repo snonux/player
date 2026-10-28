@@ -684,6 +684,64 @@ class PlayerApiClient implements ProgressSyncClient {
   Future<List<Media>> listTrash() => throw UnimplementedError();
 
   // ---------------------------------------------------------------------------
+  // Admin – Libraries
+  // ---------------------------------------------------------------------------
+
+  /// GET /api/v1/admin/libraries — requires admin.
+  Future<List<MusicLibrary>> listAdminLibraries() =>
+      throw UnimplementedError();
+
+  /// POST /api/v1/admin/libraries — requires admin.
+  Future<MusicLibrary> createLibrary({
+    required String name,
+    required String rootPath,
+  }) =>
+      throw UnimplementedError();
+
+  /// PUT /api/v1/admin/libraries/{id} — requires admin.
+  Future<MusicLibrary> renameLibrary({
+    required int libraryId,
+    required String name,
+  }) =>
+      throw UnimplementedError();
+
+  /// DELETE /api/v1/admin/libraries/{id} — requires admin.
+  Future<void> deleteLibrary(int libraryId) => throw UnimplementedError();
+
+  /// POST /api/v1/admin/libraries/{id}/access — requires admin.
+  Future<void> grantLibraryAccess({
+    required int libraryId,
+    required int userId,
+    required String role,
+  }) =>
+      throw UnimplementedError();
+
+  /// DELETE /api/v1/admin/libraries/{id}/access — requires admin.
+  Future<void> revokeLibraryAccess({
+    required int libraryId,
+    required int userId,
+  }) =>
+      throw UnimplementedError();
+
+  // ---------------------------------------------------------------------------
+  // Admin – Music identity
+  // ---------------------------------------------------------------------------
+
+  /// GET /api/v1/admin/music-identity/conflicts — requires admin.
+  Future<List<MusicIdentityConflict>> listMusicIdentityConflicts() =>
+      throw UnimplementedError();
+
+  /// POST /api/v1/admin/music-identity/conflicts/{id}/resolve — requires admin.
+  ///
+  /// [action] is `keep_separate` or `merge`. Merge requires [candidateMediaId].
+  Future<void> resolveMusicIdentityConflict({
+    required int conflictId,
+    required String action,
+    int? candidateMediaId,
+  }) =>
+      throw UnimplementedError();
+
+  // ---------------------------------------------------------------------------
   // API Tokens
   // ---------------------------------------------------------------------------
 

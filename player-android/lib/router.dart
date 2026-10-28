@@ -35,6 +35,8 @@ import 'screens/share_screen.dart';
 import 'screens/share_viewer_screen.dart';
 import 'screens/my_shares_screen.dart';
 import 'screens/notes_editor_screen.dart';
+import 'screens/admin_libraries_screen.dart';
+import 'screens/admin_music_identity_screen.dart';
 import 'screens/admin_permissions_screen.dart';
 import 'screens/admin_rescan_screen.dart';
 import 'screens/admin_trash_screen.dart';
@@ -459,6 +461,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         // Admin-only; non-admin users receive 403 from the server.
         path: AppRoutes.adminTrash,
         builder: (context, state) => const AdminTrashScreen(),
+      ),
+      GoRoute(
+        // Admin libraries — independent music roots, rename/remove, and
+        // library-wide access grants. Admin-only.
+        path: AppRoutes.adminLibraries,
+        builder: (context, state) => const AdminLibrariesScreen(),
+      ),
+      GoRoute(
+        // Admin music identity — resolve ambiguous move/retag conflicts.
+        // Admin-only.
+        path: AppRoutes.adminMusicIdentity,
+        builder: (context, state) => const AdminMusicIdentityScreen(),
       ),
       GoRoute(
         // API token management — lists, creates, and revokes Bearer API tokens
