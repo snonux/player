@@ -120,6 +120,26 @@ String _text(XmlElement node, String name) =>
         .firstOrNull
         ?.innerText ??
     '';
+
+DateTime? _publicationDate(String value) {
+  final date = value.trim();
+  final iso = DateTime.tryParse(date);
+  if (iso != null) return iso;
+  // HttpDate only accepts GMT, while RSS commonly uses RFC 822 offsets.
+  final numericZone = RegExp(r'^(.*\s)([+-])(\d{2})(\d{2})$').firstMatch(date);
+  try {
+    if (numericZone == null) return HttpDate.parse(date);
+    final hours = int.parse(numericZone[3]!);
+    final minutes = int.parse(numericZone[4]!);
+    if (hours > 23 || minutes > 59) return null;
+    final local = HttpDate.parse('${numericZone[1]}GMT');
+    final offset = Duration(hours: hours, minutes: minutes);
+    return numericZone[2] == '+' ? local.subtract(offset) : local.add(offset);
+  } on HttpException {
+    return null; // Undated and malformed episodes sort last.
+  }
+}
+
 PublisherFeed parsePodcastFeed(String xml,
     {required String fetchUrl, List<String> aliasUrls = const []}) {
   final root = XmlDocument.parse(xml).rootElement;
@@ -151,10 +171,7 @@ PublisherFeed parsePodcastFeed(String xml,
         .firstOrNull;
     final url = enclosure?.getAttribute(atom ? 'href' : 'url') ?? '';
     final date = _text(item, atom ? 'published' : 'pubDate');
-    DateTime? published = DateTime.tryParse(date);
-    try {
-      published ??= HttpDate.parse(date);
-    } on HttpException {/* Undated episodes sort last. */}
+    final published = _publicationDate(date);
     final parts = _text(item, 'duration').split(':');
     var duration = 0;
     for (final part in parts) {

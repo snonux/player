@@ -21,9 +21,16 @@ class PodcastRepository {
   final PodcastFeedFetcher fetcher;
   Future<Database>? _opening;
   Future<Database> get database => _opening ??=
-          openDatabase(databasePath, version: 3, onUpgrade: (db, old, _) async {
+          openDatabase(databasePath, version: 4, onUpgrade: (db, old, _) async {
         if (old < 2) await createSyncSchema(db);
         if (old < 3) await createDownloadSchema(db);
+        if (old < 4) {
+          // Reparse cached feeds once after fixing numeric RSS timezones. A
+          // conditional 304 response would otherwise leave their dates at zero.
+          await db.update('podcast_feeds', {'etag': '', 'last_modified': ''},
+              where: 'feed_key IN '
+                  '(SELECT feed_key FROM podcast_episodes WHERE published_at=0)');
+        }
       }, onCreate: (db, _) async {
         await createSyncSchema(db);
         await createDownloadSchema(db);
