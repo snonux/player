@@ -42,7 +42,7 @@ export function initCompactControls(player) {
   more.type = 'button';
   more.id = 'btn-player-options';
   more.className = 'icon-btn';
-  more.textContent = '⋯';
+  more.textContent = '☰';
   more.setAttribute('aria-label', 'More player controls');
   more.setAttribute('aria-controls', panel.id);
   more.setAttribute('aria-expanded', 'false');

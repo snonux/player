@@ -1,6 +1,7 @@
 import { API, NO_NOTE } from './api.js';
 import { open as openNotes } from './notes.js';
 import { initBookmarks } from './bookmarks.js';
+import { applyFavoriteButton } from './views/media-actions.js';
 import { toast } from './utils.js';
 
 // Only library and authenticated detached players initialize personal actions.
@@ -31,8 +32,7 @@ export function initPlaybackPersonal({ getMedia, getElement, available }) {
     try {
       const result = await API.favorite(media.id);
       if (getMedia()?.id !== media.id) return;
-      favorite.setAttribute('aria-pressed', String(result.favorite));
-      favorite.textContent = result.favorite ? 'Favorited' : 'Favorite';
+      applyFavoriteButton(favorite, result.favorite);
       toast(result.favorite ? 'Added to favorites' : 'Removed from favorites');
     } catch { toast('Could not update favorite. Try again.', 'error'); }
     finally { favoritePending = false; favorite.disabled = false; }
@@ -42,7 +42,6 @@ export function initPlaybackPersonal({ getMedia, getElement, available }) {
     bookmarks?.setMedia(media);
     notes?.classList.toggle('hidden', !media);
     favorite?.classList.toggle('hidden', !media);
-    favorite?.removeAttribute('aria-pressed');
-    if (favorite) favorite.textContent = 'Favorite';
+    applyFavoriteButton(favorite, Boolean(media?.is_favorite || media?.favorite));
   } };
 }

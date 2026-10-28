@@ -385,7 +385,7 @@ export function episodeCardHtml(ep, { showFeed, downloading = false } = {}) {
       <span class="badge">${escapeHtml(metaBits)}</span>
       <div class="card-actions">
         ${primary}
-        <button type="button" class="icon-btn btn-sm card-more" data-action="more" title="More episode actions" aria-label="More episode actions" aria-haspopup="menu">⋯</button>
+        <button type="button" class="icon-btn btn-sm card-more" data-action="more" title="More episode actions" aria-label="More episode actions" aria-haspopup="menu">☰</button>
         ${extras}
       </div>
     </div>

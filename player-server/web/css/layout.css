@@ -427,6 +427,12 @@ body {
   z-index: 2;
 }
 .media-card .card-actions .icon-btn { flex: 0 0 var(--control-height-sm); }
+.media-card .card-actions [data-action="favorite"] {
+  flex: 0 0 auto;
+  min-width: 2.75rem;
+  min-height: var(--control-height-sm);
+  white-space: nowrap;
+}
 .card-actions .card-action-extra { display: none; }
 .set-card .set-open,
 .folder-card .folder-open {
@@ -515,13 +521,22 @@ body {
   background: var(--bg-elevated);
 }
 
-/* Hide row action buttons unless hovered/selected/playing */
+/* Row overflow (hamburger) stays visible; other row actions live in hidden
+   spans / menus (album, playlist, queue). Any leftover data-action buttons
+   only appear on hover so rows match card hover-gating. */
 .media-row button[data-action] {
   display: none;
   transition: opacity var(--transition-fast);
 }
-.media-row:hover button[data-action] {
+.media-row:hover button[data-action],
+.media-row.selected button[data-action],
+.media-row.playing button[data-action] {
   display: inline-flex;
+}
+.media-row [data-song-menu] {
+  display: inline-flex;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
 }
 
 /* Modal */

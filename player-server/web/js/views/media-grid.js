@@ -8,6 +8,7 @@ import { fmtSize } from '../dom.js';
 import { escapeHtml, fmtDur, toast } from '../utils.js';
 import { pictureRatio } from './picture-layout.js';
 import { dismissSidebarAfterNav } from './help.js';
+import { favoriteLabel } from './media-actions.js';
 
 let callbacks = {};
 let mediaPageSize = 100;
@@ -56,7 +57,7 @@ export function initMediaGrid(options = {}) {
 
   grid?.addEventListener('click', (e) => {
     const folder = e.target.closest('.folder-card');
-    if (folder && !e.target.closest('[data-action="regen-folder-cover"]')) {
+    if (folder && !e.target.closest('[data-action="regen-folder-cover"], [data-action="more"]')) {
       e.stopPropagation();
       enterFolder(folder.dataset.name);
     }
@@ -299,7 +300,8 @@ function renderSetCard(set, index) {
         </div>
       </button>
       <div class="card-actions">
-        <button class="icon-btn btn-sm" type="button" data-action="regen-set-cover" aria-label="Regenerate cover for ${escapeHtml(set.name)}" title="Regenerate cover">🔄</button>
+        <button type="button" class="icon-btn btn-sm card-more" data-action="more" title="More" aria-label="More set actions" aria-haspopup="menu">☰</button>
+        <button class="icon-btn btn-sm card-action-extra" type="button" data-action="regen-set-cover" aria-label="Regenerate cover for ${escapeHtml(set.name)}" title="Regenerate cover">🔄</button>
       </div>
     </div>
   `;
@@ -317,6 +319,10 @@ function bindSetCards(grid) {
       selectByElement(el);
       e.stopPropagation();
       callbacks.openSet?.(parseInt(el.dataset.setId, 10));
+    });
+    el.querySelector('[data-action="more"]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.dispatchEvent(new CustomEvent('media:actions', { detail: el }));
     });
     el.querySelector('[data-action="regen-set-cover"]')?.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -368,6 +374,12 @@ function renderBrowse(data, mediaId) {
   grid.innerHTML = renderPager(page, 'top') + folderHtml + mediaHtml + renderPager(page, 'bottom');
   clearSelection();
 
+  grid.querySelectorAll('.folder-card').forEach((el) => {
+    el.querySelector('[data-action="more"]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.dispatchEvent(new CustomEvent('media:actions', { detail: el }));
+    });
+  });
   grid.querySelectorAll('.folder-card [data-action="regen-folder-cover"]').forEach((b) => {
     b.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -422,7 +434,8 @@ function renderFolder(folder, index) {
         </div>
       </button>
       <div class="card-actions">
-        <button class="icon-btn btn-sm" type="button" data-action="regen-folder-cover" aria-label="Regenerate cover for folder ${escapeHtml(name)}" title="Regenerate cover">🔄</button>
+        <button type="button" class="icon-btn btn-sm card-more" data-action="more" title="More" aria-label="More folder actions" aria-haspopup="menu">☰</button>
+        <button class="icon-btn btn-sm card-action-extra" type="button" data-action="regen-folder-cover" aria-label="Regenerate cover for folder ${escapeHtml(name)}" title="Regenerate cover">🔄</button>
       </div>
     </div>
   `;
@@ -568,12 +581,20 @@ function renderProgressActions() {
   `;
 }
 
-function renderMediaActions(extra = '') {
+function mediaIsFavorite(item) {
+  // Match entity favoriteButton: seed from is_favorite (or legacy favorite).
+  // Favorites-only browse already filtered to favorited rows.
+  return Boolean(item?.is_favorite || item?.favorite || state.filters.favorites);
+}
+
+function renderMediaActions(item = {}, extra = '') {
+  const favorite = mediaIsFavorite(item);
+  const label = favorite ? 'Favorited' : 'Favorite';
   return `
     <div class="card-actions">
       <button type="button" class="icon-btn btn-sm" data-action="play" title="Play" aria-label="Play">▶</button>
-      <button type="button" class="icon-btn btn-sm" data-action="favorite" title="Favorite" aria-label="Favorite">♥</button>
-      <button type="button" class="icon-btn btn-sm card-more" data-action="more" title="More actions (a)" aria-label="More actions" aria-haspopup="menu">⋯</button>
+      <button type="button" class="btn btn-sm${favorite ? ' active' : ''}" data-action="favorite" title="${label}" aria-label="${label}" aria-pressed="${favorite}">${favoriteLabel(favorite)}</button>
+      <button type="button" class="icon-btn btn-sm card-more" data-action="more" title="More actions (a)" aria-label="More actions" aria-haspopup="menu">☰</button>
       <button type="button" class="icon-btn btn-sm card-action-extra" data-action="notes" title="Notes" aria-label="Notes">📝</button>
       ${renderProgressActions()}
       <button type="button" class="icon-btn btn-sm card-action-extra" data-action="download" title="Download" aria-label="Download">⬇</button>
@@ -596,7 +617,7 @@ function renderItem(m, index) {
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
           <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
         </div>
-        ${renderMediaActions(regenThumb)}
+        ${renderMediaActions(m, regenThumb)}
         <div class="meta">
           <div class="title" title="${title}">${title}</div>
           <div class="subtitle">${escapeHtml(m.codec || '')} ${escapeHtml(m.resolution || '')} ${m.bitrate ? Math.round(m.bitrate / 1000) + 'kbps' : ''}</div>
@@ -614,7 +635,7 @@ function renderItem(m, index) {
           ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No image</span>`}
           <span class="badge">${resText}${safeSizeText ? ' • ' + safeSizeText : ''}</span>
         </div>
-        ${renderMediaActions(regenThumb)}
+        ${renderMediaActions(m, regenThumb)}
         <div class="meta">
           <div class="title" title="${title}">${title}</div>
           <div class="subtitle">${resText} ${safeSizeText}</div>
@@ -629,7 +650,7 @@ function renderItem(m, index) {
         ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No cover</span>`}
         <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
       </div>
-      ${renderMediaActions()}
+      ${renderMediaActions(m)}
       <div class="meta">
         <div class="title" title="${title}">${title}</div>
         <div class="subtitle">${escapeHtml(musicSubtitle(m))}</div>

@@ -121,7 +121,12 @@ assert.equal(sidebarClasses.contains('open'), true, 'Tab/delta set cycle keeps s
 
 const mediaGridSrc = fs.readFileSync(new URL('../views/media-grid.js', import.meta.url), 'utf8');
 assert.match(mediaGridSrc, /export function enterFolder\([\s\S]*?dismissSidebarAfterNav\(\)/);
+const indexHtml = fs.readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+assert.match(indexHtml, /id="sidebar-toggle"[^>]*>☰</, 'sidebar stays hamburger');
+assert.match(indexHtml, /id="header-menu-toggle"[^>]*>⋮</, 'header global More stays vertical ellipsis');
+assert.match(indexHtml, /id="btn-player-favorite"[\s\S]*?data-favorite-heart[\s\S]*?data-i18n="Favorite"/, 'player Favorite keeps heart outside data-i18n');
 const setsSrc = fs.readFileSync(new URL('../views/sets.js', import.meta.url), 'utf8');
+assert.doesNotMatch(setsSrc, /data-cover-set|regenCover/, 'sidebar sets are navigation-only');
 assert.match(setsSrc, /if \(selectSet\(parseInt\(row\.dataset\.id, 10\)\)\) dismissSidebarAfterNav\(\)/);
 assert.match(setsSrc, /export function selectSetByHotkey[\s\S]*?dismissSidebarAfterNav\(\)/);
 const deltaBody = setsSrc.split('export function setSetByDelta')[1] || '';

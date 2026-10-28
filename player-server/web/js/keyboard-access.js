@@ -83,7 +83,6 @@ export function initKeyboardAccess() {
   function targets(root) {
     return [...root.querySelectorAll(controls)].filter(element => visible(element) &&
       element !== toggle && !element.closest('.shortcut-status') &&
-      // A role=button set row and its inner cover button are independent.
       !element.matches('#media-grid') && !element.closest('button button'));
   }
   function clear() {

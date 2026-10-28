@@ -105,7 +105,9 @@ globalThis.MutationObserver = class { observe() {} };
   assert.equal(minimize.parentElement?.id, 'player-options', 'minimize moves into options');
   assert.equal(notes.parentElement?.id, 'player-options', 'notes move into options');
   assert.equal(lyrics.parentElement, transport, 'lyrics toggle stays on the strip');
-  assert.ok(transport.querySelector('#btn-player-options'), 'overflow menu is on the strip');
+  const more = transport.querySelector('#btn-player-options');
+  assert.ok(more, 'overflow menu is on the strip');
+  assert.equal(more.textContent, '☰', 'player More uses hamburger glyph');
   assert.ok(player.querySelector('#player-options')?.hasAttribute('popover'), 'uses Popover when available');
 }
 

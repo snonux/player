@@ -1,8 +1,12 @@
 import { API } from './api.js';
 import { escapeHtml as esc, toast } from './utils.js';
 
+function entityFavoriteLabel(favorite) {
+ return `${favorite ? '♥' : '♡'} ${favorite ? 'Favorited' : 'Favorite'}`;
+}
 export function favoriteButton(kind,key,item) {
- return `<button class="btn btn-ghost" data-entity-favorite data-kind="${kind}" data-key="${esc(key)}" aria-pressed="${Boolean(item.is_favorite)}" aria-label="${item.is_favorite?'Unfavorite':'Favorite'} ${kind}">${item.is_favorite?'♥':'♡'} ${kind[0].toUpperCase()+kind.slice(1)}</button>`;
+ const favorite = Boolean(item.is_favorite);
+ return `<button class="btn btn-ghost" data-entity-favorite data-kind="${kind}" data-key="${esc(key)}" aria-pressed="${favorite}" aria-label="${favorite?'Unfavorite':'Favorite'} ${kind}">${entityFavoriteLabel(favorite)}</button>`;
 }
 export function bindFavorites(grid,current) {
  grid.querySelectorAll('[data-entity-favorite]').forEach(button=>button.onclick=async event=>{
@@ -13,7 +17,7 @@ export function bindFavorites(grid,current) {
    if(!current()||!button.isConnected)return;
    button.setAttribute('aria-pressed',String(next));
    button.setAttribute('aria-label',`${next?'Unfavorite':'Favorite'} ${button.dataset.kind}`);
-   button.textContent=`${next?'♥':'♡'} ${button.dataset.kind[0].toUpperCase()+button.dataset.kind.slice(1)}`;
+   button.textContent=entityFavoriteLabel(next);
    toast(next?'Added to favorites.':'Removed from favorites.','success');
    if(!next && grid.querySelector('[data-favorites-only]')?.checked)document.dispatchEvent(new Event('music:favorite-refresh'));
   }catch(error){if(current())toast(error.message||'Could not save favorite. Check your connection and retry.','error');}

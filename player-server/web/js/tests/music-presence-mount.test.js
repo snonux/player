@@ -6,10 +6,12 @@ assert.equal(crypto.randomUUID,undefined);
 globalThis.window = new EventTarget();
 globalThis.location = {origin:'http://player.lan'};
 class Node extends EventTarget {
-  constructor(tag) { super(); this.tagName=tag; this.children=[]; this.parts=new Map(); }
+  constructor(tag) { super(); this.tagName=tag; this.children=[]; this.parts=new Map(); this.attrs=new Map(); }
   append(...nodes) { this.children.push(...nodes); }
   replaceChildren(...nodes) { this.children=nodes; }
   querySelector(selector) { if (!this.parts.has(selector)) this.parts.set(selector,new Node(selector)); return this.parts.get(selector); }
+  setAttribute(name,value) { this.attrs.set(name,String(value)); }
+  getAttribute(name) { return this.attrs.has(name)?this.attrs.get(name):null; }
   remove() { this.removed=true; }
   focus() {}
 }
@@ -21,6 +23,8 @@ const parent=new Node('main');
 const cleanup=mountMusicPresence(parent,{getAccount:()=>17,getSnapshot:()=>({media_id:3,state:'playing',position_seconds:5})});
 assert.equal(parent.children.length,1,'actual mount completes without secure-context randomUUID');
 const panel=parent.children[0], toggle=panel.querySelector('input');
+assert.equal(panel.open,false,'Listeners stays collapsed by default');
+assert.equal(panel.querySelector('summary')?.getAttribute('aria-expanded'),'false');
 toggle.checked=true;toggle.dispatchEvent(new Event('change'));
 await new Promise(resolve=>setImmediate(resolve));
 const heartbeat=calls.find(call=>call.method==='PUT');

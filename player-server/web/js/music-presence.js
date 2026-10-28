@@ -13,9 +13,12 @@ export function localMusicPresenceSnapshot() {
 export function mountMusicPresence(parent, { getSnapshot = localMusicPresenceSnapshot, getAccount = () => state.user?.id } = {}) {
   const panel = document.createElement('details');
   panel.className = 'card-body music-column music-presence';
+  // Collapsed by default; Escape (and the summary toggle) dismiss within the view.
+  panel.open = false;
   panel.innerHTML = '<summary>Listeners</summary><label><input type="checkbox"> Share my listening</label><p class="text-muted">Off by default. Sharing shows your username, client and current song to signed-in people who can access that song. Local server-library music only; downloads, public shares, radio and remote output are excluded.</p><p role="status" data-presence-status></p><button class="btn" type="button" data-presence-retry>Retry</button><ul data-presence-list></ul>';
   parent.append(panel);
   const summary = panel.querySelector('summary');
+  summary?.setAttribute('aria-expanded', 'false');
   panel.addEventListener('keydown', event => {
     if (event.target === summary && ['Enter',' '].includes(event.key)) event.stopPropagation();
     if (event.key === 'Escape' && panel.open) { event.preventDefault(); event.stopPropagation(); panel.open = false; summary.focus(); }
@@ -46,7 +49,10 @@ export function mountMusicPresence(parent, { getSnapshot = localMusicPresenceSna
   let account;
   const sync = () => { const next = getAccount(); if (next !== account) { account = next; controller.setAccount(next || null); } void controller.refresh(); };
   toggle.addEventListener('change', () => { const checked = toggle.checked; sync(); controller.setSharing(checked); });
-  panel.addEventListener('toggle', () => controller.setOpen(panel.open));
+  panel.addEventListener('toggle', () => {
+    summary?.setAttribute('aria-expanded', String(panel.open));
+    controller.setOpen(panel.open);
+  });
   retry.addEventListener('click', () => void controller.refresh());
   const events = ['play','pause','seeked','ended','error','emptied','loadeddata'];
   const audio = document.getElementById('media-audio');

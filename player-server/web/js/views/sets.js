@@ -1,6 +1,5 @@
-import { API } from '../api.js';
 import { state } from '../state.js';
-import { escapeHtml, toast } from '../utils.js';
+import { escapeHtml } from '../utils.js';
 import { dismissSidebarAfterNav } from './help.js';
 
 let loadMediaCallback = () => {};
@@ -12,29 +11,16 @@ export function initSets({ onLoadMedia } = {}) {
 export function renderSets() {
   const el = document.getElementById('set-list');
   if (el) {
+    // Sidebar stays navigation-only; regenerate-cover lives on set cards → More.
     el.innerHTML = state.sets.map((s) =>
       `<div class="set-row" tabindex="0" role="button" data-id="${s.id}" aria-label="Set ${escapeHtml(s.name)}">
         <span class="set-item flex-1-18" data-id="${s.id}">${escapeHtml(s.name)}</span>
-        <button class="icon-btn btn-sm" data-cover-set="${s.id}" title="Regenerate cover">🔄</button>
       </div>`
     ).join('');
     el.querySelectorAll('.set-row').forEach((row) => {
       row.addEventListener('click', (e) => {
-        if (e.target.closest('[data-cover-set]')) return;
         e.preventDefault();
         if (selectSet(parseInt(row.dataset.id, 10))) dismissSidebarAfterNav();
-      });
-    });
-    el.querySelectorAll('[data-cover-set]').forEach((b) => {
-      b.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const id = b.dataset.coverSet;
-        try {
-          await API.regenCover(id);
-          toast('Cover regenerated');
-        } catch (err) {
-          toast(err.message || 'Cover failed', 'error');
-        }
       });
     });
   }

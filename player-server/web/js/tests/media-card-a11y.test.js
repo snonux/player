@@ -38,14 +38,25 @@ globalThis.fetch = async (url) => {
       ok: true,
       status: 200,
       headers: { get: () => 'application/json' },
-      json: async () => ([{
-        id: 3,
-        file_name: 'track.flac',
-        type: 'audio',
-        duration: 12,
-        file_size_bytes: 1024,
-        music: { title: 'First Light', artist: 'Aurora' },
-      }]),
+      json: async () => ([
+        {
+          id: 3,
+          file_name: 'track.flac',
+          type: 'audio',
+          duration: 12,
+          file_size_bytes: 1024,
+          music: { title: 'First Light', artist: 'Aurora' },
+        },
+        {
+          id: 4,
+          file_name: 'liked.flac',
+          type: 'audio',
+          duration: 8,
+          file_size_bytes: 512,
+          is_favorite: true,
+          music: { title: 'Favorited Track', artist: 'Aurora' },
+        },
+      ]),
     };
   }
   return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ status: 'ok' }) };
@@ -66,7 +77,11 @@ assert.match(grid.innerHTML, /role="group"/, 'card container is a group');
 assert.doesNotMatch(grid.innerHTML, /class="media-card[^"]*"[^>]*role="button"/, 'card is not a button');
 assert.match(grid.innerHTML, /<button type="button" class="media-open" aria-label="First Light"><\/button>/, 'primary open is a sibling button');
 assert.match(grid.innerHTML, /data-action="play"[^>]*aria-label="Play"/, 'Play is labelled for AT');
+assert.match(grid.innerHTML, /data-action="favorite"[^>]*>♡ Favorite</, 'Favorite uses heart icon-plus-label');
+assert.match(grid.innerHTML, /data-action="favorite"[^>]*aria-pressed="true"[^>]*>♥ Favorited</, 'is_favorite seeds Favorited state');
+assert.match(grid.innerHTML, /data-action="more"[^>]*>☰</, 'More uses hamburger glyph');
 assert.match(grid.innerHTML, /data-action="favorite"[^>]*aria-label="Favorite"/, 'Favorite is labelled for AT');
+assert.match(grid.innerHTML, /data-action="favorite"[^>]*aria-label="Favorited"/, 'Favorited is labelled for AT');
 assert.match(grid.innerHTML, /data-action="notes"[^>]*aria-label="Notes"/, 'Notes is labelled for AT');
 assert.ok(
   grid.innerHTML.indexOf('class="media-open"') < grid.innerHTML.indexOf('data-action="play"'),

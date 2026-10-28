@@ -8,6 +8,7 @@ import { currentMediaId } from '../player.js';
 import { open as openNotes } from '../notes.js';
 import { toast } from '../utils.js';
 import { copyShareLink } from '../share-link.js';
+import { t } from '../i18n.js';
 
 let latestNoteLoad = 0;
 
@@ -38,12 +39,34 @@ export async function shareSelected() {
 
 // toggleFavorite flips the favorite flag and shows the state the server
 // reports, so the heart and the toast stay right even after a stale render.
+export function favoriteLabel(favorite) {
+  return favorite ? '♥ Favorited' : '♡ Favorite';
+}
+
+// applyFavoriteButton keeps ♡/♥ beside a data-i18n Favorite/Favorited span so
+// locale switches translate the word without wiping the heart.
+export function applyFavoriteButton(btn, favorite) {
+  if (!btn) return;
+  const key = favorite ? 'Favorited' : 'Favorite';
+  btn.classList.toggle('active', favorite);
+  btn.setAttribute('aria-pressed', String(favorite));
+  btn.setAttribute('aria-label', t(key));
+  const heart = btn.querySelector('[data-favorite-heart]');
+  const label = btn.querySelector('[data-i18n]');
+  if (heart && label) {
+    heart.textContent = favorite ? '♥' : '♡';
+    label.dataset.i18n = key;
+    label.textContent = t(key);
+    return;
+  }
+  btn.textContent = favoriteLabel(favorite);
+}
+
 export async function toggleFavorite(id, btn) {
   try {
     const res = await API.favorite(id);
     const favorite = typeof res?.favorite === 'boolean' ? res.favorite : !btn?.classList.contains('active');
-    btn?.classList.toggle('active', favorite);
-    btn?.setAttribute('aria-pressed', String(favorite));
+    applyFavoriteButton(btn, favorite);
     toast(favorite ? 'Added to favorites' : 'Removed from favorites');
   } catch (err) {
     toast(err.message || 'Favorite failed', 'error');

@@ -161,3 +161,29 @@ const undoAction={dataset:{queueAction:'undo'},closest:()=>null};
 await panelEvents.click({target:{closest:()=>undoAction}});
 assert.deepEqual(queueState().entries.map(entry=>entry.id),originalQueue,'real Undo click restores the exact queue occurrences');
 console.log('German production queue Delete and Undo retain canonical keyboard/action tokens.');
+
+// Player Favorite keeps the heart outside data-i18n and uses the Favorited key.
+const { applyFavoriteButton, favoriteLabel } = await import('../views/media-actions.js');
+assert.equal(favoriteLabel(false), '♡ Favorite');
+assert.equal(favoriteLabel(true), '♥ Favorited');
+assert.equal(t('Favorited', {}, 'de'), 'Favorisiert');
+const heart = { textContent: '♡' };
+const label = { dataset: { i18n: 'Favorite' }, textContent: 'Favorite' };
+const favBtn = {
+  classList: { toggle() {} },
+  setAttribute() {},
+  querySelector(sel) {
+    if (sel === '[data-favorite-heart]') return heart;
+    if (sel === '[data-i18n]') return label;
+    return null;
+  },
+};
+select.value = 'de'; select.change();
+applyFavoriteButton(favBtn, true);
+assert.equal(heart.textContent, '♥', 'favorited keeps heart glyph');
+assert.equal(label.dataset.i18n, 'Favorited', 'switches to Favorited i18n key');
+assert.equal(label.textContent, 'Favorisiert', 'Favorited translates under de');
+applyTranslations();
+assert.equal(heart.textContent, '♥', 'applyTranslations must not wipe the heart');
+assert.equal(label.textContent, 'Favorisiert');
+console.log('Player Favorite heart+Favorited i18n binding passed.');
