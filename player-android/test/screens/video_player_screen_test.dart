@@ -1616,4 +1616,20 @@ void main() {
       expect(find.byKey(const Key('video_player_error')), findsOneWidget);
     });
   });
+  testWidgets('double-tap toggles fullscreen', (tester) async {
+    _usePlayablePlatform()..duration = const Duration(seconds: 30);
+    await _pumpScreen(tester, _FakeApiClient(), mediaTitle: 'movie.mp4');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('video_player_chewie')), findsOneWidget);
+    final chewie = tester.widget<Chewie>(find.byType(Chewie)).controller;
+    expect(chewie.isFullScreen, isFalse);
+    final target = find.byKey(const Key('video_player_double_tap'));
+    await tester.tap(target);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(target);
+    await tester.pumpAndSettle();
+    expect(chewie.isFullScreen, isTrue);
+    await _leavePlayingScreen(tester);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
 }

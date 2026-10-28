@@ -566,6 +566,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       allowFullScreen: true,
       allowMuting: true,
       showOptions: false,
+      // Fullscreen starts clean; controls auto-hide quickly so the picture stays primary.
+      showControlsOnInitialize: false,
+      hideControlsTimer: const Duration(seconds: 2),
       errorBuilder: (context, _) => errorNotice(),
       routePageBuilder: _buildFullScreenPage,
       customControls: controller.value.duration <= Duration.zero
@@ -591,10 +594,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _fullScreenRoute = ModalRoute.of(context);
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      body: Container(
-        alignment: Alignment.center,
-        color: Colors.black,
-        child: controllerProvider,
+      body: GestureDetector(
+        key: const Key('video_player_fullscreen_double_tap'),
+        behavior: HitTestBehavior.opaque,
+        onDoubleTap: () => controllerProvider.controller.toggleFullScreen(),
+        child: Container(
+          alignment: Alignment.center,
+          color: Colors.black,
+          child: controllerProvider,
+        ),
       ),
     );
   }
@@ -1166,9 +1174,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       key: const Key('video_player_chewie'),
       child: AspectRatio(
         aspectRatio: _videoController!.value.aspectRatio,
-        child: Chewie(controller: _chewieController!),
+        child: GestureDetector(
+          key: const Key('video_player_double_tap'),
+          behavior: HitTestBehavior.opaque,
+          onDoubleTap: _toggleFullScreenFromGesture,
+          child: Chewie(controller: _chewieController!),
+        ),
       ),
     );
+  }
+
+  void _toggleFullScreenFromGesture() {
+    final chewie = _chewieController;
+    if (chewie == null) return;
+    chewie.toggleFullScreen();
   }
 
   // ---------------------------------------------------------------------------
