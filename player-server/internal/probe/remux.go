@@ -48,7 +48,10 @@ func remuxArgs(inputPath string) ([]string, error) {
 		"-sn",
 		"-c", "copy",
 		"-bsf:a", "aac_adtstoasc",
-		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+		// delay_moov waits for aac_adtstoasc to emit AudioSpecificConfig
+		// before writing moov; without it Firefox plays the video mute
+		// (mozHasAudio=false). See docs/media-firefox-audio.md.
+		"-movflags", "frag_keyframe+empty_moov+default_base_moof+delay_moov",
 		"-f", "mp4",
 		"pipe:1",
 	), nil

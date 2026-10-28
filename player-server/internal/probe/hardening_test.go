@@ -103,7 +103,7 @@ func TestRemuxArgs(t *testing.T) {
 		input,
 		[]string{
 			"-map", "0:v:0?", "-map", "0:a:0?", "-dn", "-sn", "-c", "copy", "-bsf:a", "aac_adtstoasc",
-			"-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1",
+			"-movflags", "frag_keyframe+empty_moov+default_base_moof+delay_moov", "-f", "mp4", "pipe:1",
 		},
 	)
 	if !slices.Equal(got, want) {

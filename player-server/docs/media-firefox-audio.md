@@ -129,5 +129,6 @@ not end-of-file, seeking, long-GOP startup latency or every affected source.
 Those remain release checks. All owned browser processes and the temporary
 loopback server were closed after measurement.
 
-This investigation changes documentation only. The proposed fix has not been
-deployed.
+Fix applied in `internal/probe/remux.go` (movflags include `delay_moov`).
+Re-verify on f3s after the next image deploy: open a Music Videos TS-named
+`.mp4` in Firefox and confirm `mozHasAudio=true` with audible output.
