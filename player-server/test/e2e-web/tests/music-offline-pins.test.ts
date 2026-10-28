@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, openCollectionMoreAction } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
 
 test.skip(process.env.PLAYER_M47_ISOLATED !== '1', 'Requires an isolated disposable music fixture');
 const attempt = `${Date.now()}-${process.pid}`;
@@ -40,7 +40,11 @@ async function playbackRows(page: Page): Promise<any[]> {
 }
 
 async function openPin(page: Page, name: string): Promise<void> {
-  await openCollectionMoreAction(page, /Pin offline|Manage…/);
+  await page.locator('#media-grid').getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('menu', { name: /^More (album|playlist) actions$/ })
+    .getByRole('button', { name: 'Queue and offline…', exact: true }).click();
+  await page.getByRole('menu', { name: 'More collection actions', exact: true })
+    .getByRole('button', { name: /Pin offline|Manage…/ }).click();
   await expect(page.getByRole('dialog', { name, exact: true })).toBeVisible();
   await expect(page.getByRole('dialog', { name, exact: true }).locator('h2')).toBeFocused();
 }
@@ -109,6 +113,8 @@ test('M47 album and playlist pins survive cache eviction, restart and offline au
     await page.reload();
     await expect(page.locator('#media-grid [data-collection-pin]')).toHaveText(/Pinned 3\/3 · Manage…/);
     await page.locator('#media-grid').getByRole('button', { name: 'More', exact: true }).click();
+    await page.getByRole('menu', { name: 'More album actions', exact: true })
+      .getByRole('button', { name: 'Queue and offline…', exact: true }).click();
     await expect(page.getByRole('menu', { name: 'More collection actions' }).getByRole('button', { name: /Pinned 3\/3 · Manage…/ })).toBeVisible();
     await page.keyboard.press('Escape');
 
@@ -125,7 +131,8 @@ test('M47 album and playlist pins survive cache eviction, restart and offline au
 
     // Fill the disposable cache through an ordinary Play action, then evict it
     // through Settings. The source is outside both pinned collections.
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'More options', exact: true }).click();
+    await page.locator('#settings-toggle').click();
     const settings = page.locator('#settings-modal');
     await settings.getByLabel('Playback cache budget').selectOption('128');
     await settings.getByLabel('Playback buffering').selectOption('complete');
@@ -136,7 +143,8 @@ test('M47 album and playlist pins survive cache eviction, restart and offline au
     const unpinned = f.mediaIds['Music/Gain Check/No Gain Tags.mp3'];
     await expectPlaying(page, unpinned);
     await expect.poll(async () => (await playbackRows(page)).length, { timeout: 60_000 }).toBeGreaterThan(0);
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'More options', exact: true }).click();
+    await page.locator('#settings-toggle').click();
     await settings.getByRole('button', { name: 'Clear cache', exact: true }).click();
     await expect(settings.locator('[data-usage]')).toContainText('Cache cleared');
     expect(await playbackRows(page)).toHaveLength(0);

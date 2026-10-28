@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, openCollectionMoreAction } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, openPlaylistDetailMoreAction } from './helpers/music-ui';
 
 test.skip(process.env.PLAYER_M48_ISOLATED !== '1', 'Requires an isolated disposable music fixture');
 const attempt = `${Date.now()}-${process.pid}`;
@@ -34,7 +34,8 @@ async function saved(page: Page) {
 }
 
 async function automaticPanel(page: Page) {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'More options', exact: true }).click();
+  await page.locator('#settings-toggle').click();
   const settings = page.locator('#settings-modal');
   const panel = settings.locator('[data-automatic-music]');
   await panel.locator('summary').click();
@@ -69,7 +70,9 @@ test('M48 updates a pinned playlist and starred songs, waits for Wi-Fi, then pla
 
     await page.goto(`/?music=playlist&id=${encodeURIComponent(playlistId)}`);
     await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
-    await openCollectionMoreAction(page, /Pin offline|Manage…/);
+    await openPlaylistDetailMoreAction(page, 'collection');
+    await page.getByRole('menu', { name: 'More collection actions', exact: true })
+      .getByRole('button', { name: /Pin offline|Manage…/ }).click();
     const dialog = page.getByRole('dialog', { name, exact: true });
     await dialog.getByRole('combobox', { name: 'Download quality' }).selectOption('original');
     await dialog.getByRole('button', { name: 'Pin offline', exact: true }).click();
@@ -146,7 +149,9 @@ test('M48 updates a pinned playlist and starred songs, waits for Wi-Fi, then pla
 
     await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { timeout: 20_000 }).toBe(true);
     await page.goto(`/?music=playlist&id=${encodeURIComponent(playlistId)}`);
-    await openCollectionMoreAction(page, /Pin offline|Manage…/);
+    await openPlaylistDetailMoreAction(page, 'collection');
+    await page.getByRole('menu', { name: 'More collection actions', exact: true })
+      .getByRole('button', { name: /Pin offline|Manage…/ }).click();
     await context.setOffline(true); offline = true;
     await page.getByRole('dialog', { name, exact: true }).getByRole('button', { name: 'Play downloaded', exact: true }).click();
     await expectPlaying(page, first);
