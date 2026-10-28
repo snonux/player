@@ -19,6 +19,8 @@ import 'server_song_actions.dart';
 ///
 /// Detail headers show Play + Shuffle + hamburger More. Compact card embeds
 /// show only the More sheet so related/discovery rows stay uncluttered.
+/// Screen-specific management actions append via [moreExtras] so one More
+/// sheet holds collection and host actions without a second hamburger.
 class MusicCollectionActions extends ConsumerStatefulWidget {
   const MusicCollectionActions(
       {super.key,
@@ -27,10 +29,12 @@ class MusicCollectionActions extends ConsumerStatefulWidget {
       this.enabled = true,
       this.playOnly = false,
       this.compact = false,
-      this.sourceLabel = 'Selected collections'});
+      this.sourceLabel = 'Selected collections',
+      this.moreExtras});
   final List<MusicCollection> collections;
   final String playLabel, sourceLabel;
   final bool enabled, playOnly, compact;
+  final List<Widget> Function(BuildContext context)? moreExtras;
   @override
   ConsumerState<MusicCollectionActions> createState() => _ActionsState();
 }
@@ -222,6 +226,7 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
                           dialogCurrent: current,
                           report: report)))
               : null),
+      ...?widget.moreExtras?.call(context),
     ];
     return items;
   }
@@ -276,7 +281,10 @@ class _ActionsState extends ConsumerState<MusicCollectionActions> {
                 icon: const Icon(Icons.shuffle),
                 label: Text(context.tr('Shuffle'))),
             OverflowMenuButton(
-                enabled: enabled,
+                // Host extras (edit/delete/add) must stay reachable on an
+                // empty collection while Play/Shuffle stay disabled.
+                enabled: !_busy &&
+                    (enabled || widget.moreExtras != null),
                 items: (_) =>
                     _moreItems(enabled, includePlayShuffle: false)),
           ]),

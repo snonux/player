@@ -44,6 +44,21 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
       onChanged: () => setState(() {}));
   List<Widget> _menuItems() => [
         OverflowMenuItem(
+            key: const Key('playlist_create'),
+            icon: Icons.add,
+            label: context.tr('Create playlist'),
+            onSelected: () => _edit()),
+        OverflowMenuItem(
+            key: const Key('playlist_create_smart'),
+            icon: Icons.rule,
+            label: context.tr('Create smart playlist'),
+            onSelected: () => _edit(null, true)),
+        OverflowMenuItem(
+            key: const Key('playlist_import_m3u'),
+            icon: Icons.playlist_add,
+            label: context.tr('Import M3U…'),
+            onSelected: _import),
+        OverflowMenuItem(
             key: const Key('music_favorites_only'),
             icon: _favoritesOnly ? Icons.favorite : Icons.favorite_border,
             label: _favoritesOnly
@@ -51,16 +66,6 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                 : context.tr('Favorites only'),
             selected: _favoritesOnly,
             onSelected: () => setState(() => _favoritesOnly = !_favoritesOnly)),
-        OverflowMenuItem(
-            key: const Key('playlist_import_m3u'),
-            icon: Icons.playlist_add,
-            label: context.tr('Import M3U…'),
-            onSelected: _import),
-        OverflowMenuItem(
-            key: const Key('playlist_create_smart'),
-            icon: Icons.rule,
-            label: context.tr('Create smart playlist'),
-            onSelected: () => _edit(null, true)),
       ];
 
   List<Map<String, dynamic>> _list = [];
@@ -211,29 +216,8 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
               _heart('playlist', _playlist!),
             const MusicSearchButton(),
             const MusicQueueButton(),
-            if (widget.playlistId != null &&
-                !_loading &&
-                _error == null &&
-                _playlist != null)
-              PopupMenuButton<String>(
-                  tooltip: context.tr('Playlist actions'),
-                  onSelected: (action) =>
-                      action == 'membership' ? _memberships() : _export(),
-                  itemBuilder: (_) => [
-                        PopupMenuItem(
-                            value: 'export',
-                            child: Text(context.tr('Export M3U8…'))),
-                        PopupMenuItem(
-                            value: 'membership',
-                            child: Text(context.tr('Containing playlists…')))
-                      ]),
-            if (widget.playlistId == null) ...[
-              IconButton(
-                  tooltip: context.tr('Create playlist'),
-                  icon: const Icon(Icons.add),
-                  onPressed: () => _edit()),
+            if (widget.playlistId == null)
               OverflowMenuButton(items: (_) => _menuItems()),
-            ],
           ]),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -271,7 +255,8 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
           leading: checkbox ?? _cover(p, 56),
           title: Text(p['name'] as String,
               maxLines: 2, overflow: TextOverflow.ellipsis),
-          subtitle: Text('${_totals(p)}\n${_accessLabel(p)}'),
+          subtitle: Text('${_totals(p)} · ${_accessLabel(p)}',
+              maxLines: 2, overflow: TextOverflow.ellipsis),
           trailing: _heart('playlist', p),
           onTap: toggle ??
               () async {
@@ -279,6 +264,66 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
                     '${AppRoutes.musicPlaylists}?playlist=${Uri.encodeComponent(p['playlist_id'] as String)}');
                 if (mounted) _load();
               }));
+
+  List<Widget> _detailMoreItems(Map<String, dynamic> p, bool canSyncSource) {
+    final editable = p['can_edit'] != false;
+    final manual = editable && p['source'] == null && p['rules'] == null;
+    return [
+      if (manual)
+        OverflowMenuItem(
+            key: const Key('playlist_add_album'),
+            icon: Icons.album_outlined,
+            label: context.tr('Add album'),
+            onSelected: _addMusic),
+      if (editable && p['source'] == null)
+        OverflowMenuItem(
+            key: const Key('playlist_rules'),
+            icon: Icons.rule,
+            label: context.tr('Rules'),
+            onSelected: () => _rules(p)),
+      if (p['rules'] is Map)
+        OverflowMenuItem(
+            key: const Key('playlist_refresh_rules'),
+            icon: Icons.refresh,
+            label: context.tr('Refresh results'),
+            onSelected: _load),
+      if (editable)
+        OverflowMenuItem(
+            key: const Key('playlist_edit'),
+            icon: Icons.edit_outlined,
+            label: context.tr('Edit playlist'),
+            onSelected: () => _edit(p)),
+      OverflowMenuItem(
+          key: const Key('playlist_export'),
+          icon: Icons.file_download_outlined,
+          label: context.tr('Export M3U8…'),
+          onSelected: _export),
+      OverflowMenuItem(
+          key: const Key('playlist_membership'),
+          icon: Icons.playlist_play,
+          label: context.tr('Containing playlists…'),
+          onSelected: _memberships),
+      if (canSyncSource)
+        OverflowMenuItem(
+            key: const Key('playlist_sync'),
+            icon: Icons.sync,
+            label: context.tr('Sync now'),
+            onSelected: _syncingSource ? null : () => _source(false)),
+      if (p['source'] is Map)
+        OverflowMenuItem(
+            key: const Key('playlist_detach'),
+            icon: Icons.link_off,
+            label: context.tr('Stop following…'),
+            onSelected: _syncingSource ? null : () => _source(true)),
+      if (editable)
+        OverflowMenuItem(
+            key: const Key('playlist_delete'),
+            icon: Icons.delete_outline,
+            label: context.tr('Delete playlist'),
+            onSelected: _delete),
+    ];
+  }
+
   Widget _detail() {
     final p = _playlist!;
     final canSyncSource = p['source'] != null &&
@@ -287,6 +332,9 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
         .cast<Map<String, dynamic>>()
         .map(Media.fromJson)
         .toList();
+    final comment = (p['comment'] as String?) ?? '';
+    final canAddSongs =
+        p['can_edit'] != false && p['source'] == null && p['rules'] == null;
     void play(int index) {
       final song = songs[index], api = ref.read(apiClientProvider);
       context.push(AppRoutes.audioPlayerPath('${song.id}'), extra: {
@@ -301,78 +349,75 @@ class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
 
     return ListView(padding: const EdgeInsets.all(16), children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(
-            width: 160,
-            child: MusicArtworkSection(
-                kind: 'playlist',
-                entityKey: widget.playlistId!,
-                fallback: _cover({...p}..remove('artwork_revision'), 112))),
-        const SizedBox(width: 16),
+        _cover({...p}..remove('artwork_revision'), 56),
+        const SizedBox(width: 12),
         Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(p['name'] as String,
-              style: Theme.of(context).textTheme.titleLarge),
+              style: Theme.of(context).textTheme.titleLarge,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis),
           Text(_totals(p)),
-          Text(_accessLabel(p))
         ]))
       ]),
-      const SizedBox(height: 16),
-      Text(p['comment'] as String),
-      if (p['rules'] is Map) ...[
-        Text(playlistRulesSummary(context, p['rules'] as Map<String, dynamic>)),
-        Text(context.tr(
-            'Your plays, favorites and ratings use your account. Shared smart playlists can show different songs to each viewer.')),
-        OutlinedButton.icon(
-            onPressed: _load,
-            icon: const Icon(Icons.refresh),
-            label: Text(context.tr('Refresh results'))),
-      ],
-      if (p['source'] is Map) ...[
-        Text(
-            'Following ${(p['source'] as Map)['path']} · ${(p['source'] as Map)['base'] == 'library' ? 'Library root' : 'Playlist folder'} paths'),
-        Text((p['source'] as Map)['status'] == 'ready'
-            ? '${(p['source'] as Map)['unavailable']} unavailable · ${(p['source'] as Map)['rejected']} unsafe entries skipped.'
-            : context.tr('Source unavailable. Last imported songs retained.')),
-        Text(context.tr('Stop following to add, remove or move songs.')),
-        if (_syncingSource) Text(context.tr('Updating source…')),
-        Wrap(spacing: 12, children: [
-          if (canSyncSource)
-            OutlinedButton(
-                onPressed: _syncingSource ? null : () => _source(false),
-                child: Text(context.tr('Sync now'))),
-          TextButton(
-              onPressed: _syncingSource ? null : () => _source(true),
-              child: Text(context.tr('Stop following…')))
-        ]),
-      ],
-      Wrap(spacing: 12, runSpacing: 8, children: [
+      ExpansionTile(
+          key: const Key('playlist_details'),
+          title: Text(context.tr('Details')),
+          childrenPadding: const EdgeInsets.only(bottom: 8),
+          children: [
+            Align(
+                alignment: Alignment.centerLeft,
+                child: Text(_accessLabel(p))),
+            if (comment.isNotEmpty)
+              Align(
+                  alignment: Alignment.centerLeft, child: Text(comment)),
+            MusicArtworkSection(
+                kind: 'playlist',
+                entityKey: widget.playlistId!,
+                fallback: _cover({...p}..remove('artwork_revision'), 112)),
+            if (p['rules'] is Map) ...[
+              Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(playlistRulesSummary(
+                      context, p['rules'] as Map<String, dynamic>))),
+              Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(context.tr(
+                      'Your plays, favorites and ratings use your account. Shared smart playlists can show different songs to each viewer.'))),
+            ],
+            if (p['source'] is Map) ...[
+              Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                      'Following ${(p['source'] as Map)['path']} · ${(p['source'] as Map)['base'] == 'library' ? 'Library root' : 'Playlist folder'} paths')),
+              Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text((p['source'] as Map)['status'] == 'ready'
+                      ? '${(p['source'] as Map)['unavailable']} unavailable · ${(p['source'] as Map)['rejected']} unsafe entries skipped.'
+                      : context.tr(
+                          'Source unavailable. Last imported songs retained.'))),
+              Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(context
+                      .tr('Stop following to add, remove or move songs.'))),
+            ],
+          ]),
+      if (_syncingSource) Text(context.tr('Updating source…')),
+      Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
         MusicCollectionActions(
             key: ValueKey('playlist-${widget.playlistId}-$_generation'),
             collections: [MusicCollection('playlist', widget.playlistId!)],
             playLabel: context.tr('Play playlist'),
             sourceLabel: p['name'] as String,
-            enabled: songs.isNotEmpty),
-        if (p['can_edit'] != false) ...[
-          if (p['source'] == null && p['rules'] == null)
-            FilledButton.tonalIcon(
-                onPressed: _addMusic,
-                icon: const Icon(Icons.add),
-                label: Text(context.tr('Add music'))),
-          if (p['source'] == null && p['rules'] == null)
-            FilledButton.tonalIcon(
-                onPressed: () => _addSongs(),
-                icon: const Icon(Icons.playlist_add),
-                label: Text(context.tr('Add songs'))),
-          if (p['source'] == null)
-            TextButton(
-                onPressed: () => _rules(p), child: Text(context.tr('Rules'))),
-          TextButton(
-              onPressed: () => _edit(p),
-              child: Text(context.tr('Edit playlist'))),
-          TextButton(
-              onPressed: _delete, child: Text(context.tr('Delete playlist'))),
-        ],
+            enabled: songs.isNotEmpty,
+            moreExtras: (_) => _detailMoreItems(p, canSyncSource)),
+        if (canAddSongs)
+          FilledButton.tonalIcon(
+              onPressed: () => _addSongs(),
+              style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
+              icon: const Icon(Icons.playlist_add),
+              label: Text(context.tr('Add songs'))),
       ]),
       const SizedBox(height: 16),
       TextField(
@@ -1174,7 +1219,7 @@ class _AddAlbumState extends ConsumerState<_AddAlbumDialog> {
     return PopScope(
         canPop: true,
         child: AlertDialog(
-          title: Text(context.tr('Add music')),
+          title: Text(context.tr('Add album')),
           content: SizedBox(
               width: double.maxFinite,
               child: _loading

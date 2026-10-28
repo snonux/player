@@ -329,6 +329,8 @@ const _german = <String, String>{
   "Containing playlists…": "Enthaltene Wiedergabelisten…",
   "Containing playlists": "Enthaltene Wiedergabelisten",
   "Add music": "Musik hinzufügen",
+  "Add album": "Album hinzufügen",
+  "Details": "Details",
   "Remove from playlist": "Aus Wiedergabeliste entfernen",
   "Shared with server": "Mit dem Server geteilt",
   "Read only": "Nur lesen",

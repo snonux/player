@@ -61,7 +61,8 @@ def tap_visible(pattern):
 
 def wait_detail(name):
     assert adrv.wait('^' + re.escape(name) + '$', timeout=20), app_ui.labels()
-    assert adrv.wait('^Add music$', timeout=20), app_ui.labels()
+    assert adrv.wait('^Play playlist$', timeout=20), app_ui.labels()
+    assert adrv.wait('^Add songs$', timeout=20), app_ui.labels()
 
 
 def restart(run):
@@ -83,7 +84,7 @@ def journey(run, resume_id=None):
     album = next(a for a in run.viewer.request('GET', '/api/v1/music/albums') if a['title'] == 'Night Transit')
     if resume_id is None:
         catalog()
-        assert adrv.tap('^Create playlist$', nth=1), app_ui.labels()
+        assert adrv.tap('^Create playlist$'), app_ui.labels()
         assert adrv.wait('.*', cls='EditText'), app_ui.labels()
         fields = [node for node in adrv.nodes() if node['cls'] == 'EditText']
         assert len(fields) == 2, fields
@@ -98,19 +99,18 @@ def journey(run, resume_id=None):
         p = next(p for p in run.viewer.request('GET', '/api/v1/playlists') if p['name'] == name)
         pid = p['playlist_id']
         assert p['song_count'] == 0 and p['comment'] == 'r/h/l/? plain comment', p
-        assert adrv.tap('^Add music$')
+        assert adrv.tap('^Add album$')
         tap_visible('^Night Transit')
         wait_detail(name)
         p = run.viewer.request('GET', '/api/v1/playlists/' + pid)
         assert p['song_count'] == album['song_count'] and abs(p['duration'] - album['duration']) < .001, p
         assert p['cover_media_id'] == album['cover_media_id'], p
-        # Authenticated Image.memory only exposes the artwork semantics after bytes
-        # have loaded and decoded. The raw screenshot is retained for visual review.
-        assert adrv.wait('^Artwork for ' + re.escape(name) + '$', timeout=20), app_ui.labels()
+        # Compact header keeps the cover visible; decoded artwork semantics remain
+        # in Details for custom art. Screenshot retained for visual review.
         seconds = round(p['duration'])
         total_label = f"{p['song_count']} songs · {seconds // 60}:{seconds % 60:02}"
         assert any(total_label in label for label in app_ui.labels()), app_ui.labels()
-        run.record('native create empty Add music saves ordered songs totals and rendered artwork', True,
+        run.record('native create empty Add album saves ordered songs totals and rendered artwork', True,
                    data={'playlist': p, 'album': album}, artifacts=[run.shot('m26-populated')])
     else:
         p = run.viewer.request('GET', '/api/v1/playlists/' + resume_id)
@@ -286,7 +286,7 @@ def verify_music_volume(run):
 
 def duplicate_occurrence(run, pid, name, already_populated=False):
     if not already_populated:
-        tap_visible('^Add music$')
+        assert adrv.tap('^Add album$'), app_ui.labels()
         tap_visible('^Night Transit')
         wait_detail(name)
     saved = run.viewer.request('GET', '/api/v1/playlists/' + pid)

@@ -12,6 +12,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/music_playlists_screen.dart';
+import 'package:player_android/widgets/music_collection_actions.dart';
+
+Future<void> _openMore(WidgetTester t) async {
+  await t.tap(find.descendant(
+      of: find.byType(MusicCollectionActions),
+      matching: find.byTooltip('More options')));
+  await t.pumpAndSettle();
+}
+
+Future<void> _tapMore(WidgetTester t, String label) async {
+  await _openMore(t);
+  final target = find.text(label);
+  await t.scrollUntilVisible(target, 200,
+      scrollable: find
+          .descendant(
+              of: find.byKey(const Key('overflow_menu_sheet')),
+              matching: find.byType(Scrollable))
+          .first);
+  await t.tap(target);
+  await t.pumpAndSettle();
+}
 
 class _Client extends PlayerApiClient {
   _Client() : super(dio: Dio()) {
@@ -195,7 +216,9 @@ void main() {
     final api = _Client()..fail = true;
     await mount(t, api);
     expect(find.textContaining('No playlists yet.'), findsOneWidget);
-    await t.tap(find.byTooltip('Create playlist'));
+    await t.tap(find.byTooltip('More options'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Create playlist'));
     await t.pumpAndSettle();
     await t.enterText(find.byType(TextFormField).first, ' ');
     await t.tap(find.widgetWithText(FilledButton, 'Create playlist').last);
@@ -228,8 +251,7 @@ void main() {
             .onPressed,
         isNull);
     api.fail = true;
-    await t.tap(find.text('Add music'));
-    await t.pumpAndSettle();
+    await _tapMore(t, 'Add album');
     expect(find.textContaining('Could not load albums.'), findsOneWidget);
     api.fail = false;
     await t.tap(find.text('Retry'));
@@ -238,26 +260,28 @@ void main() {
     await t.tap(find.text('Night Transit'));
     await t.pumpAndSettle();
     expect(api.adds, 1);
-    await t.tap(find.text('Delete playlist'));
-    await t.pumpAndSettle();
+    await _tapMore(t, 'Delete playlist');
     expect(find.textContaining('Music files stay available'), findsOneWidget);
     await t.tap(find.text('Cancel'));
     await t.pumpAndSettle();
     expect(api.deletes, 0);
+    await t.tap(find.text('Details'));
+    await t.pumpAndSettle();
     expect(find.text('Saved comment'), findsOneWidget);
   });
   testWidgets('edit preserves membership metadata and saves name/comment',
       (t) async {
     final api = _Client();
     await mount(t, api, id: 'pl_a');
-    await t.tap(find.text('Edit playlist'));
-    await t.pumpAndSettle();
+    await _tapMore(t, 'Edit playlist');
     await t.enterText(find.byType(TextFormField).first, 'Renamed 東京');
     await t.enterText(find.byType(TextFormField).last, 'New comment');
     await t.tap(find.text('Save changes'));
     await t.pumpAndSettle();
     expect(api.name, 'Renamed 東京');
     expect(api.comment, 'New comment');
+    await t.tap(find.text('Details'));
+    await t.pumpAndSettle();
     expect(find.text('New comment'), findsOneWidget);
   });
   testWidgets('follow status keeps membership read only until confirmed detach',
@@ -274,28 +298,31 @@ void main() {
         {'entry_id': 'first', 'media_id': 1}
       ];
     await mount(t, api, id: 'pl_a');
+    await t.tap(find.text('Details'));
+    await t.pumpAndSettle();
     expect(find.text('Source unavailable. Last imported songs retained.'),
         findsOneWidget);
-    expect(find.text('Sync now'), findsOneWidget);
-    await t.ensureVisible(find.text('Sync now'));
-    await t.tap(find.text('Sync now'));
-    await t.pumpAndSettle();
+    await _tapMore(t, 'Sync now');
     expect(api.sourceSyncs, 1);
-    expect(find.text('Add music'), findsNothing);
-    expect(find.byTooltip('Song actions for First Light'), findsNothing);
-    await t.ensureVisible(find.text('Stop following…'));
-    await t.tap(find.text('Stop following…'));
+    expect(find.text('Add songs'), findsNothing);
+    await _openMore(t);
+    expect(find.text('Add album'), findsNothing);
+    await t.binding.handlePopRoute();
     await t.pumpAndSettle();
+    expect(find.byTooltip('Song actions for First Light'), findsNothing);
+    await _tapMore(t, 'Stop following…');
     await t.tap(find.text('Cancel'));
     await t.pumpAndSettle();
     expect(api.sourceBinding, isNotNull);
-    await t.tap(find.text('Stop following…'));
-    await t.pumpAndSettle();
+    await _tapMore(t, 'Stop following…');
     await t.tap(find.text('Stop following'));
     await t.pumpAndSettle();
     expect(api.sourceBinding, isNull);
     expect(api.members.length, 1);
-    expect(find.text('Add music'), findsOneWidget);
+    await _openMore(t);
+    expect(find.text('Add album'), findsOneWidget);
+    await t.binding.handlePopRoute();
+    await t.pumpAndSettle();
     expect(find.byTooltip('Song actions for First Light'), findsOneWidget);
   });
   testWidgets('admin can detach another owner source but cannot sync it',
@@ -310,6 +337,7 @@ void main() {
       };
     await mount(t, api,
         id: 'pl_a', user: const User(id: 2, username: 'admin', isAdmin: true));
+    await _openMore(t);
     expect(find.text('Sync now'), findsNothing);
     expect(find.text('Stop following…'), findsOneWidget);
     expect(find.text('Edit playlist'), findsOneWidget);
@@ -416,10 +444,7 @@ void main() {
         .instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null));
     await mount(t, api, id: 'pl_a');
-    await t.tap(find.byTooltip('Playlist actions'));
-    await t.pumpAndSettle();
-    await t.tap(find.text('Export M3U8…'));
-    await t.pumpAndSettle();
+    await _tapMore(t, 'Export M3U8…');
     expect(find.textContaining('playlist-pl_a.m3u8'), findsOneWidget);
     api.fail = true;
     await t.tap(find.text('Save M3U8'));
@@ -454,10 +479,7 @@ void main() {
         .instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null));
     await mount(t, api, id: 'pl_a');
-    await t.tap(find.byTooltip('Playlist actions'));
-    await t.pumpAndSettle();
-    await t.tap(find.text('Export M3U8…'));
-    await t.pumpAndSettle();
+    await _tapMore(t, 'Export M3U8…');
     await t.tap(find.text('Save M3U8'));
     await t.pump();
     await t.tap(find.text('Cancel'));
@@ -481,15 +503,11 @@ void main() {
         'limit': 10
       };
     await mount(t, api, id: 'pl_a');
+    expect(find.text('Add songs'), findsNothing);
+    await _openMore(t);
     expect(find.text('Rules'), findsOneWidget);
     expect(find.text('Refresh results'), findsOneWidget);
-    expect(find.text('Add music'), findsNothing);
-    expect(find.text('Add songs'), findsNothing);
-    await t.scrollUntilVisible(find.text('No songs match these rules.'), 200,
-        scrollable: find.byType(Scrollable).first);
-    expect(find.text('No songs match these rules.'), findsOneWidget);
-    await t.scrollUntilVisible(find.text('Rules'), -200,
-        scrollable: find.byType(Scrollable).first);
+    expect(find.text('Add album'), findsNothing);
     await t.tap(find.text('Rules'));
     await t.pumpAndSettle();
     expect(find.text('Smart playlist rules'), findsOneWidget);
@@ -498,6 +516,8 @@ void main() {
     expect(find.textContaining('Genre contains Synth'), findsOneWidget);
     await t.tap(find.byTooltip('Back'));
     await t.pumpAndSettle();
+    expect(find.text('No songs match these rules.'), findsOneWidget);
+    await _openMore(t);
     expect(find.text('Refresh results'), findsOneWidget);
   });
 }

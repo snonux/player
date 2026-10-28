@@ -379,7 +379,7 @@ python3 -u test/e2e-live/music_playlists_e2e.py /path/to/fresh/fixture \
   --emulator-wav /path/to/emulator-output.wav
 ```
 
-It uses actual native create/edit/comment/Add music/delete controls, checks
+It uses actual native create/edit/comment/Add album/delete controls, checks
 saved membership/count/duration and rendered cover, force-stops and relaunches
 the client, switches to the other account and back, captures original source
 audio and exercises actual offline form failure after stopping the owned
