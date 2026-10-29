@@ -33,6 +33,17 @@ type mediaService struct {
 	MediaBookmarkService
 }
 
+// BrowseSetSorted exposes sorted browsing through the public service facade.
+// Embedding MediaBrowseService alone would hide this optional capability.
+func (s *mediaService) BrowseSetSorted(ctx context.Context, setID, userID int64, parent, order string) (*BrowseResult, error) {
+	if sorted, ok := s.MediaBrowseService.(interface {
+		BrowseSetSorted(context.Context, int64, int64, string, string) (*BrowseResult, error)
+	}); ok {
+		return sorted.BrowseSetSorted(ctx, setID, userID, parent, order)
+	}
+	return s.MediaBrowseService.BrowseSet(ctx, setID, userID, parent)
+}
+
 // WithLyricsProvider configures optional, explicit lyric lookup before serving.
 func (s *mediaService) WithLyricsProvider(provider *ProviderLyrics) *mediaService {
 	if bs, ok := s.MediaBrowseService.(*browseService); ok {

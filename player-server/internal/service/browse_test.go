@@ -291,32 +291,51 @@ func TestBuildFoldersIn_DeterministicMediaOrder(t *testing.T) {
 }
 
 func TestBrowseSetSortedRetainsFoldersAndFlattenedOrder(t *testing.T) {
-	ctx := context.Background()
-	calls := 0
-	store := &repository.MockStore{
-		MediaRepo: repository.MockMediaRepo{ListMediaFunc: func(_ context.Context, f repository.MediaFilter) ([]model.Media, error) {
-			calls++
-			if f.Sort != "size_desc" || f.UserID != 7 {
-				t.Fatalf("sort/user not forwarded: %+v", f)
+	for _, facade := range []bool{false, true} {
+		name := "browse service"
+		if facade {
+			name = "media service facade"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			calls := 0
+			store := &repository.MockStore{
+				MediaRepo: repository.MockMediaRepo{ListMediaFunc: func(_ context.Context, f repository.MediaFilter) ([]model.Media, error) {
+					calls++
+					if f.Sort != "size_desc" || f.UserID != 7 {
+						t.Fatalf("sort/user not forwarded: %+v", f)
+					}
+					// Flattened single-file directory must retain its repository rank.
+					return []model.Media{{ID: 3, FileName: "z.mp4", RelPath: "single/z.mp4"}, {ID: 1, FileName: "a.mp4", RelPath: "a.mp4"}, {ID: 2, FileName: "one.mp4", RelPath: "folder/one.mp4"}, {ID: 4, FileName: "two.mp4", RelPath: "folder/two.mp4"}}, nil
+				}},
+				SetRepo:  repository.MockSetRepo{GetSetByIDFunc: func(context.Context, int64) (*model.Set, error) { return &model.Set{ID: 1, RootPath: "sort"}, nil }},
+				UserRepo: repository.MockUserRepo{GetUserByIDFunc: func(context.Context, int64) (*model.User, error) { return &model.User{ID: 7, IsAdmin: true}, nil }},
 			}
-			// Flattened single-file directory must retain its repository rank.
-			return []model.Media{{ID: 3, FileName: "z.mp4", RelPath: "single/z.mp4"}, {ID: 1, FileName: "a.mp4", RelPath: "a.mp4"}, {ID: 2, FileName: "one.mp4", RelPath: "folder/one.mp4"}, {ID: 4, FileName: "two.mp4", RelPath: "folder/two.mp4"}}, nil
-		}},
-		SetRepo:  repository.MockSetRepo{GetSetByIDFunc: func(context.Context, int64) (*model.Set, error) { return &model.Set{ID: 1, RootPath: "sort"}, nil }},
-		UserRepo: repository.MockUserRepo{GetUserByIDFunc: func(context.Context, int64) (*model.User, error) { return &model.User{ID: 7, IsAdmin: true}, nil }},
-	}
-	svc := NewBrowseService(store, clock.RealClock{}, t.TempDir(), &accessHelper{store: store}, nil)
-	got, err := svc.BrowseSetSorted(ctx, 1, 7, "", "size_desc")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if calls != 1 {
-		t.Fatalf("made %d media queries; want 1", calls)
-	}
-	if len(got.Folders) != 1 || got.Folders[0].Name != "folder" {
-		t.Fatalf("folders = %+v", got.Folders)
-	}
-	if len(got.Media) != 2 || got.Media[0].ID != 3 || got.Media[1].ID != 1 {
-		t.Fatalf("media = %+v", got.Media)
+			var browse MediaBrowseService
+			if facade {
+				browse = NewMediaService(store, clock.RealClock{}, t.TempDir(), nil, nil)
+			} else {
+				browse = NewBrowseService(store, clock.RealClock{}, t.TempDir(), &accessHelper{store: store}, nil)
+			}
+			svc, ok := browse.(interface {
+				BrowseSetSorted(context.Context, int64, int64, string, string) (*BrowseResult, error)
+			})
+			if !ok {
+				t.Fatal("sorted browse capability is hidden by the service facade")
+			}
+			got, err := svc.BrowseSetSorted(ctx, 1, 7, "", "size_desc")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls != 1 {
+				t.Fatalf("made %d media queries; want 1", calls)
+			}
+			if len(got.Folders) != 1 || got.Folders[0].Name != "folder" {
+				t.Fatalf("folders = %+v", got.Folders)
+			}
+			if len(got.Media) != 2 || got.Media[0].ID != 3 || got.Media[1].ID != 1 {
+				t.Fatalf("media = %+v", got.Media)
+			}
+		})
 	}
 }
