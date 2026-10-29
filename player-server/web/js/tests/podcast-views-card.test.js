@@ -27,7 +27,8 @@ const base = {
   assert(html.includes('card-action-extra') && html.includes('data-action="complete"'),
     'completion is in More extras');
   assert(!html.includes('data-action="play-beginning"'), 'restart only when downloaded');
-  assert(!html.includes('data-action="delete-download"'), 'delete only when downloaded');
+  assert(!html.includes('data-action="delete-download"'), 'download removal only when downloaded');
+  assert(html.includes('data-action="delete-episode"') && html.includes('aria-label="Delete episode"'), 'episode deletion remains available without a download');
   assert(html.includes('<details class="episode-description">'), 'description is expandable');
   assert(html.includes('<summary>Show notes</summary>'), 'description starts collapsed behind summary');
   assert(html.includes('Not downloaded'), 'status shows download state');
@@ -51,6 +52,8 @@ const base = {
   assert(html.includes('Mark uncompleted') && html.includes('card-action-extra'),
     'completion toggle lives in More');
   assert(html.includes('Downloaded on server'), 'status shows server copy');
+  assert(html.includes('Listened'), 'completion status remains understandable without relying on grey color');
+  assert(html.includes('aria-label="Delete downloaded file"') && html.includes('aria-label="Delete episode"'), 'episode deletion is separate from server download removal');
 }
 
 {

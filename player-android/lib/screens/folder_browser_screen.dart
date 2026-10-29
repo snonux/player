@@ -1,3 +1,4 @@
+import '../widgets/set_sort_button.dart';
 import '../widgets/podcast_artwork.dart';
 import '../widgets/podcast_publication_date.dart';
 import '../widgets/music_mini_player.dart';
@@ -146,6 +147,22 @@ class FolderBrowserScreen extends ConsumerStatefulWidget {
 }
 
 class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
+  String _sort = 'name_asc';
+  Future<void> _changeSort(String value) async {
+    setState(() {
+      _sort = value;
+    });
+    _load();
+    try {
+      await saveSetSort(ref, widget.setId, value);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not save sort preference')));
+      }
+    }
+  }
+
   // Nullable: null means "not yet loaded" (loading indicator is shown).
   _BrowseResult? _result;
 
@@ -164,7 +181,14 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     super.initState();
     // Defer the first load until after the first frame so [ref] is fully
     // bound and any test-environment provider overrides are applied.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final saved = await readSetSort(ref, widget.setId);
+      if (!mounted) return;
+      setState(() {
+        _sort = saved;
+      });
+      _load();
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -188,9 +212,10 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
 
     try {
       final client = ref.read(apiClientProvider);
-      final raw = await client.browseSet(
+      final raw = await client.browseSetSorted(
         widget.setId,
         parent: widget.path,
+        sort: _sort,
       );
 
       if (!mounted || generation != _loadGeneration) return;
@@ -306,6 +331,18 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final sortKey = setSortKey(ref, widget.setId);
+    if (sortKey != null) {
+      ref.listen<String?>(setSortValueProvider(sortKey), (previous, next) {
+        if (next != null && next != _sort) {
+          setState(() {
+            _sort = next;
+          });
+          _load();
+        }
+      });
+    }
+
     return Scaffold(
       bottomNavigationBar: const MusicMiniPlayer(),
       appBar: _buildAppBar(),
@@ -317,6 +354,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
   AppBar _buildAppBar() {
     return AppBar(
       actions: [
+        SetSortButton(value: _sort, onChanged: _changeSort),
         const MusicQueueButton(),
         OverflowMenuButton(items: (_) => const [PreviewSizeMenuItems()]),
       ],

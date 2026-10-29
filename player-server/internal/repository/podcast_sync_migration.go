@@ -49,6 +49,8 @@ CREATE TABLE podcast_episode_state (
     completed INTEGER NOT NULL DEFAULT 0,
     completion_source TEXT NOT NULL DEFAULT '',
     completion_ms INTEGER NOT NULL DEFAULT 0,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    deletion_ms INTEGER NOT NULL DEFAULT 0,
     enclosure_url TEXT NOT NULL DEFAULT '',
     change_seq INTEGER NOT NULL,
     PRIMARY KEY (user_id, feed_key, episode_key));

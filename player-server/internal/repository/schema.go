@@ -367,8 +367,14 @@ func initializeSchema(db *sql.DB) error {
 	}
 	// Before the indexes: the episode rebuild drops the old table's
 	// indexes, which indexesSchema recreates on the new one.
+	if err := migratePodcastEpisodeDeletion(db); err != nil {
+		return fmt.Errorf("prepare podcast deletion: %w", err)
+	}
 	if err := migratePodcastSync(db); err != nil {
 		return fmt.Errorf("migrate podcast sync: %w", err)
+	}
+	if err := migratePodcastEpisodeDeletion(db); err != nil {
+		return fmt.Errorf("migrate podcast deletion: %w", err)
 	}
 	if err := migratePodcastEpisodeArtwork(db); err != nil {
 		return fmt.Errorf("migrate podcast artwork: %w", err)

@@ -51,6 +51,188 @@ void main() {
     await temp.delete(recursive: true);
   });
   test(
+      'rejected deletion keeps its exact edit for a bounded later retry and acknowledgement',
+      () async {
+    await store.saveEpisode(scope, feed, episode,
+        deleted: true, observedMs: 100);
+    final id = PodcastSyncStore.editIds(await store.payload(scope)).single;
+    var reject = true;
+    var calls = 0;
+    final account = PodcastSyncAccount(
+        scope: scope,
+        current: () => true,
+        supported: () async => true,
+        send: (request) async {
+          calls++;
+          expect(PodcastSyncStore.editIds(request), {id});
+          return {
+            ...reply(acked: reject ? [] : [id]),
+            if (reject)
+              'rejected': [
+                {'edit_id': id, 'reason': 'quota'}
+              ]
+          };
+        });
+    final failed = await PodcastSync(store).sync(account);
+    expect(failed.full, false);
+    expect(failed.errorKind, 'rejected');
+    expect(calls, 1);
+    await repository.close();
+    expect(await store.pending(scope), {id});
+    expect(
+        (await (await repository.database).query('podcast_episode_state'))
+            .single['deleted'],
+        1);
+    expect(
+        (await (await repository.database).query('podcast_sync_rejections'))
+            .single['reason'],
+        'quota');
+    reject = false;
+    expect((await PodcastSync(store).sync(account)).full, true);
+    expect(calls, 2);
+    expect(await store.pending(scope), isEmpty);
+  });
+
+  test(
+      'deletion wins positive clock ties on pulls and alias collisions; newer false restores',
+      () async {
+    Future<bool> pull(bool deleted, int clock) => store.apply(
+        scope,
+        reply(episodes: [
+          {
+            'feed_key': feed,
+            'episode_key': episode,
+            'deletion': {'deleted': deleted, 'observed_ms': clock},
+          }
+        ]),
+        () => true);
+    Future<Object?> deleted() async =>
+        (await (await repository.database).query('podcast_episode_state',
+                where: 'episode_key=?', whereArgs: [episode]))
+            .single['deleted'];
+    await pull(false, 100);
+    await pull(true, 100);
+    expect(await deleted(), 1);
+    await pull(false, 100);
+    expect(await deleted(), 1);
+    await pull(false, 101);
+    expect(await deleted(), 0);
+    await store.saveEpisode(scope, feed, 'guid:alias',
+        deleted: true, observedMs: 101);
+    await store.apply(
+        scope,
+        reply(aliases: [
+          {
+            'kind': 'episode',
+            'feed_key': feed,
+            'from': 'guid:alias',
+            'to': episode,
+          }
+        ]),
+        () => true);
+    expect(await deleted(), 1);
+  });
+
+  test(
+      'deletion persists independently, ignores stale pulls and recovers across epochs',
+      () async {
+    await store.saveEpisode(scope, feed, episode,
+        seconds: 42, completed: true, observedMs: 10);
+    await store.saveEpisode(scope, feed, episode,
+        deleted: true, observedMs: 100);
+    final payload = await store.payload(scope);
+    final deletionId = ((payload['episodes'] as List).single['deletion']
+        as Map)['edit_id'] as String;
+    await repository.close();
+    expect((await store.payload(scope))['episodes'], payload['episodes']);
+    await store.apply(
+        scope,
+        reply(episodes: [
+          {
+            'feed_key': feed,
+            'episode_key': episode,
+            'deletion': {'deleted': false, 'observed_ms': 50},
+            'position': {'seconds': 9, 'observed_ms': 200},
+          }
+        ]),
+        () => true);
+    var row = (await (await repository.database).query('podcast_episode_state'))
+        .single;
+    expect(row['deleted'], 1);
+    expect(row['position_seconds'], 42);
+    await store.apply(
+        scope,
+        reply(acked: PodcastSyncStore.editIds(payload).toList(), episodes: [
+          {
+            'feed_key': feed,
+            'episode_key': episode,
+            'deletion': {'deleted': true, 'observed_ms': 90},
+          }
+        ]),
+        () => true);
+    row = (await (await repository.database).query('podcast_episode_state'))
+        .single;
+    expect(row['deletion_ms'], 90);
+    expect(row['deletion_pending_edit_id'], isNull);
+    expect(await store.pending(scope), isNot(contains(deletionId)));
+    await store.apply(scope, reply(epoch: 'restored', cursor: 0), () => true);
+    final recovered = (await store.payload(scope))['episodes'] as List;
+    expect(recovered.single['deletion']['deleted'], true);
+    expect(recovered.single['deletion']['observed_ms'], 90);
+  });
+
+  test(
+      'older servers hold deletion without a resend loop and later send it when supported',
+      () async {
+    await store.saveEpisode(scope, feed, episode,
+        deleted: true, observedMs: 100);
+    var calls = 0;
+    var supported = false;
+    final account = PodcastSyncAccount(
+        scope: scope,
+        current: () => true,
+        supported: () async => true,
+        supportsDeletion: () async => supported,
+        send: (request) async {
+          calls++;
+          if (!supported) expect(request['episodes'], isEmpty);
+          return reply(acked: PodcastSyncStore.editIds(request).toList());
+        });
+    expect((await PodcastSync(store).sync(account)).full, true);
+    expect(calls, 1);
+    expect(await store.pending(scope), hasLength(1));
+    supported = true;
+    expect((await PodcastSync(store).sync(account)).full, true);
+    expect(await store.pending(scope), isEmpty);
+  });
+
+  test('deletion follows episode aliases without changing other registers',
+      () async {
+    await store.saveEpisode(scope, feed, episode,
+        deleted: true, observedMs: 100);
+    await store.saveEpisode(scope, feed, 'guid:canonical',
+        seconds: 77, observedMs: 200);
+    await store.apply(
+        scope,
+        reply(aliases: [
+          {
+            'kind': 'episode',
+            'feed_key': feed,
+            'from': episode,
+            'to': 'guid:canonical',
+          }
+        ]),
+        () => true);
+    final row =
+        (await (await repository.database).query('podcast_episode_state'))
+            .single;
+    expect(row['episode_key'], 'guid:canonical');
+    expect(row['deleted'], 1);
+    expect(row['position_seconds'], 77);
+    expect((await store.payload(scope))['episodes'], hasLength(1));
+  });
+
+  test(
       'atomic end uses one clock newer than both independently edited registers',
       () async {
     await store.saveEpisode(scope, feed, episode,

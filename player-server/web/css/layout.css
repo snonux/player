@@ -1193,3 +1193,9 @@ body {
 .episode-description > summary { min-height: 44px; display: inline-flex; align-items: center; cursor: pointer; }
 .episode-description > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .episode-description a { color: var(--accent); text-underline-offset: 0.15em; }
+
+/* Listened podcasts stay readable and playable in the combined newest list. */
+.episode-card.listened .title { color: var(--text-secondary); }
+.episode-card.listened .badge { color: var(--text-secondary); }
+/* Podcast actions must remain reachable on touch and keyboard without hover. */
+.episode-card .card-actions { display: flex; }

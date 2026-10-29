@@ -1,3 +1,4 @@
+import 'package:player_android/services/podcast_server_metadata.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,7 +11,19 @@ import 'package:player_android/services/podcast_downloads.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 
 class BrowsingRepository extends PodcastRepository {
-  bool completed = false, failSave = false;
+  bool completed = false, failSave = false, deleted = false;
+  List<String> missingFeeds = [];
+  final refreshed = <String>[];
+  final failedFeeds = <String>{};
+  @override
+  Future<List<String>> uncachedSubscriptions(String scope) async =>
+      missingFeeds;
+  @override
+  Future<void> refreshSubscription(String scope, String key) async {
+    refreshed.add(key);
+    if (failedFeeds.contains(key)) throw StateError('offline');
+  }
+
   final queries = <(String?, String, int)>[];
   int count = 1;
   Map<String, Object?> metadata = {};
@@ -31,6 +44,7 @@ class BrowsingRepository extends PodcastRepository {
       int limit = 40}) async {
     if (scope != 'local' && gate != null) await gate!.future;
     queries.add((feed, filter, offset));
+    if (deleted) return [];
     if (filter == 'completed' && !completed ||
         filter == 'uncompleted' && completed) {
       return [];
@@ -62,6 +76,7 @@ class BrowsingStore extends PodcastSyncStore {
   Future<void> saveEpisode(String scope, String feed, String episode,
       {double? seconds,
       bool? completed,
+      bool? deleted,
       String source = 'manual',
       String enclosureUrl = '',
       int? observedMs}) async {
@@ -72,7 +87,8 @@ class BrowsingStore extends PodcastSyncStore {
       'seconds': seconds,
       'source': source
     });
-    fake.completed = completed!;
+    if (completed != null) fake.completed = completed;
+    if (deleted != null) fake.deleted = deleted;
   }
 }
 
@@ -80,13 +96,19 @@ class BrowsingDownloads extends PodcastDownloads {
   BrowsingDownloads(PodcastRepository repository)
       : super(repository, PlaybackSessionCoordinator());
   @override
+  Future<void> removeEpisodeCopy(String feed, String episode,
+      {bool Function()? current}) async {}
+  @override
   Future<Map<String, Object?>?> copy(String feed, String episode) async => null;
 }
 
 Widget browsingApp(Widget screen, BrowsingRepository repository,
-        {BrowsingStore? store, Future<String> Function(Ref)? scope}) =>
+        {BrowsingStore? store,
+        Future<String> Function(Ref)? scope,
+        PodcastServerMetadata? serverMetadata}) =>
     ProviderScope(overrides: [
       podcastRepositoryProvider.overrideWithValue(repository),
+      podcastServerMetadataProvider.overrideWithValue(serverMetadata),
       podcastScopeProvider
           .overrideWith((ref) => scope?.call(ref) ?? Future.value('local')),
       podcastSyncStoreProvider

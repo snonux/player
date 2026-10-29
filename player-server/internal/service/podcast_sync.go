@@ -16,7 +16,7 @@ import (
 // Limits of POST /api/v1/podcasts/sync (docs/podcast-sync-contract.md §6.2).
 const (
 	// MaxPodcastSyncEdits bounds the register edits of one request; a
-	// subscription item is one edit, an episode item one or two.
+	// subscription item is one edit, an episode item up to three.
 	MaxPodcastSyncEdits = 500
 	// MaxPodcastSyncLimit is the largest page a client may ask for.
 	MaxPodcastSyncLimit = 1000

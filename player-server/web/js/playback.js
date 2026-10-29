@@ -1252,6 +1252,13 @@ export function toggleMinimize() {
   updateMinimizedTitle();
 }
 
+// An explicit Play returns to the in-window controls after browsing away.
+// Background advancement keeps the listener's minimized layout.
+export function restorePlayer() {
+  const player = els().player;
+  if (player?.classList.contains('open')) player.classList.remove('minimized');
+}
+
 function minimizePlayer() {
   resetSeekPreview();
   const e = els();

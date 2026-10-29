@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -115,7 +116,14 @@ func (s *Server) handleBrowseSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parent := r.URL.Query().Get("parent")
-	result, err := s.media.Browse.BrowseSet(r.Context(), setID, userIDFromContext(r), parent)
+	var result *service.BrowseResult
+	if sorted, ok := s.media.Browse.(interface {
+		BrowseSetSorted(context.Context, int64, int64, string, string) (*service.BrowseResult, error)
+	}); ok {
+		result, err = sorted.BrowseSetSorted(r.Context(), setID, userIDFromContext(r), parent, r.URL.Query().Get("sort"))
+	} else {
+		result, err = s.media.Browse.BrowseSet(r.Context(), setID, userIDFromContext(r), parent)
+	}
 	if err != nil {
 		if errors.Is(err, service.ErrForbidden) {
 			forbidden(w, "forbidden")

@@ -191,6 +191,19 @@ class DioPlayerApiClient extends PlayerApiClient
     return response.data ?? {};
   }
 
+  @override
+  Future<Map<String, dynamic>> browseSetSorted(int setId,
+      {String? parent, String? sort}) async {
+    final response = await rawDio.get<Map<String, dynamic>>(
+      '$_kApiV1/sets/$setId/browse',
+      queryParameters: {
+        if (parent != null) 'parent': parent,
+        if (sort != null) 'sort': sort
+      },
+    );
+    return response.data ?? {};
+  }
+
   // ---------------------------------------------------------------------------
   // Media
   // ---------------------------------------------------------------------------
@@ -968,6 +981,25 @@ class DioPlayerApiClient extends PlayerApiClient
     return (response.data ?? [])
         .cast<Map<String, dynamic>>()
         .map(PodcastFeed.fromJson)
+        .toList();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> listSubscribedPodcastEpisodes(
+      String feedKey,
+      {int offset = 0,
+      int limit = 200}) async {
+    final response = await rawDio.get<List<dynamic>>(
+        '$_kApiV1/podcasts/episodes',
+        options: _personalOptions,
+        queryParameters: {
+          'feed_key': feedKey,
+          'filter': 'all',
+          'offset': offset,
+          'limit': limit
+        });
+    return (response.data ?? [])
+        .map((row) => Map<String, dynamic>.from(row as Map))
         .toList();
   }
 

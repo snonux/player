@@ -1,6 +1,16 @@
 // Stable episode registers shared by cards and authenticated playback. Failed
-// edits live in memory for this account; reloading requires the server again.
+// position/completion edits live in memory; deletion registers and replay edits
+// persist for this account and server origin across reloads.
 import { API } from './api.js';
+import { readPodcastDeletions, writePodcastDeletions, podcastDeletionStorageKey, podcastDeletionAcknowledged } from './podcast-deletion-store.js';
+const REGISTERS = ['position', 'completion', 'deletion'];
+function wins(name, incoming, current) {
+  if (!incoming) return false;
+  const clock = incoming.observed_ms || 0, old = current?.observed_ms || 0;
+  if (clock !== old) return clock > old;
+  return name !== 'deletion' || clock <= 0 || !current?.deleted || incoming.deleted;
+}
+const persistDeletions = (acceptedIds = []) => writePodcastDeletions(account, rows, acceptedIds);
 import { randomEditId, resetPodcastSubscriptions } from './podcast-subscriptions.js';
 
 const rows = new Map();
@@ -20,6 +30,14 @@ export function setPodcastAccount(id) {
   epochRecovery = null;
   resetPodcastSubscriptions();
   lastSuccess = lastError = lastFailure = null;
+  if (account) {
+    try {
+      for (const saved of readPodcastDeletions(account)) {
+        const row = rowFor(saved);
+        if (saved.pending) row.pending.deletion = { ...saved.pending };
+      }
+    } catch (error) { lastError = error.message; lastFailure = error; }
+  }
   accountChannel?.postMessage({ account });
   globalThis.document?.dispatchEvent(new Event('podcast:account-changed'));
   changed();
@@ -37,7 +55,7 @@ export function applyPodcastPull(response, lease = generation, { epochChanged = 
   let updated = false;
   if (epochChanged && epochRecovery?.epoch !== response.epoch) {
     epochRecovery = { epoch: response.epoch, known: [...new Set(rows.values())].map(row => ({ row,
-      position: row.position && { ...row.position }, completion: row.completion && { ...row.completion } })), pulled: new Map() };
+      position: row.position && { ...row.position }, completion: row.completion && { ...row.completion }, deletion: row.deletion && { ...row.deletion } })), pulled: new Map() };
   }
   for (const mapping of [...(response.resolved || []), ...(response.aliases || [])]) {
     for (const row of [...new Set(rows.values())]) {
@@ -47,9 +65,9 @@ export function applyPodcastPull(response, lease = generation, { epochChanged = 
       updated = true;
       const target = rows.get(keyOf(row));
       if (target && target !== row) {
-        for (const name of ['position', 'completion']) {
+        for (const name of REGISTERS) {
           const hadPending = row.pending[name] || target.pending[name];
-          if ((target[name]?.observed_ms || 0) >= (row[name]?.observed_ms || 0)) {
+          if (wins(name, target[name], row[name])) {
             row[name] = target[name];
             if (target.pending[name]) row.pending[name] = target.pending[name]; else delete row.pending[name];
           }
@@ -64,12 +82,12 @@ export function applyPodcastPull(response, lease = generation, { epochChanged = 
   }
   for (const episode of response.episodes || []) {
     const before = rows.get(keyOf(episode));
-    const encoded = JSON.stringify([before?.position, before?.completion]);
+    const encoded = JSON.stringify([before?.position, before?.completion, before?.deletion]);
     const after = rowFor(episode);
-    if (encoded !== JSON.stringify([after.position, after.completion])) updated = true;
+    if (encoded !== JSON.stringify([after.position, after.completion, after.deletion])) updated = true;
   }
   if (epochRecovery) for (const episode of response.episodes || []) epochRecovery.pulled.set(keyOf(episode), episode);
-  if (updated) changed();
+  if (updated) { persistDeletions(); changed(); }
   return true;
 }
 
@@ -83,24 +101,27 @@ export function finishPodcastPull(lease = generation) {
     const row = original.row;
     if (!live.has(row)) continue;
     const remote = epochRecovery.pulled.get(keyOf(row));
-    for (const name of ['position', 'completion']) {
+    for (const name of REGISTERS) {
       if (original[name] && !row.pending[name] &&
-          (remote?.[name]?.observed_ms || 0) < original[name].observed_ms) {
+          ((remote?.[name]?.observed_ms || 0) < original[name].observed_ms ||
+           (name === 'deletion' && original[name].deleted && remote?.deletion?.deleted === false &&
+             remote.deletion.observed_ms === original[name].observed_ms))) {
         row.pending[name] = { ...row[name], edit_id: randomEditId() };
       }
     }
   }
   epochRecovery = null;
+  persistDeletions();
   changed();
 }
 
 function rowFor(ep) {
   const key = keyOf(ep);
-  if (!rows.has(key)) rows.set(key, { feed_key: ep.feed_key, episode_key: ep.episode_key, pending: {}, position: null, completion: null });
+  if (!rows.has(key)) rows.set(key, { feed_key: ep.feed_key, episode_key: ep.episode_key, pending: {}, position: null, completion: null, deletion: null });
   const row = rows.get(key);
-  for (const name of ['position', 'completion']) {
+  for (const name of REGISTERS) {
     const value = ep[name];
-    if (value && !row.pending[name] && value.observed_ms >= (row[name]?.observed_ms || 0)) row[name] = { ...value };
+    if (value && !row.pending[name] && wins(name, value, row[name])) row[name] = { ...value };
   }
   // Listing positions have no clocks. Use only before a register is known.
   if (!row.position && ep.position_seconds > 0) row.position = { seconds: ep.position_seconds, observed_ms: 0 };
@@ -110,7 +131,7 @@ function rowFor(ep) {
 export function episodeSnapshot(ep) {
   const row = rowFor(ep);
   return { feed_key: row.feed_key, episode_key: row.episode_key,
-    position: row.position && { ...row.position }, completion: row.completion && { ...row.completion } };
+    position: row.position && { ...row.position }, completion: row.completion && { ...row.completion }, deletion: row.deletion && { ...row.deletion } };
 }
 
 function pendingItem(row) {
@@ -160,27 +181,38 @@ async function sendEpisode(ep) {
   const owner = generation, row = rowFor(ep), sent = { ...row.pending };
   const scope = { feed_key: row.feed_key, episode_key: row.episode_key };
   try {
+    let capabilityProblem = null;
+    if (sent.deletion) {
+      const config = await API.syncConfig();
+      if (owner !== generation) return null;
+      if (config.user_id !== account) throw new Error('Account changed');
+      if (config.podcast_episode_deletion !== true) {
+        delete sent.deletion;
+        capabilityProblem = new Error('Update this server to sync episode deletions. Your deletion is saved on this browser.');
+      }
+    }
     const res = await API.syncPodcast({ scope, episodes: Object.keys(sent).length ? [{ ...scope, ...sent }] : [] });
     if (owner !== generation) return null;
     const returned = (res?.episodes || []).find(r => r.feed_key === scope.feed_key && r.episode_key === scope.episode_key)
       || resolvedEpisode(res, scope);
-    let problem = null;
-    for (const name of ['position', 'completion']) {
+    const deletionAcks = sent.deletion && (res.acked || []).includes(sent.deletion.edit_id) ? [sent.deletion.edit_id] : [];
+    let problem = capabilityProblem;
+    for (const name of REGISTERS) {
       const edit = sent[name];
       const rejected = edit && (res.rejected || []).find(r => r.edit_id === edit.edit_id);
       const acked = edit && (res.acked || []).includes(edit.edit_id);
-      if (edit && row.pending[name]?.edit_id === edit.edit_id && (acked || rejected)) {
+      if (edit && row.pending[name]?.edit_id === edit.edit_id && (acked || (rejected && name !== 'deletion'))) {
         delete row.pending[name];
         if (acked && returned?.[name]) row[name] = { ...returned[name] };
       }
       if (rejected || (edit && !acked)) problem = Object.assign(new Error(rejected ? `Podcast change rejected (${rejected.reason})` : 'Podcast change not confirmed'), { kind: rejected ? 'rejected' : 'server' });
-      if (returned?.[name] && !row.pending[name] && returned[name].observed_ms >= (row[name]?.observed_ms || 0)) row[name] = { ...returned[name] };
+      if (returned?.[name] && !row.pending[name] && wins(name, returned[name], row[name])) row[name] = { ...returned[name] };
     }
     if (returned) {
       const other = rows.get(keyOf(returned));
       if (other && other !== row) {
-        for (const name of ['position', 'completion']) {
-          if ((other[name]?.observed_ms || 0) >= (row[name]?.observed_ms || 0)) {
+        for (const name of REGISTERS) {
+          if (wins(name, other[name], row[name])) {
             row[name] = other[name];
             if (other.pending[name]) row.pending[name] = other.pending[name];
             else delete row.pending[name];
@@ -190,6 +222,7 @@ async function sendEpisode(ep) {
       }
       row.feed_key = returned.feed_key; row.episode_key = returned.episode_key; rows.set(keyOf(row), row);
     }
+    persistDeletions(deletionAcks);
     if (problem) throw problem;
     lastError = lastFailure = null;
     lastSuccess = Date.now();
@@ -208,6 +241,25 @@ function resolvedEpisode(res, scope) {
     if (mapping.kind === 'episode' && mapping.feed_key === feed && mapping.from === episode) episode = mapping.to;
   }
   return (res.episodes || []).find(r => r.feed_key === feed && r.episode_key === episode);
+}
+
+// Save the tombstone before notifying the view or starting network work.
+export function deletionEdit(ep, deleted = true, now = Date.now()) {
+  if (!account || (ep.podcast_generation !== undefined && ep.podcast_generation !== generation)) throw new Error('Account changed. Reopen podcasts.');
+  const row = rowFor(ep), previous = row.deletion, pending = row.pending.deletion;
+  if (pending?.deleted !== Boolean(deleted)) {
+    row.deletion = row.pending.deletion = { edit_id: randomEditId(), deleted: Boolean(deleted),
+      observed_ms: Math.max(now, (row.deletion?.observed_ms || 0) + 1) };
+    try { persistDeletions(); }
+    catch (error) { row.deletion = previous; if (pending) row.pending.deletion = pending; else delete row.pending.deletion; throw error; }
+    changed();
+  }
+  return pendingItem(row);
+}
+
+export async function setEpisodeDeleted(ep, deleted = true) {
+  deletionEdit(ep, deleted);
+  return syncEpisode(ep, true);
 }
 
 export async function setEpisodeCompleted(ep, completed) {
@@ -245,3 +297,20 @@ export function podcastStartPosition(position, duration, fromBeginning = false) 
 }
 
 globalThis.addEventListener?.('online', () => { void retryPodcastEpisodeEdits().catch(() => {}); });
+
+// Another tab may finish or queue the same account's deletion. Adopt newer
+// tombstones without rewriting the storage event back to that tab.
+globalThis.addEventListener?.('storage', event => {
+  if (!account || !(event.key === podcastDeletionStorageKey(account) || event.key?.startsWith(`${podcastDeletionStorageKey(account)}:`))) return;
+  try {
+    for (const saved of readPodcastDeletions(account)) {
+      const row = rowFor({ feed_key: saved.feed_key, episode_key: saved.episode_key });
+      const acknowledged = podcastDeletionAcknowledged(account, row.pending.deletion?.edit_id);
+      if (acknowledged || wins('deletion', saved.deletion, row.deletion)) {
+        row.deletion = { ...saved.deletion };
+        if (saved.pending) row.pending.deletion = { ...saved.pending }; else delete row.pending.deletion;
+      }
+    }
+    changed();
+  } catch (error) { lastError = error.message; lastFailure = error; changed(); }
+});

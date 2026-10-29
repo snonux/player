@@ -9,7 +9,7 @@ import { podcastFeedKey } from './podcast-identity.js';
 import { API } from './api.js';
 import { state, setMedia } from './state.js';
 import { escapeHtml, fmtDur, toast } from './utils.js';
-import { setEpisodeCompleted, episodeSnapshot, podcastSyncStatus, retryPodcastEpisodeEdits } from './podcast-episode-state.js';
+import { setEpisodeCompleted, setEpisodeDeleted, episodeSnapshot, podcastSyncStatus, retryPodcastEpisodeEdits } from './podcast-episode-state.js';
 import { clearSelection, selectByElement } from './selection.js';
 import { dismissSidebarAfterNav } from './views/help.js';
 
@@ -203,7 +203,7 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
   if (!grid) return null;
   setPodcastViewPageSize(size);
   breadcrumbHidden(true);
-  const filter = state.podcastFilter || 'uncompleted';
+  const filter = state.podcastFeedKey ? (state.podcastFilter || 'uncompleted') : 'all';
   const generation = podcastSyncStatus().generation;
   const feedKey = state.podcastFeedKey || '';
   const page = Math.max(0, state.mediaPage | 0);
@@ -225,6 +225,9 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
   if (revision !== undefined && typeof alive === 'function' && !alive()) return null;
 
   const hasNext = episodes.length >= pageSize;
+  // Pending deletions remain hidden even when a stale server listing arrives.
+  episodes = episodes.filter(ep => !episodeSnapshot(ep).deletion?.deleted);
+  episodes.sort((a, b) => (Date.parse(b.published_at) || 0) - (Date.parse(a.published_at) || 0));
   const hasPrev = page > 0;
   const start = episodes.length ? offset + 1 : 0;
   const end = offset + episodes.length;
@@ -242,7 +245,7 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
 
   grid.innerHTML = filterBarHtml(title, filter)
     + pagerHtml(pageInfo, 'top')
-    + (episodes.length ? '' : `<p class="text-muted text-sm grid-full">${feedKey ? 'No episodes match this filter, or the feed has not refreshed yet. Use Refresh feed to fetch its latest episodes.' : 'No episodes match this filter.'}</p>`)
+    + (episodes.length ? '' : `<p class="text-muted text-sm grid-full podcast-empty">${feedKey ? 'No episodes match this filter, or the feed has not refreshed yet. Use Refresh feed to fetch its latest episodes.' : 'No episodes match this filter.'}</p>`)
     + (feedKey ? '<button type="button" class="btn grid-full" data-reload-podcast>Refresh feed</button><p class="text-muted text-sm grid-full" role="status" data-podcast-refresh-status></p>' : '')
     + pagerHtml(pageInfo, 'bottom');
 
@@ -301,7 +304,7 @@ function filterBarHtml(title, filter) {
   }).join('');
   return `<div class="podcast-view-toolbar grid-full" role="region" aria-label="Podcast episodes">
     <h2 class="podcast-view-title">${escapeHtml(title)}</h2>
-    <div class="podcast-filter-bar" role="group" aria-label="Completion filter">${buttons}</div>
+    ${state.podcastFeedKey ? `<div class="podcast-filter-bar" role="group" aria-label="Completion filter">${buttons}</div>` : '<p class="text-muted text-sm">Newest first · Listened episodes stay in this list.</p>'}
     <p id="podcast-pending-hint" class="text-muted text-sm" role="status"></p>
   </div>`;
 }
@@ -340,6 +343,7 @@ const downloadControllers = new WeakMap();
 function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
   const focusedAction = card.contains(document.activeElement) ? document.activeElement?.dataset.action : null;
   const downloading = Boolean(downloadControllers.get(card));
+  card.classList.toggle('listened', Boolean(ep.completed));
   card.innerHTML = episodeCardHtml(ep, { showFeed, downloading });
   bindPodcastMetadata(card);
   const playBtn = card.querySelector('[data-action="play"]');
@@ -348,6 +352,7 @@ function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
   const completeBtn = card.querySelector('[data-action="complete"]');
   const beginningBtn = card.querySelector('[data-action="play-beginning"]');
   const deleteBtn = card.querySelector('[data-action="delete-download"]');
+  const deleteEpisodeBtn = card.querySelector('[data-action="delete-episode"]');
   const moreBtn = card.querySelector('[data-action="more"]');
 
   playBtn?.addEventListener('click', (e) => {
@@ -361,6 +366,10 @@ function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
   deleteBtn?.addEventListener('click', async (e) => {
     e.stopPropagation();
     await deleteEpisodeDownload(card, ep, deleteBtn);
+  });
+  deleteEpisodeBtn?.addEventListener('click', async e => {
+    e.stopPropagation();
+    await deleteEpisode(card, ep, deleteEpisodeBtn);
   });
   downloadBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -405,7 +414,7 @@ export function episodeCardHtml(ep, { showFeed, downloading = false } = {}) {
   const feedLine = showFeed && ep.feed_title
     ? `<div class="subtitle">${escapeHtml(ep.feed_title)}</div>`
     : '';
-  const metaBits = [dateStr, duration, position, downloadState].filter(Boolean).join(' · ');
+  const metaBits = [dateStr, duration, completed ? 'Listened' : '', position, downloadState].filter(Boolean).join(' · ');
   const playLabel = !downloaded ? 'Download and play' : canResume ? 'Resume' : 'Play';
   const descriptionBlock = showNotesHTML(ep.description);
   const primary = downloading
@@ -416,7 +425,8 @@ export function episodeCardHtml(ep, { showFeed, downloading = false } = {}) {
         <button type="button" class="icon-btn btn-sm card-action-extra btn-complete${completed ? ' active' : ''}" data-action="complete"
           title="${completeLabel}" aria-label="${completeLabel}" aria-pressed="${completed}">✓</button>
         ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="play-beginning" title="Play from beginning" aria-label="Play from beginning">↺</button>' : ''}
-        ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="delete-download" title="Delete downloaded file" aria-label="Delete downloaded file">🗑</button>' : ''}`;
+        ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="delete-download" title="Delete downloaded file" aria-label="Delete downloaded file">🗑</button>' : ''}
+        <button type="button" class="icon-btn btn-sm card-action-extra" data-action="delete-episode" title="Delete episode" aria-label="Delete episode">🗑</button>`;
   return `
     <div class="thumb-wrap">
       ${episodeArtworkHTML(ep)}
@@ -444,6 +454,7 @@ async function runEpisodeDownload(card, ep, { play = false, fromBeginning = fals
   try {
     const media = await API.downloadEpisode(ep.id, { signal: controller.signal });
     ep.server_copy = { media_id: media.id };
+    if (episodeSnapshot(ep).deletion?.deleted) return;
     rememberEpisodeMedia(index, episodePlayableMedia(ep, media));
     card.dataset.id = String(media.id);
     toast('Episode downloaded');
@@ -499,7 +510,7 @@ async function markCompletion(card, ep, completed) {
     const result = await setEpisodeCompleted(ep, completed);
     ep.completed = result?.completion?.completed ?? ep.completed;
     toast(ep.completed === completed ? (completed ? 'Marked completed' : 'Marked uncompleted') : 'A newer completion change was kept');
-    const filter = state.podcastFilter || 'uncompleted';
+    const filter = state.podcastFeedKey ? (state.podcastFilter || 'uncompleted') : 'all';
     const leaves = (filter === 'uncompleted' && ep.completed) || (filter === 'completed' && !ep.completed);
     if (leaves) {
       focusAfterRemoval(card);
@@ -511,6 +522,28 @@ async function markCompletion(card, ep, completed) {
   } catch (err) {
     if (btn) btn.disabled = false;
     toast(err.message || 'Update failed', 'error');
+  }
+}
+
+async function deleteEpisode(card, ep, button) {
+  if (!confirm(`Delete "${ep.title || 'this episode'}" from your podcast lists on all your devices? It stays deleted after feed refresh and sync. Listening history and downloaded files stay saved. Removing a downloaded file is a separate action.`)) return;
+  button.disabled = true;
+  try {
+    // The state layer persists the edit before starting its network request.
+    const request = setEpisodeDeleted(ep);
+    if (episodeSnapshot(ep).deletion?.deleted) {
+      downloadControllers.get(card)?.abort();
+      focusAfterRemoval(card); clearEpisodeSlot(card); card.remove();
+    }
+    await request;
+    toast('Episode deleted from your podcast lists');
+  } catch (error) {
+    if (episodeSnapshot(ep).deletion?.deleted) {
+      toast('Episode deleted on this browser · sync pending. Use Retry to sync it to your other devices.', 'info');
+    } else {
+      button.disabled = false;
+      toast(error.message || 'Delete failed. Try again.', 'error');
+    }
   }
 }
 
@@ -550,20 +583,33 @@ function updateVisibleEpisodeState() {
     const completed = snapshot.completion?.completed ?? ep.completed;
     ep.position_seconds = snapshot.position?.seconds ?? ep.position_seconds;
     ep.completed = completed;
-    const filter = state.podcastFilter || 'uncompleted';
-    if ((filter === 'uncompleted' && completed) || (filter === 'completed' && !completed)) {
+    const filter = state.podcastFeedKey ? (state.podcastFilter || 'uncompleted') : 'all';
+    if (snapshot.deletion?.deleted || (filter === 'uncompleted' && completed) || (filter === 'completed' && !completed)) {
       if (card.contains(document.activeElement) || card.classList.contains('selected')) focusAfterRemoval(card);
+      clearEpisodeSlot(card);
       card.remove();
     } else renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
   }
+  const grid = document.getElementById('media-grid');
+  if (grid && !grid.querySelector('.episode-card') && !grid.querySelector('.podcast-empty')) {
+    const empty = document.createElement('p');
+    empty.className = 'text-muted text-sm grid-full podcast-empty';
+    empty.textContent = 'No episodes match this filter.';
+    grid.appendChild(empty);
+  }
   updatePendingHint();
+}
+
+function clearEpisodeSlot(card) {
+  const index = Number(card.dataset.index);
+  if (Number.isInteger(index)) { const list = state.media.slice(); list[index] = null; setMedia(list); }
 }
 
 function updatePendingHint() {
   const hint = document.getElementById('podcast-pending-hint');
   if (!hint) return;
   const status = podcastSyncStatus();
-  hint.textContent = status.lastError ? (status.pending ? 'Podcast sync could not finish · changes pending in this tab. ' : 'Podcast sync could not finish. ') : status.pending ? 'Saving podcast changes… ' : '';
+  hint.textContent = status.lastError ? (status.pending ? 'Podcast sync could not finish · changes pending. Episode deletions are saved on this browser. ' : 'Podcast sync could not finish. ') : status.pending ? 'Saving podcast changes… ' : '';
   if (!status.lastError) return;
   const retry = document.createElement('button');
   retry.type = 'button'; retry.className = 'btn btn-sm'; retry.textContent = 'Retry';

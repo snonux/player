@@ -12,6 +12,7 @@ import {
   isPlaybackActive,
   seekRelative,
   selectAndPlay,
+  restorePlayer,
 } from '../player.js';
 import {
   hasActiveFilters,
@@ -58,10 +59,11 @@ async function playItem(media, index, options = {}) {
   selectAndPlay({ ...media, podcast_episode: prepared.episode, podcast_account: prepared.account, podcast_lease: prepared.lease,
     podcast_classified: prepared.classified, podcast_prepared: true,
     podcast_from_beginning: Boolean(options.fromBeginning) }, index, options.fromBeginning ? 0 : prepared.position);
+  if (options.revealPlayer) restorePlayer();
   return true;
 }
 
-export async function playSelected() {
+export async function playSelected({ revealPlayer = true } = {}) {
   const selected=currentElement();
   if(state.music?.search && selected?.dataset.searchKind==='song') {
     const index=(state.searchSongs || []).findIndex(song=>String(song.id)===selected.dataset.id);
@@ -78,7 +80,7 @@ export async function playSelected() {
   const idx = parseInt(el.dataset.index, 10);
   const media = state.media[idx];
   if (!media) return;
-  await playItem(media, idx);
+  await playItem(media, idx, { revealPlayer });
 }
 
 // playMediaById plays a media item from the loaded list by ID, selecting its
@@ -91,7 +93,7 @@ export async function playMediaById(id, options = {}) {
   // Folder cards also use data-index, so select by media ID.
   const card = document.querySelector(`#media-grid .media-card[data-id="${CSS.escape(String(id))}"]`);
   if (card) selectByElement(card);
-  return playItem(state.media[idx], idx, options);
+  return playItem(state.media[idx], idx, { ...options, revealPlayer: true });
 }
 
 export async function playRandom() {
@@ -99,7 +101,7 @@ export async function playRandom() {
   const idx = Math.floor(Math.random() * state.media.length);
   const media = state.media[idx];
   if (!media) return;
-  await playItem(media, idx);
+  await playItem(media, idx, { revealPlayer: true });
 }
 
 function visiblePlayableCards() {
@@ -137,7 +139,7 @@ export async function navigatePlayable(delta, options = {}) {
         : (delta > 0 ? 0 : cards.length - 1);
       const target = cards[nextIdx];
       selectByElement(target);
-      if (active) await playSelected();
+      if (active) await playSelected({ revealPlayer: false });
       return;
     }
   }

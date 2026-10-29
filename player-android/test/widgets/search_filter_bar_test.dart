@@ -235,7 +235,7 @@ void main() {
       expect(emitted!.type, 'video');
       expect(emitted!.sortBy, 'name');
       expect(emitted!.favoritesOnly, isTrue);
-      expect(find.text('Video · Favourites · Sort: Name'), findsOneWidget);
+      expect(find.text('Video · Favourites'), findsOneWidget);
     });
 
     testWidgets('summary names scope and advanced filters; Clear keeps sort',
@@ -246,13 +246,12 @@ void main() {
               setIds: [3], type: 'audio', tags: ['keep'], sortBy: 'date'),
           onChanged: (f) => emitted = f,
           sheet: (_) async => null);
-      expect(
-          find.text('Selected sets: Music · Audio · Sort: Date · Tags: keep'),
+      expect(find.text('Selected sets: Music · Audio · Tags: keep'),
           findsOneWidget);
       await tester.tap(find.byKey(const Key('media_filter_clear')));
       await tester.pumpAndSettle();
       expect(emitted, MediaFilter(sortBy: 'date'));
-      expect(find.text('Sort: Date'), findsOneWidget);
+      expect(find.text('Sort: Date'), findsNothing);
       expect(find.byKey(const Key('media_filter_clear')), findsNothing);
     });
   });

@@ -130,15 +130,27 @@ Open **Podcasts** from the server menu or **Podcasts on this device** from
 the local library. Subscribe using a publisher feed URL and use **Refresh feeds**
 or a podcast's **Refresh feed** menu to fetch metadata directly. Subscription
 folders and **All podcast episodes** work without login or a reachable server.
-Episode lists show newest first, with Previous/Next page controls and
-**Uncompleted** (including started episodes), **Completed**, and **All** filters.
-The combined view names each podcast.
+Episode lists show newest publication first, with Previous/Next page controls.
+Individual podcasts retain **Uncompleted** (including started episodes),
+**Completed**, and **All** filters. **All podcast episodes** always includes
+listened episodes, with muted titles/artwork and a **Listened** label. It names
+each podcast and fills missing feed caches in the background when opened;
+cached episodes stay available during refresh, with progress and retry after
+a failed feed fetch. While signed in, an unavailable or oversized publisher
+feed can use the selected server’s saved episode details. This imports metadata
+only; listening state, deletions and device downloads remain separate.
+Standalone browsing keeps using the publisher and the device cache.
 
 **Mark completed / Mark uncompleted** saves locally and queues synchronization
 for the selected account, retaining the saved position. Download audio directly
 from its publisher, then choose **Play / Resume** or **Play from beginning**.
 **Delete downloaded file** removes only this device's audio; subscription,
-completion, position and pending sync edits remain. **Unsubscribe (keep
+completion, position and pending sync edits remain. **Delete episode** in the
+episode menu asks for confirmation, removes the episode from your lists and
+deletes its download on this device while retaining listening history. The
+account deletion is durable across metadata refresh and sync. Older servers
+without deletion support keep the edit locally until support becomes available.
+**Unsubscribe (keep
 history)** is separate. Existing server episode copies remain ordinary server
 media and previously kept offline copies remain in Downloads.
 

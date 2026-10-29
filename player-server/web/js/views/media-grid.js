@@ -1,3 +1,4 @@
+import { bindSetSort, readSetSort } from '../set-sort.js';
 import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from '../podcast-metadata.js';
 import { bindMediaMultiselect } from './media-multiselect.js';
 import { downloadMusic } from '../music-downloads.js';
@@ -93,6 +94,7 @@ export async function loadMedia(options = {}) {
   try {
     const setIds = state.selectedSetIds.length > 1 ? state.selectedSetIds.join(',') : '';
     const singleSetId = state.selectedSetIds.length === 1 ? state.selectedSetIds[0] : null;
+    bindSetSort(singleSetId, loadMedia);
 
     grid.classList.remove('music-detail');
     if (state.music) {
@@ -142,7 +144,7 @@ export async function loadMedia(options = {}) {
       resultCount.textContent = resultText(state.sets.length, page);
     } else if (singleSetId && !setIds && !callbacks.isShuffle?.() && !hasActiveFilters()) {
       syncMediaPage(`browse:${singleSetId}:${state.folderPath || ''}`, options.page);
-      const data = await API.browse(singleSetId, state.folderPath);
+      const data = await API.browse(singleSetId, state.folderPath, state.filters.sort || readSetSort(singleSetId));
       if (revision !== loadRevision) return;
       updateBreadcrumb(data.current_path);
       setMedia(mediaWithBrowsePath(data.media || [], data.current_path || ''));
@@ -152,7 +154,7 @@ export async function loadMedia(options = {}) {
     } else {
       breadcrumb?.classList.add('hidden');
       const shuffle = callbacks.isShuffle?.();
-      const sort = shuffle ? 'random' : (state.filters.sort || 'name');
+      const sort = shuffle ? 'random' : (state.filters.sort || (singleSetId ? readSetSort(singleSetId) : 'name'));
       const params = {
         set_id: setIds ? '' : String(singleSetId || state.selectedSetId || ''),
         set_ids: setIds,

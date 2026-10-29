@@ -64,6 +64,8 @@ GlobalSyncAccount? captureSyncAccount(Ref ref) {
         scope: podcastAccountScope(origin, userId),
         current: current,
         supported: () async => (await client.getConfig())['podcast_sync'] == 1,
+        supportsDeletion: () async =>
+            (await client.getConfig())['podcast_episode_deletion'] == true,
         send: client.syncPodcasts),
     syncMedia: (explicit) => offline.syncAll(
         OfflineSyncAccount(

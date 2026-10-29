@@ -455,3 +455,10 @@ label {
   margin: 0;
   accent-color: var(--accent);
 }
+
+/* A single disclosure keeps each set's order available beside its result count. */
+.set-sort { margin-block: .5rem; }
+.set-sort summary, .set-sort select { min-height: 44px; }
+.set-sort summary { cursor: pointer; display: list-item; align-content: center; }
+.set-sort label { display: inline-block; margin-inline-end: 1rem; }
+.set-sort p { color: var(--text-muted); }

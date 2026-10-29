@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/podcast_repository.dart';
+import '../services/podcast_server_metadata.dart';
+import '../api/dio_player_api_client.dart';
 import '../services/podcast_downloads.dart';
 import 'playback_session_provider.dart';
 import 'auth_state_provider.dart';
@@ -56,4 +58,42 @@ final podcastEpisodePageProvider =
           feed: query.$1, filter: query.$2, offset: query.$3, limit: 41))
       .map((row) => {...row, 'browse_scope': scope})
       .toList();
+});
+
+/// A generation-bound client is used only after direct publisher refresh fails.
+final podcastServerMetadataProvider = Provider<PodcastServerMetadata?>((ref) {
+  final settings = ref.watch(settingsProvider).valueOrNull;
+  final auth = ref.watch(authStateProvider).valueOrNull;
+  final userId = auth?.user?.id;
+  if (settings?.destination != LibraryDestination.server ||
+      auth?.isAuthenticated != true ||
+      userId == null) {
+    return null;
+  }
+  final origin = ref.watch(playerBaseUrlProvider).origin;
+  final mutations = ref.watch(credentialMutationQueueProvider);
+  if (!mutations.credentialsEnabled || mutations.credentialOrigin != origin) {
+    return null;
+  }
+  final generation = mutations.generation;
+  final api = ref.watch(apiClientProvider);
+  if (api is! DioPlayerApiClient) return null;
+  final client = DioPlayerApiClient(
+      dio: api.rawDio,
+      credentialEpoch: () => generation,
+      quietUnauthorized: true);
+  var active = true;
+  ref.onDispose(() => active = false);
+  bool current() =>
+      active &&
+      mutations.credentialsEnabled &&
+      mutations.generation == generation &&
+      mutations.credentialOrigin == origin &&
+      ref.read(authStateProvider).valueOrNull?.user?.id == userId;
+  return PodcastServerMetadata(
+      repository: ref.watch(podcastRepositoryProvider),
+      scope: podcastAccountScope(origin, userId),
+      current: current,
+      fetchPage: (feed, offset, limit) => client
+          .listSubscribedPodcastEpisodes(feed, offset: offset, limit: limit));
 });

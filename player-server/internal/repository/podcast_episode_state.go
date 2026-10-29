@@ -32,7 +32,7 @@ type episodeStateKey struct {
 	feedKey, episodeKey string
 }
 
-// episodeRegisters are the two registers of an episode state row. A clock
+// episodeRegisters are the three registers of an episode state row. A clock
 // of 0 means the register was never set.
 type episodeRegisters struct {
 	position         float64
@@ -40,6 +40,8 @@ type episodeRegisters struct {
 	completed        bool
 	completionSource string
 	completionMS     int64
+	deleted          bool
+	deletionMS       int64
 }
 
 // setPosition applies a position edit if its clock is newer.
@@ -53,6 +55,13 @@ func (r *episodeRegisters) setPosition(seconds float64, ms int64) {
 func (r *episodeRegisters) setCompletion(completed bool, source string, ms int64) {
 	if ms > r.completionMS {
 		r.completed, r.completionSource, r.completionMS = completed, source, ms
+	}
+}
+
+// A deletion wins an equal-clock tie so stale cached rows cannot resurrect it.
+func (r *episodeRegisters) setDeletion(deleted bool, ms int64) {
+	if ms > r.deletionMS || (ms == r.deletionMS && ms > 0 && deleted && !r.deleted) {
+		r.deleted, r.deletionMS = deleted, ms
 	}
 }
 

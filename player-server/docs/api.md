@@ -654,6 +654,7 @@ a subdirectory.
 | Parameter | Description |
 |-----------|-------------|
 | `parent` | Relative folder path within the set (default: root) |
+| `sort` | Same media sort values as the media list below; folders remain first and alphabetical, reversing only for `name_desc` |
 
 **Response `200`:**
 
@@ -806,7 +807,7 @@ List or search media visible to the authenticated user. Supports rich filtering.
 | `max_duration` | float | Maximum duration in seconds |
 | `filesize_min` | integer | Minimum file size in bytes (inclusive) |
 | `filesize_max` | integer | Maximum file size in bytes (inclusive) |
-| `sort` | string | `name`, `date`, `duration`, `play_count`, or `random` |
+| `sort` | string | `name`, `date` (added), `duration`, `size`, `play_count` (existing library-wide playback count), `last_played` (your qualified music listening), `date_taken` (EXIF), or `random`. Each field except random accepts `_asc`/`_desc`; legacy date/play_count default descending, others ascending. Unknown duration/size/date-taken/last-played values come last in both directions. Ties use filename, relative path and ID for stable paging. |
 | `limit` | integer | Page size (1–1000, default 100) |
 | `offset` | integer | Page offset (default 0) |
 | `folder` | string | Filter to an exact folder path |
@@ -2279,3 +2280,15 @@ Ordinary media list/detail responses may include `podcast` with `title`,
 that media is linked to a podcast episode. Clients prefer its title for display,
 without rewriting `file_name`, paths, or embedded `music` metadata. Publication
 instants are JSON RFC3339 UTC, preserving stored precision.
+
+### Personal podcast episode deletion
+
+`GET /api/config` and `/api/v1/config` advertise
+`podcast_episode_deletion: true`. Podcast sync accepts a third independent
+episode edit: `"deletion": {"edit_id": "unique-edit-id-0001", "deleted": true,
+"observed_ms": 1793275200000}`. Pulls return the same register without
+`edit_id`. Newer clocks win; deletion wins an equal positive-clock tie.
+Deleted episodes stay absent from the caller's episode lists through feed
+refresh and sync. History and other accounts are preserved. This action
+is distinct from removing downloaded bytes. Older clients can continue to
+synchronize position and completion without sending deletion.

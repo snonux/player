@@ -124,3 +124,82 @@ func TestSQLite_ListMediaFileSizeFilters(t *testing.T) {
 		})
 	}
 }
+
+func TestSQLite_MediaSortDirectionsAndUnknowns(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	defer s.Close()
+	now := time.Now().UTC().Truncate(time.Second)
+	set := mustID(t)(s.CreateSet(ctx, &model.Set{Name: "sort", RootPath: "/sort", CreatedAt: now}))
+	for i, name := range []string{"b.mp4", "a.mp4", "unknown.mp4"} {
+		size, duration, taken := int64((i+1)*100), float64((i+1)*10), fmt.Sprintf("2024:01:0%d 12:00:00", i+1)
+		if i == 2 {
+			size = 0
+			duration = 0
+			taken = ""
+		}
+		mustID(t)(s.CreateMedia(ctx, &model.Media{SetID: set, FileName: name, RelPath: name, AbsPath: "/sort/" + name, Type: model.MediaTypeVideo, CreatedAt: now.Add(time.Duration(i) * time.Hour), FileSizeBytes: size, Duration: duration, EXIFDate: taken, PlayCount: i}))
+	}
+	for _, tc := range []struct {
+		sort string
+		want []string
+	}{
+		{"name_asc", []string{"a.mp4", "b.mp4", "unknown.mp4"}},
+		{"name_desc", []string{"unknown.mp4", "b.mp4", "a.mp4"}},
+		{"size_asc", []string{"b.mp4", "a.mp4", "unknown.mp4"}},
+		{"size_desc", []string{"a.mp4", "b.mp4", "unknown.mp4"}},
+		{"duration_desc", []string{"a.mp4", "b.mp4", "unknown.mp4"}},
+		{"date_taken_desc", []string{"a.mp4", "b.mp4", "unknown.mp4"}},
+		{"date_desc", []string{"unknown.mp4", "a.mp4", "b.mp4"}},
+		{"play_count_desc", []string{"unknown.mp4", "a.mp4", "b.mp4"}},
+		{"last_played_desc", []string{"a.mp4", "b.mp4", "unknown.mp4"}},
+	} {
+		t.Run(tc.sort, func(t *testing.T) {
+			got, err := s.ListMedia(ctx, MediaFilter{SetID: &set, Sort: tc.sort, UserID: 99})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i, item := range got {
+				if item.FileName != tc.want[i] {
+					t.Fatalf("item %d = %s; want %s", i, item.FileName, tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestSQLite_LastPlayedSortIsPersonal(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	defer s.Close()
+	now := time.Now().UTC().Truncate(time.Second)
+	alice := mustID(t)(s.CreateUser(ctx, &model.User{Username: "alice-sort", PasswordHash: "h", CreatedAt: now}))
+	bob := mustID(t)(s.CreateUser(ctx, &model.User{Username: "bob-sort", PasswordHash: "h", CreatedAt: now}))
+	set := mustID(t)(s.CreateSet(ctx, &model.Set{Name: "personal-sort", RootPath: "/personal", CreatedAt: now}))
+	ids := []int64{}
+	for _, name := range []string{"a.mp3", "b.mp3", "c.mp3"} {
+		ids = append(ids, mustID(t)(s.CreateMedia(ctx, &model.Media{SetID: set, FileName: name, RelPath: name, AbsPath: "/personal/" + name, Type: model.MediaTypeAudio, CreatedAt: now})))
+	}
+	for _, play := range []struct {
+		user, media int64
+		at          time.Time
+	}{{alice, ids[0], now}, {alice, ids[1], now.Add(time.Hour)}, {bob, ids[2], now.Add(2 * time.Hour)}} {
+		if err := mergeMusicPlay(ctx, s.db, play.user, play.media, model.SyncedMusicPlay{ID: fmt.Sprintf("%d-%d", play.user, play.media), ObservedMS: play.at.UnixMilli()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		sort string
+		want []int64
+	}{{"last_played_asc", []int64{ids[0], ids[1], ids[2]}}, {"last_played_desc", []int64{ids[1], ids[0], ids[2]}}} {
+		got, err := s.ListMedia(ctx, MediaFilter{SetID: &set, UserID: alice, Sort: tc.sort})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, item := range got {
+			if item.ID != tc.want[i] {
+				t.Fatalf("%s item %d = %d; want %d", tc.sort, i, item.ID, tc.want[i])
+			}
+		}
+	}
+}

@@ -10,6 +10,64 @@ void main() {
   databaseFactory = databaseFactoryFfi;
 
   test(
+      'deleted episodes stay absent after metadata refresh and remain visible to another account',
+      () async {
+    final repository = PodcastRepository(
+        databasePath: inMemoryDatabasePath, fetcher: FixtureFetcher());
+    try {
+      final feed = await repository.subscribe('A', 'https://example.com/feed');
+      await repository.subscribe('B', 'https://example.com/feed');
+      final episode =
+          (await repository.episodes(feed)).single['episode_key'] as String;
+      final store = PodcastSyncStore(repository);
+      await store.saveEpisode('A', feed, episode, seconds: 39, completed: true);
+      await store.saveEpisode('A', feed, episode, deleted: true);
+      await repository.refresh(feed);
+      expect(await repository.browseEpisodes('A', filter: 'all'), isEmpty);
+      expect(
+          await repository.browseEpisodes('A', feed: feed, filter: 'completed'),
+          isEmpty);
+      expect(await repository.browseEpisodes('B', filter: 'all'), hasLength(1));
+      final row =
+          (await (await repository.database).query('podcast_episode_state'))
+              .single;
+      expect(row['position_seconds'], 39);
+      expect(row['completed'], 1);
+      expect(await repository.episodes(feed), hasLength(1));
+    } finally {
+      await repository.close();
+    }
+  });
+
+  test('missing subscription metadata is detected across the full library',
+      () async {
+    final repository = PodcastRepository(
+        databasePath: inMemoryDatabasePath, fetcher: FixtureFetcher());
+    try {
+      await repository.subscribe('A', 'https://example.com/feed');
+      final db = await repository.database;
+      for (var i = 0; i < 22; i++) {
+        await db.insert('podcast_subscriptions', {
+          'scope': 'A',
+          'feed_key': 'feed:example.com/$i',
+          'subscribed': 1,
+          'subscription_ms': 1,
+          'fetch_url': 'https://example.com/$i'
+        });
+      }
+      expect(await repository.uncachedSubscriptions('A'), hasLength(22));
+      for (final key in await repository.uncachedSubscriptions('A')) {
+        await repository.refreshSubscription('A', key);
+      }
+      expect(await repository.uncachedSubscriptions('A'), isEmpty);
+      expect(
+          await repository.browseEpisodes('A', filter: 'all'), hasLength(23));
+    } finally {
+      await repository.close();
+    }
+  });
+
+  test(
       'newest first pages include started; manual completion survives restart without changing position',
       () async {
     final directory = await Directory.systemTemp.createTemp('podcast-browse-');

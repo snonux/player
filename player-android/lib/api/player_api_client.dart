@@ -310,6 +310,10 @@ class PlayerApiClient implements ProgressSyncClient {
   Future<Map<String, dynamic>> browseSet(int setId, {String? parent}) =>
       throw UnimplementedError();
 
+  Future<Map<String, dynamic>> browseSetSorted(int setId,
+          {String? parent, String? sort}) =>
+      browseSet(setId, parent: parent);
+
   Future<Uint8List> getSetCover(int setId, {String? folder}) =>
       throw UnimplementedError();
 
@@ -577,6 +581,13 @@ class PlayerApiClient implements ProgressSyncClient {
 
   Future<List<PodcastFeed>> listPodcasts() => throw UnimplementedError();
 
+  /// One personal-subscription catalogue page, including listened episodes.
+  Future<List<Map<String, dynamic>>> listSubscribedPodcastEpisodes(
+          String feedKey,
+          {int offset = 0,
+          int limit = 200}) =>
+      throw UnimplementedError();
+
   Future<List<PodcastEpisode>> listEpisodes(
     int podcastSetId, {
     int? limit,
@@ -688,8 +699,7 @@ class PlayerApiClient implements ProgressSyncClient {
   // ---------------------------------------------------------------------------
 
   /// GET /api/v1/admin/libraries — requires admin.
-  Future<List<MusicLibrary>> listAdminLibraries() =>
-      throw UnimplementedError();
+  Future<List<MusicLibrary>> listAdminLibraries() => throw UnimplementedError();
 
   /// POST /api/v1/admin/libraries — requires admin.
   Future<MusicLibrary> createLibrary({

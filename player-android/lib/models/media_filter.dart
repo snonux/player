@@ -33,8 +33,8 @@ class MediaFilter {
 
   /// Sort order forwarded as the `sort` query parameter.
   ///
-  /// Valid values: `'name'`, `'date'`, `'duration'`, `'play_count'`,
-  /// `'random'`, or `null` for the server default.
+  /// Fields name, date, duration, size, play_count, last_played and date_taken
+  /// accept _asc/_desc. Legacy names and random remain supported.
   final String? sortBy;
 
   /// Null keeps the route's set; empty includes all caller-visible sets.

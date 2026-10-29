@@ -55,7 +55,7 @@ type sqlTx interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-// episodeEdit is an edit of one or both registers of an episode. A nil
+// episodeEdit is an edit of one or more registers of an episode. A nil
 // register is not edited; each register carries its own clock.
 type episodeEdit struct {
 	position     *float64
@@ -63,6 +63,8 @@ type episodeEdit struct {
 	completed    *bool
 	source       string
 	completionMS int64
+	deleted      *bool
+	deletionMS   int64
 }
 
 // positionEdit is a position-only edit at ms.
@@ -81,6 +83,11 @@ func (e episodeEdit) withCompletion(completed bool, source string, ms int64) epi
 	return e
 }
 
+func (e episodeEdit) withDeletion(deleted bool, ms int64) episodeEdit {
+	e.deleted, e.deletionMS = &deleted, ms
+	return e
+}
+
 // clamped replaces every clock more than model.PodcastClockSkew ahead of
 // now by now (contract §4 rule 4), so an edit from a device with a future
 // clock cannot block every later edit of that register.
@@ -88,6 +95,9 @@ func (e episodeEdit) clamped(now time.Time) episodeEdit {
 	limit, at := now.Add(model.PodcastClockSkew).UnixMilli(), now.UnixMilli()
 	if e.positionMS > limit {
 		e.positionMS = at
+	}
+	if e.deletionMS > limit {
+		e.deletionMS = at
 	}
 	if e.completionMS > limit {
 		e.completionMS = at
@@ -99,6 +109,9 @@ func (e episodeEdit) clamped(now time.Time) episodeEdit {
 func (r *episodeRegisters) apply(e episodeEdit) {
 	if e.position != nil {
 		r.setPosition(*e.position, e.positionMS)
+	}
+	if e.deleted != nil {
+		r.setDeletion(*e.deleted, e.deletionMS)
 	}
 	if e.completed != nil {
 		r.setCompletion(*e.completed, e.source, e.completionMS)
@@ -139,6 +152,9 @@ func mergeEpisodeEdit(ctx context.Context, q sqlTx, k episodeStateKey, e episode
 	if err := putEpisodeState(ctx, q, k, m.after, enclosureURL); err != nil {
 		return m, err
 	}
+	if m.before.positionMS == m.after.positionMS && m.before.completionMS == m.after.completionMS {
+		return m, nil
+	}
 	return m, writeEpisodeMirrors(ctx, q, k, &m.after)
 }
 
@@ -150,14 +166,14 @@ func putEpisodeState(ctx context.Context, q sqlTx, k episodeStateKey, r episodeR
 		return err
 	}
 	_, err = q.ExecContext(ctx, `INSERT INTO podcast_episode_state
-(user_id, feed_key, episode_key, position_seconds, position_ms, completed, completion_source, completion_ms, enclosure_url, change_seq)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+(user_id, feed_key, episode_key, position_seconds, position_ms, completed, completion_source, completion_ms, enclosure_url, change_seq, deleted, deletion_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (user_id, feed_key, episode_key) DO UPDATE SET position_seconds = excluded.position_seconds,
  position_ms = excluded.position_ms, completed = excluded.completed, completion_source = excluded.completion_source,
- completion_ms = excluded.completion_ms, change_seq = excluded.change_seq,
+ completion_ms = excluded.completion_ms, change_seq = excluded.change_seq, deleted=excluded.deleted, deletion_ms=excluded.deletion_ms,
  enclosure_url = CASE WHEN excluded.enclosure_url = '' THEN podcast_episode_state.enclosure_url ELSE excluded.enclosure_url END`,
 		k.userID, k.feedKey, k.episodeKey, r.position, r.positionMS, boolToInt(r.completed), r.completionSource,
-		r.completionMS, enclosureURL, seq)
+		r.completionMS, enclosureURL, seq, boolToInt(r.deleted), r.deletionMS)
 	if err != nil {
 		return fmt.Errorf("store episode state: %w", err)
 	}
@@ -168,9 +184,9 @@ ON CONFLICT (user_id, feed_key, episode_key) DO UPDATE SET position_seconds = ex
 // exists; empty registers when none does.
 func loadRegisters(ctx context.Context, q sqlQueryRower, k episodeStateKey) (episodeRegisters, bool, error) {
 	var r episodeRegisters
-	err := q.QueryRowContext(ctx, `SELECT position_seconds, position_ms, completed, completion_source, completion_ms
+	err := q.QueryRowContext(ctx, `SELECT position_seconds, position_ms, completed, completion_source, completion_ms, deleted, deletion_ms
 FROM podcast_episode_state WHERE user_id = ? AND feed_key = ? AND episode_key = ?`, k.userID, k.feedKey, k.episodeKey).Scan(
-		&r.position, &r.positionMS, &r.completed, &r.completionSource, &r.completionMS)
+		&r.position, &r.positionMS, &r.completed, &r.completionSource, &r.completionMS, &r.deleted, &r.deletionMS)
 	if err == sql.ErrNoRows {
 		return episodeRegisters{}, false, nil
 	}

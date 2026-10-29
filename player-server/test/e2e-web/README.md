@@ -1277,6 +1277,19 @@ session uncompletes it and plays its own server copy to save a position. After
 the older response arrives, the first session pulls the newer completion and
 position. The stage creates a server audio copy for those two episodes and
 writes evidence under `evidence/{chrome,firefox}/<run>/` in the fixture.
+The `combined-deletion` stage uses the same marked fixture after subscription.
+It opens two existing tabs, delays storage events, deletes two episodes through
+visible menus while sync is unavailable, reloads, checks the exact pending edit
+IDs, and retries both to the server. A fresh browser context must omit both
+items, and scoped reads must preserve their position and completion registers.
+Fixture-only cleanup restores those two targets for the next browser run.
+
+```sh
+PLAYER_PODCAST_FIXTURE=/absolute/podcast-5i3 \
+PLAYER_PODCAST_STAGE=combined-deletion \
+  npx playwright test -c playwright.podcasts.config.ts --grep combined-deletion
+```
+
 # A03c provider lyrics and offline snapshots
 
 Run the deterministic local provider in one shell, keeping its mode and call

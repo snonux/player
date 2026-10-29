@@ -212,3 +212,58 @@ func TestPodcastSyncDoesNotReportRejectedEditsAsClamped(t *testing.T) {
 		t.Fatalf("clamped %v, rejected %+v", out.Clamped, out.Rejected)
 	}
 }
+
+func TestPodcastSyncDeletionValidationAndLimits(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name       string
+		ms         int64
+		id, reason string
+	}{
+		{"valid", 1000, "deletion-edit-0001", ""},
+		{"future", now.Add(time.Hour).UnixMilli(), "deletion-edit-0001", ""},
+		{"zero", 0, "deletion-edit-0001", model.PodcastRejectInvalidTime},
+		{"invalid id", 1000, "short", model.PodcastRejectInvalidEdit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, got := syncTestService(t, now)
+			item := epEdit(nil)
+			item.Position = nil
+			item.Completion = nil
+			item.Deletion = &model.PodcastDeletionEdit{EditID: tc.id, Deleted: true, ObservedMS: tc.ms}
+			out, err := svc.Sync(context.Background(), 1, model.PodcastSyncRequest{Episodes: []model.PodcastEpisodeEdit{item}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.reason != "" {
+				if len(out.Rejected) != 1 || out.Rejected[0].Reason != tc.reason || len(got.Episodes) != 0 {
+					t.Fatalf("bad deletion accepted: %+v %+v", out, got)
+				}
+				return
+			}
+			if len(got.Episodes) != 1 || got.Episodes[0].Deletion == nil {
+				t.Fatalf("deletion lost: %+v", got)
+			}
+			want := tc.ms
+			if want > now.Add(model.PodcastClockSkew).UnixMilli() {
+				want = now.UnixMilli()
+				if len(out.Clamped) != 1 {
+					t.Fatal("future deletion not reported clamped")
+				}
+			}
+			if got.Episodes[0].Deletion.ObservedMS != want {
+				t.Fatal("wrong deletion clock")
+			}
+		})
+	}
+	// All three independent edits count towards the existing envelope limit.
+	item := epEdit(nil)
+	item.Deletion = &model.PodcastDeletionEdit{EditID: "deletion-edit-0001", Deleted: true, ObservedMS: 1000}
+	items := make([]model.PodcastEpisodeEdit, 167)
+	for i := range items {
+		items[i] = item
+	}
+	if err := checkSyncEnvelope(model.PodcastSyncRequest{Episodes: items}); err != ErrInvalidPodcastSync {
+		t.Fatal("third register bypassed edit limit")
+	}
+}

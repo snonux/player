@@ -19,11 +19,12 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		pageSize = s.cfg.MediaPageSize
 	}
 	body := map[string]any{
-		"media_page_size": int64(pageSize),
-		"user_id":         userIDFromContext(r),
-		"podcast_sync":    podcastSyncVersion,
-		"auth":            s.authModeInfo(),
-		"subsonic":        s.subsonicStatusInfo(),
+		"media_page_size":          int64(pageSize),
+		"user_id":                  userIDFromContext(r),
+		"podcast_sync":             podcastSyncVersion,
+		"podcast_episode_deletion": true,
+		"auth":                     s.authModeInfo(),
+		"subsonic":                 s.subsonicStatusInfo(),
 	}
 	if s.jukeboxSvc != nil && s.jukeboxSvc.Enabled() {
 		_, isAdmin := s.jukeboxCaller(r)

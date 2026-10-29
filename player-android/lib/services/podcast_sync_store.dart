@@ -27,6 +27,7 @@ class PodcastSyncStore {
   Future<void> saveEpisode(String scope, String feed, String episode,
       {double? seconds,
       bool? completed,
+      bool? deleted,
       String source = 'manual',
       String enclosureUrl = '',
       int? observedMs}) async {
@@ -66,6 +67,11 @@ class PodcastSyncStore {
                   : pairedClock,
               'position_pending_edit_id': podcastEditId()
             },
+            if (deleted != null) ...{
+              'deleted': deleted ? 1 : 0,
+              'deletion_ms': max(now, (old['deletion_ms'] as int? ?? 0) + 1),
+              'deletion_pending_edit_id': podcastEditId(),
+            },
             if (completed != null) ...{
               'completed': completed ? 1 : 0,
               'completion_source': source,
@@ -89,7 +95,10 @@ class PodcastSyncStore {
       {};
 
   Future<Map<String, dynamic>> payload(String scope,
-      {int limit = 500, String? feed, String? episode}) async {
+      {int limit = 500,
+      String? feed,
+      String? episode,
+      bool includeDeletion = true}) async {
     final db = await database;
     final meta = await status(scope);
     if (feed != null) {
@@ -118,7 +127,7 @@ class PodcastSyncStore {
     }
     for (final row in await db.query('podcast_episode_state',
         where:
-            'scope=? AND (position_pending_edit_id IS NOT NULL OR completion_pending_edit_id IS NOT NULL)${feed == null ? '' : ' AND feed_key=? AND episode_key=?'}',
+            'scope=? AND (position_pending_edit_id IS NOT NULL OR completion_pending_edit_id IS NOT NULL${includeDeletion ? ' OR deletion_pending_edit_id IS NOT NULL' : ''})${feed == null ? '' : ' AND feed_key=? AND episode_key=?'}',
         whereArgs: [
           scope,
           if (feed != null) ...[feed, episode]
@@ -129,13 +138,19 @@ class PodcastSyncStore {
         'episode_key': row['episode_key'],
         'enclosure_url': row['enclosure_url']
       };
-      for (final kind in ['position', 'completion']) {
-        if (remaining == 0 || row['${kind}_pending_edit_id'] == null) continue;
+      for (final kind in ['position', 'completion', 'deletion']) {
+        if (remaining == 0 ||
+            row['${kind}_pending_edit_id'] == null ||
+            kind == 'deletion' && !includeDeletion) {
+          continue;
+        }
         entry[kind] = {
           'edit_id': row['${kind}_pending_edit_id'],
           'observed_ms': row['${kind}_ms'],
           if (kind == 'position')
             'seconds': row['position_seconds']
+          else if (kind == 'deletion')
+            'deleted': row['deleted'] == 1
           else ...{
             'completed': row['completed'] == 1,
             'source': row['completion_source']
@@ -160,10 +175,11 @@ class PodcastSyncStore {
         for (final row in payload['subscriptions'] as List)
           row['edit_id'] as String,
         for (final row in payload['episodes'] as List)
-          for (final kind in ['position', 'completion'])
+          for (final kind in ['position', 'completion', 'deletion'])
             if (row[kind] != null) row[kind]['edit_id'] as String,
       };
-  Future<Set<String>> pending(String scope) async {
+  Future<Set<String>> pending(String scope,
+      {bool includeDeletion = true}) async {
     final db = await database;
     return {
       for (final row in await db.query('podcast_subscriptions',
@@ -171,8 +187,9 @@ class PodcastSyncStore {
         row['pending_edit_id'] as String,
       for (final row in await db
           .query('podcast_episode_state', where: 'scope=?', whereArgs: [scope]))
-        for (final kind in ['position', 'completion'])
-          if (row['${kind}_pending_edit_id'] != null)
+        for (final kind in ['position', 'completion', 'deletion'])
+          if ((kind != 'deletion' || includeDeletion) &&
+              row['${kind}_pending_edit_id'] != null)
             row['${kind}_pending_edit_id'] as String,
     };
   }
@@ -261,19 +278,28 @@ class PodcastSyncStore {
           'feed_key': feed,
           'episode_key': episode
         };
-        for (final kind in ['position', 'completion']) {
+        for (final kind in ['position', 'completion', 'deletion']) {
           final value = row[kind] as Map?;
           if (value == null) continue;
           final pending = old['${kind}_pending_edit_id'];
+          final incomingClock = value['observed_ms'] as int;
+          final oldClock = old['${kind}_ms'] as int? ?? 0;
+          final losesDeletionTie = kind == 'deletion' &&
+              incomingClock > 0 &&
+              incomingClock == oldClock &&
+              old['deleted'] == 1 &&
+              value['deleted'] != true;
           if ((pending != null && accepted.contains(pending)) ||
               (pending == null &&
-                  (value['observed_ms'] as int) >=
-                      (old['${kind}_ms'] as int? ?? 0))) {
+                  incomingClock >= oldClock &&
+                  !losesDeletionTie)) {
             merged.addAll({
               '${kind}_ms': value['observed_ms'],
               '${kind}_pending_edit_id': null,
               if (kind == 'position')
                 'position_seconds': value['seconds']
+              else if (kind == 'deletion')
+                'deleted': value['deleted'] == true ? 1 : 0
               else ...{
                 'completed': value['completed'] == true ? 1 : 0,
                 'completion_source': value['source']
@@ -290,7 +316,10 @@ class PodcastSyncStore {
       for (final id in removed) {
         await tx.update('podcast_subscriptions', {'pending_edit_id': null},
             where: 'scope=? AND pending_edit_id=?', whereArgs: [scope, id]);
-        for (final kind in ['position', 'completion']) {
+        for (final kind in ['position', 'completion', 'deletion']) {
+          // A hidden episode has no row action to retry a rejected deletion.
+          // Retain that exact durable edit until the server acknowledges it.
+          if (kind == 'deletion' && !acked.contains(id)) continue;
           await tx.update(
               'podcast_episode_state', {'${kind}_pending_edit_id': null},
               where: 'scope=? AND ${kind}_pending_edit_id=?',
@@ -329,7 +358,7 @@ class PodcastSyncStore {
     await tx.rawInsert(
         "INSERT INTO podcast_epoch_recovery(scope,kind,feed_key) SELECT scope,'subscription',feed_key FROM podcast_subscriptions WHERE scope=? AND pending_edit_id IS NULL",
         [scope]);
-    for (final kind in ['position', 'completion']) {
+    for (final kind in ['position', 'completion', 'deletion']) {
       await tx.rawInsert(
           "INSERT INTO podcast_epoch_recovery(scope,kind,feed_key,episode_key) SELECT scope,?,feed_key,episode_key FROM podcast_episode_state WHERE scope=? AND ${kind}_ms>0 AND ${kind}_pending_edit_id IS NULL",
           [kind, scope]);
@@ -445,15 +474,20 @@ class PodcastSyncStore {
       'feed_key': feed,
       'episode_key': episode
     };
-    for (final kind in ['position', 'completion']) {
-      final winner =
-          (row['${kind}_ms'] as int) > (old['${kind}_ms'] as int? ?? 0)
-              ? row
-              : old;
+    for (final kind in ['position', 'completion', 'deletion']) {
+      final incomingClock = row['${kind}_ms'] as int;
+      final oldClock = old['${kind}_ms'] as int? ?? 0;
+      final winsDeletionTie = kind == 'deletion' &&
+          incomingClock > 0 &&
+          incomingClock == oldClock &&
+          row['deleted'] == 1;
+      final winner = incomingClock > oldClock || winsDeletionTie ? row : old;
       if (winner.isEmpty) continue;
       for (final field in kind == 'position'
           ? ['position_ms', 'position_seconds']
-          : ['completion_ms', 'completed', 'completion_source']) {
+          : kind == 'completion'
+              ? ['completion_ms', 'completed', 'completion_source']
+              : ['deletion_ms', 'deleted']) {
         merged[field] = winner[field];
       }
       merged['${kind}_pending_edit_id'] = winner['${kind}_pending_edit_id'] ??

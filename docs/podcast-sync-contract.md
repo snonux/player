@@ -30,6 +30,37 @@ verification (Chrome, Firefox, two Android clients) belongs to `5i3`.
 
 Words in **must** / **must not** are requirements on the implementing tasks.
 
+## Episode deletion extension (0.14.0)
+
+`GET /api/v1/config` additionally advertises `podcast_episode_deletion: true`.
+The original `podcast_sync: 1` capability remains compatible. Clients must
+retain pending deletion edits while talking to older servers and send them
+only after observing this additional capability.
+
+Each episode has an independent deletion register, `deletion: {deleted,
+observed_ms}`. An edit adds `edit_id` using the existing edit ID and clock
+validation rules. Each register counts toward the 500-edit request limit.
+A newer clock wins; at equal positive clocks `deleted: true` wins. This
+exception also applies to alias merges and local account association.
+SQL adds `deleted INTEGER NOT NULL DEFAULT 0` and
+`deletion_ms INTEGER NOT NULL DEFAULT 0` to episode state. Deletion-only
+rows participate in cursor pulls, scoped pulls, and epoch recovery. Rejected
+deletion edits retain their exact pending identity for a later bounded retry;
+only acknowledgement clears them. Rejections remain visible as sync errors.
+
+Delete episode retains the personal tombstone, position, and completion
+history. It hides the episode from this account's episode lists after
+refresh and sync, without changing the publisher catalog or other accounts.
+On Android it also removes this account's local download. Remove download
+remains a separate availability action. A deletion-only edit must never
+create or rewrite a server-copy playback progress projection.
+
+The combined All episodes view always shows listened episodes, muted and
+marked Listened, newest publication first. It omits deleted episodes. The
+older per-feed completion filters remain available. The historical audit
+and original two-register examples below describe the pre-extension design;
+this section takes precedence for deletion behavior.
+
 ## 1. Current behavior (audit)
 
 | Area | What the code does today | Consequence for this contract |

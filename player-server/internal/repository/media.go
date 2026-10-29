@@ -241,7 +241,13 @@ func (s *SQLite) ListMedia(ctx context.Context, filter MediaFilter) ([]model.Med
 		// Require every requested tag, not just one of them.
 		query += fmt.Sprintf(" GROUP BY media.id HAVING COUNT(DISTINCT t.name) = %d", len(filter.Tags))
 	}
-	query += mediaOrderBy(filter.Sort)
+	if field, _ := mediaSort(filter.Sort); field == "last_played" {
+		// Qualified last-played dates are personal.
+		query += mediaPersonalOrderBy(filter.Sort)
+		args = append(args, filter.UserID)
+	} else {
+		query += mediaOrderBy(filter.Sort)
+	}
 	if filter.Limit > 0 {
 		query += " LIMIT ?"
 		args = append(args, filter.Limit)
@@ -298,21 +304,49 @@ func mediaFilterQuery(filter MediaFilter) *mediaQuery {
 	return q
 }
 
-// mediaOrderBy maps the API sort name to an ORDER BY clause; unknown values
-// sort by file name.
-func mediaOrderBy(sort string) string {
-	switch sort {
-	case "duration":
-		return " ORDER BY media.duration"
+// mediaSort keeps legacy defaults while allowing explicit direction on every field.
+func mediaSort(value string) (string, string) {
+	direction := "ASC"
+	if strings.HasSuffix(value, "_desc") {
+		value = strings.TrimSuffix(value, "_desc")
+		direction = "DESC"
+	} else if strings.HasSuffix(value, "_asc") {
+		value = strings.TrimSuffix(value, "_asc")
+	} else if value == "date" || value == "play_count" || value == "last_played" {
+		direction = "DESC"
+	}
+	return value, direction
+}
+
+const mediaSortTies = ", media.file_name COLLATE NOCASE ASC, media.rel_path ASC, media.id ASC"
+
+func mediaPersonalOrderBy(value string) string {
+	_, direction := mediaSort(value)
+	personal := "(SELECT MAX(qualified_ms) FROM music_listening_sessions ls WHERE ls.media_id=media.id AND ls.user_id=? AND ls.qualified_ms IS NOT NULL)"
+	// MAX is NULL for files with no qualified listening; always place them last.
+	return " ORDER BY " + personal + " " + direction + " NULLS LAST" + mediaSortTies
+}
+
+func mediaOrderBy(value string) string {
+	field, direction := mediaSort(value)
+	var expression string
+	switch field {
 	case "play_count":
-		return " ORDER BY media.play_count DESC"
+		expression = "media.play_count"
+	case "duration":
+		expression = "NULLIF(media.duration,0)"
+	case "size":
+		expression = "NULLIF(media.file_size_bytes,0)"
 	case "date":
-		return " ORDER BY media.created_at DESC"
+		expression = "media.created_at"
+	case "date_taken":
+		expression = "NULLIF(media.exif_date,'')"
 	case "random":
 		return " ORDER BY RANDOM()"
 	default:
-		return " ORDER BY media.file_name"
+		expression = "media.file_name COLLATE NOCASE"
 	}
+	return " ORDER BY " + expression + " " + direction + " NULLS LAST" + mediaSortTies
 }
 
 // queryMedia runs a query selecting mediaListColumns and scans every row.

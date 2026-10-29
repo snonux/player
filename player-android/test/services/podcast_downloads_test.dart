@@ -353,6 +353,30 @@ void main() {
     });
   }
 
+  test(
+      'deleting an episode cancels its transfer and removes bytes without removing history',
+      () async {
+    final key = episode['episode_key'] as String;
+    final store = PodcastSyncStore(repository);
+    await store.saveEpisode('local', feed, key, seconds: 37, completed: true);
+    mode = 'slow';
+    streaming = Completer<void>();
+    release = Completer<void>();
+    final pending = downloads.download(feed, key);
+    await streaming!.future;
+    final removal = downloads.removeEpisodeCopy(feed, key);
+    release!.complete();
+    await removal;
+    await pending;
+    expect((await downloads.copy(feed, key))!['state'], 'missing');
+    expect(await Directory('${directory.path}/audio').list().toList(), isEmpty);
+    final state =
+        (await (await repository.database).query('podcast_episode_state'))
+            .single;
+    expect(state['position_seconds'], 37);
+    expect(state['completed'], 1);
+  });
+
   test('cancel cleans partial bytes and permits retry', () async {
     final key = episode['episode_key'] as String;
     mode = 'slow';
@@ -430,6 +454,27 @@ void main() {
     expect(state['position_seconds'], 31);
     expect(state['position_pending_edit_id'], isNotNull);
     expect(await File.fromUri(request.sourceUri).exists(), false);
+  });
+
+  test('account change while stopping audio keeps its device copy', () async {
+    final playback = PlaybackSessionCoordinator();
+    downloads.dispose();
+    downloads = PodcastDownloads(repository, playback,
+        directory: Directory('${directory.path}/audio'));
+    final key = episode['episode_key'] as String;
+    await downloads.download(feed, key);
+    final request = await downloads.playbackRequest('local', feed, episode);
+    var current = true;
+    await playback.claim(
+        kind: request.kind,
+        identity: request.identity,
+        sourceUri: request.sourceUri.toString(),
+        stop: () async {
+          current = false;
+        });
+    await downloads.removeEpisodeCopy(feed, key, current: () => current);
+    expect(await File.fromUri(request.sourceUri).exists(), true);
+    expect((await downloads.copy(feed, key))!['state'], 'available');
   });
 
   test('restart marks unfinished durable copy failed and repairs missing bytes',

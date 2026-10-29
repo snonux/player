@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'podcast_discovery_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/podcast_library_provider.dart';
+import '../providers/api_client_provider.dart';
 import '../services/podcast_identity.dart';
 import '../widgets/podcast_download_controls.dart';
 import '../widgets/podcast_artwork.dart';
@@ -223,13 +225,136 @@ class _LocalPodcastEpisodesScreenState
   String? error;
   final scroll = ScrollController();
   final pending = <String>{};
+  bool refreshing = false;
+  int refreshDone = 0, refreshTotal = 0, refreshGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.feedKey == null) {
+      filter = 'all';
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(refreshFeeds(missingOnly: true));
+      });
+    }
+  }
+
   @override
   void dispose() {
+    refreshGeneration++;
     scroll.dispose();
     super.dispose();
   }
 
   void reload() => ref.invalidate(podcastEpisodePageProvider);
+
+  Future<void> refreshFeeds({bool missingOnly = false}) async {
+    final generation = ++refreshGeneration;
+    try {
+      final repository = ref.read(podcastRepositoryProvider);
+      final scope = await ref.read(podcastScopeProvider.future);
+      if (!mounted || generation != refreshGeneration) return;
+      final keys = widget.feedKey != null
+          ? [widget.feedKey!]
+          : missingOnly
+              ? await repository.uncachedSubscriptions(scope)
+              : (await repository.subscriptions(scope))
+                  .map((s) => s['feed_key'] as String)
+                  .toList();
+      if (!mounted || generation != refreshGeneration) return;
+      setState(() {
+        refreshing = keys.isNotEmpty;
+        refreshDone = 0;
+        refreshTotal = keys.length;
+        error = null;
+      });
+      final metadata = ref.read(podcastServerMetadataProvider);
+      var failures = 0;
+      for (final key in keys) {
+        if (!mounted || generation != refreshGeneration) return;
+        try {
+          await repository.refreshSubscription(scope, key);
+        } catch (_) {
+          try {
+            if (!scope.startsWith('account:') ||
+                metadata == null ||
+                metadata.scope != scope) {
+              rethrow;
+            }
+            await metadata.refresh(key, onPage: () {
+              if (mounted && generation == refreshGeneration) {
+                ref.invalidate(podcastSubscriptionsProvider);
+                reload();
+              }
+            });
+          } catch (_) {
+            failures++;
+          }
+        }
+        if (!mounted || generation != refreshGeneration) return;
+        ref.invalidate(podcastSubscriptionsProvider);
+        reload();
+        setState(() => refreshDone++);
+      }
+      if (mounted && generation == refreshGeneration) {
+        setState(() {
+          refreshing = false;
+          if (failures > 0) {
+            error =
+                '$failures feeds unavailable. Cached episodes remain available. Retry refresh.';
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted && generation == refreshGeneration) {
+        setState(() {
+          refreshing = false;
+          error =
+              'Could not refresh feeds. Cached episodes remain available. Retry refresh.';
+        });
+      }
+    }
+  }
+
+  Future<void> deleteEpisode(Map<String, Object?> episode, String scope) async {
+    final credentials = ref.read(credentialMutationQueueProvider);
+    final generation = credentials.generation;
+    bool current() =>
+        mounted &&
+        credentials.generation == generation &&
+        ref.read(podcastScopeProvider).valueOrNull == scope;
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('Delete episode?'),
+              content: const Text(
+                  'Remove this episode from your podcast lists and delete its download on this device. Listening history is kept.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Delete episode')),
+              ],
+            ));
+    if (confirmed != true || !current()) return;
+    try {
+      await ref.read(podcastDownloadsProvider).removeEpisodeCopy(
+          episode['feed_key'] as String, episode['episode_key'] as String,
+          current: current);
+      if (!current()) return;
+      await ref.read(podcastSyncStoreProvider).saveEpisode(
+          scope,
+          episode['scope_feed_key'] as String,
+          episode['scope_episode_key'] as String,
+          deleted: true,
+          enclosureUrl: episode['enclosure_url'] as String);
+      reload();
+    } catch (_) {
+      if (mounted) setState(() => error = 'Could not delete episode. Retry.');
+    }
+  }
 
   Future<void> complete(Map<String, Object?> episode, String scope) async {
     final key = '${episode['scope_feed_key']}:${episode['scope_episode_key']}';
@@ -258,21 +383,17 @@ class _LocalPodcastEpisodesScreenState
   }
 
   String _progressSummary(Map<String, Object?> e) {
-    if (e['completed'] == 1) return 'Completed';
+    if (e['completed'] == 1) return 'Listened';
     final position = (e['position_seconds'] as num?) ?? 0;
     if (position <= 0) return 'Unplayed';
-    return 'In progress · ${_formatClock(position)}';
-  }
-
-  String _formatClock(num seconds) {
-    final total = seconds.round().clamp(0, 24 * 3600);
+    final total = position.round().clamp(0, 24 * 3600);
     final hours = total ~/ 3600;
     final minutes = (total % 3600) ~/ 60;
-    final secs = total % 60;
-    if (hours > 0) {
-      return '$hours:${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
-    }
-    return '$minutes:${secs.toString().padLeft(2, '0')}';
+    final seconds = (total % 60).toString().padLeft(2, '0');
+    final clock = hours > 0
+        ? '$hours:${minutes.toString().padLeft(2, '0')}:$seconds'
+        : '$minutes:$seconds';
+    return 'In progress · $clock';
   }
 
   @override
@@ -285,18 +406,28 @@ class _LocalPodcastEpisodesScreenState
           error = null;
         });
         if (scroll.hasClients) scroll.jumpTo(0);
+        if (widget.feedKey == null && previous?.valueOrNull != null) {
+          unawaited(refreshFeeds(missingOnly: true));
+        }
       }
     });
     final episodes =
         ref.watch(podcastEpisodePageProvider((widget.feedKey, filter, offset)));
     return Scaffold(
-        appBar: AppBar(title: Text(widget.title), actions: [
-          IconButton(
-              tooltip: 'Reload episodes',
-              onPressed: reload,
-              icon: const Icon(Icons.refresh))
-        ]),
-        body: Column(children: [
+      appBar: AppBar(title: Text(widget.title), actions: [
+        IconButton(
+            tooltip: 'Reload episodes',
+            onPressed: refreshing ? null : () => refreshFeeds(),
+            icon: const Icon(Icons.refresh))
+      ]),
+      body: Column(children: [
+        if (refreshing) const LinearProgressIndicator(),
+        if (refreshing) Text('Refreshing feeds $refreshDone of $refreshTotal'),
+        if (widget.feedKey == null)
+          const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('Newest first · Includes listened episodes')),
+        if (widget.feedKey != null)
           Padding(
               padding: const EdgeInsets.all(8),
               child: Wrap(spacing: 8, children: [
@@ -310,90 +441,101 @@ class _LocalPodcastEpisodesScreenState
                         page(0);
                       })
               ])),
-          if (error != null) Text(error!),
-          Expanded(
-              child: episodes.when(
-                  skipLoadingOnReload: true,
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (_, __) => Center(
-                      child: TextButton(
-                          onPressed: reload,
-                          child: const Text('Retry opening episodes'))),
-                  data: (rows) => rows
-                          .any((row) => row['browse_scope'] != scope)
-                      ? const Center(child: CircularProgressIndicator())
-                      : ListView(controller: scroll, children: [
-                          if (rows.isEmpty)
-                            const Padding(
-                                padding: EdgeInsets.all(24),
-                                child: Text(
-                                    'No episodes in this filter. Refresh the feed to fetch episodes.')),
-                          for (final e in rows.take(40))
-                            ListTile(
-                                key:
-                                    ValueKey((e['feed_key'], e['episode_key'])),
-                                leading: PodcastArtwork(
-                                    imageUrl: e['image_url'] as String? ?? '',
-                                    fallbackUrl:
-                                        e['feed_image_url'] as String? ?? '',
-                                    title: e['title'] as String),
-                                title: Text(e['title'] as String),
-                                subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if (widget.feedKey == null)
-                                        Text(e['podcast_title'] as String),
-                                      PodcastPublicationDate(
-                                          date: podcastPublicationDate(
-                                              e['published_at'])),
-                                      Text(_progressSummary(e)),
-                                      if ((e['position_seconds'] as num) > 0 &&
-                                          (e['duration_seconds'] as num) > 0)
-                                        LinearProgressIndicator(
-                                            value: ((e['position_seconds']
-                                                        as num) /
-                                                    (e['duration_seconds']
-                                                        as num))
-                                                .clamp(0.0, 1.0)),
-                                      PodcastShowNotes(
-                                          description:
-                                              e['description'] as String? ??
-                                                  ''),
-                                      PodcastDownloadControls(
-                                        feed: e['feed_key'] as String,
-                                        scope: e['browse_scope'] as String,
-                                        episode: e,
-                                        onPlaybackReturn: reload,
-                                        completeLabel: e['completed'] == 1
-                                            ? 'Mark uncompleted'
-                                            : 'Mark completed',
-                                        onToggleComplete: scope == null ||
-                                                pending.contains(
-                                                    '${e['scope_feed_key']}:${e['scope_episode_key']}')
-                                            ? null
-                                            : () => complete(e, scope),
-                                      ),
-                                    ])),
-                          Wrap(
-                              alignment: WrapAlignment.center,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 8,
-                              children: [
-                                TextButton(
-                                    onPressed: offset == 0
-                                        ? null
-                                        : () => page(offset - 40),
-                                    child: const Text('Previous page')),
-                                Text('Page ${offset ~/ 40 + 1}'),
-                                TextButton(
-                                    onPressed: rows.length <= 40
-                                        ? null
-                                        : () => page(offset + 40),
-                                    child: const Text('Next page')),
-                              ])
-                        ])))
-        ]));
+        if (error != null) Text(error!),
+        Expanded(
+            child: episodes.when(
+          skipLoadingOnReload: true,
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (_, __) => Center(
+              child: TextButton(
+                  onPressed: reload,
+                  child: const Text('Retry opening episodes'))),
+          data: (rows) => rows.any((row) => row['browse_scope'] != scope)
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(controller: scroll, children: [
+                  if (rows.isEmpty)
+                    const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                            'No episodes in this filter. Refresh the feed to fetch episodes.')),
+                  for (final e in rows.take(40))
+                    ListTile(
+                      key: ValueKey((e['feed_key'], e['episode_key'])),
+                      leading: ColorFiltered(
+                          colorFilter: ColorFilter.mode(
+                              e['completed'] == 1
+                                  ? Colors.grey
+                                  : Colors.transparent,
+                              e['completed'] == 1
+                                  ? BlendMode.saturation
+                                  : BlendMode.dst),
+                          child: Opacity(
+                              opacity: e['completed'] == 1 ? 0.5 : 1,
+                              child: PodcastArtwork(
+                                  imageUrl: e['image_url'] as String? ?? '',
+                                  fallbackUrl:
+                                      e['feed_image_url'] as String? ?? '',
+                                  title: e['title'] as String))),
+                      title: Text(e['title'] as String,
+                          style: e['completed'] == 1
+                              ? TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant)
+                              : null),
+                      subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (widget.feedKey == null)
+                              Text(e['podcast_title'] as String),
+                            PodcastPublicationDate(
+                                date:
+                                    podcastPublicationDate(e['published_at'])),
+                            Text(_progressSummary(e)),
+                            if ((e['position_seconds'] as num) > 0 &&
+                                (e['duration_seconds'] as num) > 0)
+                              LinearProgressIndicator(
+                                  value: ((e['position_seconds'] as num) /
+                                          (e['duration_seconds'] as num))
+                                      .clamp(0.0, 1.0)),
+                            PodcastShowNotes(
+                                description: e['description'] as String? ?? ''),
+                            PodcastDownloadControls(
+                                feed: e['feed_key'] as String,
+                                scope: e['browse_scope'] as String,
+                                episode: e,
+                                onPlaybackReturn: reload,
+                                onDeleteEpisode: () => deleteEpisode(
+                                    e, e['browse_scope'] as String),
+                                completeLabel: e['completed'] == 1
+                                    ? 'Mark uncompleted'
+                                    : 'Mark completed',
+                                onToggleComplete: scope == null ||
+                                        pending.contains(
+                                            '${e['scope_feed_key']}:${e['scope_episode_key']}')
+                                    ? null
+                                    : () => complete(e, scope)),
+                          ]),
+                    ),
+                  Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      children: [
+                        TextButton(
+                            onPressed:
+                                offset == 0 ? null : () => page(offset - 40),
+                            child: const Text('Previous page')),
+                        Text('Page ${offset ~/ 40 + 1}'),
+                        TextButton(
+                            onPressed: rows.length <= 40
+                                ? null
+                                : () => page(offset + 40),
+                            child: const Text('Next page')),
+                      ]),
+                ]),
+        )),
+      ]),
+    );
   }
 }

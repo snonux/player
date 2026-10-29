@@ -56,6 +56,7 @@ LEFT JOIN media m ON m.id = e.media_id
 WHERE f.merged_into IS NULL
  AND EXISTS (SELECT 1 FROM podcast_subscriptions sub WHERE sub.user_id = ?1 AND sub.subscribed = 1 AND (
   sub.feed_key = f.feed_key OR sub.feed_key IN (SELECT alias_key FROM podcast_feed_aliases a WHERE a.feed_key = f.feed_key)))
+ AND COALESCE(s.deleted,0)=0
  AND (?2 = '' OR f.feed_key = ?2)
  AND (?3 = 'all' OR COALESCE(s.completed, 0) = (?3 = 'completed'))
 ), ranked AS (

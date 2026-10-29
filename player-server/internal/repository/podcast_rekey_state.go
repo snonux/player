@@ -31,7 +31,7 @@ func loadStatesOfFeed(ctx context.Context, tx *sql.Tx, feedKey string) ([]stored
 // at once on the transaction's connection.
 func loadStates(ctx context.Context, tx *sql.Tx, where string, args ...any) ([]storedEpisodeState, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT user_id, feed_key, episode_key, position_seconds, position_ms,
- completed, completion_source, completion_ms, enclosure_url FROM podcast_episode_state `+where, args...)
+ completed, completion_source, completion_ms, enclosure_url, deleted, deletion_ms FROM podcast_episode_state `+where, args...)
 	if err != nil {
 		return nil, fmt.Errorf("load episode states: %w", err)
 	}
@@ -39,7 +39,7 @@ func loadStates(ctx context.Context, tx *sql.Tx, where string, args ...any) ([]s
 	for rows.Next() {
 		var st storedEpisodeState
 		if err := rows.Scan(&st.key.userID, &st.key.feedKey, &st.key.episodeKey, &st.r.position, &st.r.positionMS,
-			&st.r.completed, &st.r.completionSource, &st.r.completionMS, &st.enclosureURL); err != nil {
+			&st.r.completed, &st.r.completionSource, &st.r.completionMS, &st.enclosureURL, &st.r.deleted, &st.r.deletionMS); err != nil {
 			_ = rows.Close()
 			return nil, fmt.Errorf("scan episode state: %w", err)
 		}
@@ -62,6 +62,7 @@ func moveEpisodeState(ctx context.Context, tx *sql.Tx, src storedEpisodeState, t
 	merged := r
 	merged.setPosition(src.r.position, src.r.positionMS)
 	merged.setCompletion(src.r.completed, src.r.completionSource, src.r.completionMS)
+	merged.setDeletion(src.r.deleted, src.r.deletionMS)
 	if _, err := tx.ExecContext(ctx, `DELETE FROM podcast_episode_state WHERE user_id = ? AND feed_key = ? AND episode_key = ?`,
 		src.key.userID, src.key.feedKey, src.key.episodeKey); err != nil {
 		return fmt.Errorf("move episode state: %w", err)

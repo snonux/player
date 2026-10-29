@@ -146,6 +146,29 @@ function setupAlbumGrid(items) {
   return cards;
 }
 
+async function testExplicitPlayRestoresAfterBrowsingAway() {
+  const first = { id: 31, type: 'audio', file_name: 'first.mp3', duration: 12 };
+  const second = { id: 32, type: 'audio', file_name: 'second.mp3', duration: 12 };
+  const cards = setupAlbumGrid([first, second]);
+  const originalDetail = API.mediaDetail;
+  API.mediaDetail = async () => ({ progress: null });
+  try {
+    await nav.playMediaById(first.id);
+    assert(player.escapePlayerView(), 'Backspace leaves the full player');
+    assert(elements.player.classList.contains('minimized'), 'browsing keeps a minimized player');
+    await nav.navigatePlayable(1, { completed: true });
+    assert(elements.player.classList.contains('minimized'), 'automatic next keeps minimized layout');
+    await nav.playMediaById(first.id);
+    assert(!elements.player.classList.contains('minimized'), 'explicit episode Play restores controls');
+    assertEqual(player.currentMediaId(), first.id, 'explicit Play selects the requested episode');
+    player.escapePlayerView();
+    selection.selectByElement(cards[1]);
+    await nav.playSelected();
+    assert(!elements.player.classList.contains('minimized'), 'keyboard Play restores controls');
+    assertEqual(player.currentMediaId(), second.id, 'keyboard Play selects another folder item');
+  } finally { API.mediaDetail = originalDetail; }
+}
+
 async function testNextAfterLastAudioSkipsCoverAndWrapsAmongAudio() {
   const song1 = { id: 1, type: 'audio', file_name: '01.mp3', duration: 12, browse_path: 'Album' };
   const song2 = { id: 2, type: 'audio', file_name: '02.mp3', duration: 12, browse_path: 'Album' };
@@ -242,6 +265,7 @@ async function testSignedInSavedProductionLyricsCaller(){
 }
 
 for (const test of [
+  testExplicitPlayRestoresAfterBrowsingAway,
   testNextAfterLastAudioSkipsCoverAndWrapsAmongAudio,
   testCrossFolderNextSkipsCoverAndStopsWithoutImage,
   testVideoSequenceStillReachesImages,

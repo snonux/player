@@ -14,6 +14,7 @@ class PodcastDownloadControls extends ConsumerStatefulWidget {
       this.scope,
       this.completeLabel,
       this.onToggleComplete,
+      this.onDeleteEpisode,
       this.detailsTitle,
       this.detailsBody});
   final String feed;
@@ -22,6 +23,7 @@ class PodcastDownloadControls extends ConsumerStatefulWidget {
   final String? scope;
   final String? completeLabel;
   final VoidCallback? onToggleComplete;
+  final VoidCallback? onDeleteEpisode;
   final String? detailsTitle;
   final String? detailsBody;
   @override
@@ -42,7 +44,8 @@ class PodcastDownloadControlsState
     // future leaves Download disabled while connectionState stays waiting.
     if (_copy == null || _copyKey != key) {
       _copyKey = key;
-      _copy = downloads.copy(widget.feed, widget.episode['episode_key'] as String);
+      _copy =
+          downloads.copy(widget.feed, widget.episode['episode_key'] as String);
     }
     return _copy!;
   }
@@ -128,6 +131,12 @@ class PodcastDownloadControlsState
                       ? null
                       : () => run(() => downloads.remove(widget.feed, key)),
                 ),
+              if (widget.onDeleteEpisode != null)
+                OverflowMenuItem(
+                  icon: Icons.delete_forever_outlined,
+                  label: 'Delete episode',
+                  onSelected: busy ? null : widget.onDeleteEpisode,
+                ),
               if (details.isNotEmpty)
                 OverflowMenuItem(
                   icon: Icons.info_outline,
@@ -168,7 +177,8 @@ class PodcastDownloadControlsState
           final state = snapshot.data?['state'];
           final transferring = state == 'pending' || state == 'downloading';
           final settled = snapshot.connectionState == ConnectionState.done;
-          final hasMenu = widget.completeLabel != null ||
+          final hasMenu = widget.onDeleteEpisode != null ||
+              widget.completeLabel != null ||
               state == 'available' ||
               (widget.detailsBody ?? '').trim().isNotEmpty;
           return Column(
@@ -220,8 +230,8 @@ class PodcastDownloadControlsState
                   if (hasMenu)
                     IconButton(
                       tooltip: 'More episode actions',
-                      style: IconButton.styleFrom(
-                          minimumSize: const Size(48, 48)),
+                      style:
+                          IconButton.styleFrom(minimumSize: const Size(48, 48)),
                       icon: const Icon(Icons.menu),
                       onPressed: () => _openMore(
                           downloads: downloads, key: key, state: state),

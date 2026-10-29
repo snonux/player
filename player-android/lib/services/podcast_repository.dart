@@ -21,7 +21,7 @@ class PodcastRepository {
   final PodcastFeedFetcher fetcher;
   Future<Database>? _opening;
   Future<Database> get database => _opening ??=
-          openDatabase(databasePath, version: 5, onUpgrade: (db, old, _) async {
+          openDatabase(databasePath, version: 6, onUpgrade: (db, old, _) async {
         if (old < 2) await createSyncSchema(db);
         if (old < 3) await createDownloadSchema(db);
         if (old < 4) {
@@ -42,6 +42,22 @@ class PodcastRepository {
           }
           await db.update('podcast_feeds', {'etag': '', 'last_modified': ''});
         }
+        if (old < 6) {
+          final columns =
+              (await db.rawQuery('PRAGMA table_info(podcast_episode_state)'))
+                  .map((r) => r['name'])
+                  .toSet();
+          for (final entry in {
+            'deleted': 'INTEGER NOT NULL DEFAULT 0',
+            'deletion_ms': 'INTEGER NOT NULL DEFAULT 0',
+            'deletion_pending_edit_id': 'TEXT'
+          }.entries) {
+            if (!columns.contains(entry.key)) {
+              await db.execute(
+                  'ALTER TABLE podcast_episode_state ADD COLUMN ${entry.key} ${entry.value}');
+            }
+          }
+        }
       }, onCreate: (db, _) async {
         await createSyncSchema(db);
         await createDownloadSchema(db);
@@ -50,7 +66,7 @@ class PodcastRepository {
         await db.execute(
             'CREATE TABLE podcast_subscriptions(scope TEXT NOT NULL, feed_key TEXT NOT NULL, subscribed INTEGER NOT NULL, subscription_ms INTEGER NOT NULL, title TEXT NOT NULL DEFAULT "", fetch_url TEXT NOT NULL DEFAULT "", urls TEXT NOT NULL DEFAULT "[]", pending_edit_id TEXT, PRIMARY KEY(scope,feed_key))');
         await db.execute(
-            'CREATE TABLE podcast_episode_state(scope TEXT NOT NULL, feed_key TEXT NOT NULL, episode_key TEXT NOT NULL, position_seconds REAL NOT NULL DEFAULT 0, position_ms INTEGER NOT NULL DEFAULT 0, position_pending_edit_id TEXT, completed INTEGER NOT NULL DEFAULT 0, completion_source TEXT NOT NULL DEFAULT "", completion_ms INTEGER NOT NULL DEFAULT 0, completion_pending_edit_id TEXT, enclosure_url TEXT NOT NULL DEFAULT "", PRIMARY KEY(scope,feed_key,episode_key))');
+            'CREATE TABLE podcast_episode_state(scope TEXT NOT NULL, feed_key TEXT NOT NULL, episode_key TEXT NOT NULL, position_seconds REAL NOT NULL DEFAULT 0, position_ms INTEGER NOT NULL DEFAULT 0, position_pending_edit_id TEXT, completed INTEGER NOT NULL DEFAULT 0, completion_source TEXT NOT NULL DEFAULT "", completion_ms INTEGER NOT NULL DEFAULT 0, completion_pending_edit_id TEXT, enclosure_url TEXT NOT NULL DEFAULT "", deleted INTEGER NOT NULL DEFAULT 0, deletion_ms INTEGER NOT NULL DEFAULT 0, deletion_pending_edit_id TEXT, PRIMARY KEY(scope,feed_key,episode_key))');
         await db.execute(
             'CREATE TABLE podcast_feeds(feed_key TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT "", description TEXT NOT NULL DEFAULT "", image_url TEXT NOT NULL DEFAULT "", fetch_url TEXT NOT NULL, etag TEXT NOT NULL DEFAULT "", last_modified TEXT NOT NULL DEFAULT "", last_checked_ms INTEGER, last_error TEXT, aliases TEXT NOT NULL DEFAULT "[]")');
         await db.execute(
@@ -180,6 +196,7 @@ class PodcastRepository {
             mapped.where((key) => !episodeKeys.contains(key)).firstOrNull ??
             mapped.first;
         final state = states[(scopedFeed, key)] ?? const <String, Object?>{};
+        if (state['deleted'] == 1) continue;
         final completed = state['completed'] == 1;
         if (filter == 'completed' && !completed ||
             filter == 'uncompleted' && completed) {
@@ -243,6 +260,130 @@ class PodcastRepository {
     await db.insert('podcast_feeds', {'feed_key': deviceKey, 'fetch_url': url},
         conflictAlgorithm: ConflictAlgorithm.ignore);
     await refresh(deviceKey);
+  }
+
+  /// Import metadata only. Device identities, personal registers, tombstones,
+  /// copy keys and publisher conditional-request validators remain intact.
+  Future<void> importServerEpisodes(
+      String scope, String feed, List<Map<String, dynamic>> rows,
+      {required bool Function() current}) async {
+    if (!current()) throw StateError('Account changed');
+    await (await database).transaction((tx) async {
+      if (!current()) throw StateError('Account changed');
+      final canonical = await resolveAccountKey(tx, scope, 'feed', '', feed);
+      final subscription = (await tx.query('podcast_subscriptions',
+              where: 'scope=? AND feed_key=? AND subscribed=1',
+              whereArgs: [scope, canonical]))
+          .firstOrNull;
+      if (subscription == null) throw StateError('Subscription changed');
+      var deviceFeed = canonical;
+      for (final catalog in await tx.query('podcast_feeds')) {
+        final keys = [
+          catalog['feed_key'] as String,
+          ...(jsonDecode(catalog['aliases'] as String) as List).cast<String>()
+        ];
+        var found = false;
+        for (final key in keys) {
+          if (await resolveAccountKey(tx, scope, 'feed', '', key) ==
+              canonical) {
+            found = true;
+            break;
+          }
+        }
+        if (found) {
+          deviceFeed = catalog['feed_key'] as String;
+          break;
+        }
+      }
+      await tx.insert(
+          'podcast_feeds',
+          {
+            'feed_key': deviceFeed,
+            'fetch_url': subscription['fetch_url'],
+            'title': subscription['title']
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+      final existing = await tx.query('podcast_episodes',
+          where: 'feed_key=?', whereArgs: [deviceFeed]);
+      final known = existing
+          .map((e) => PodcastKnownEpisode(
+              e['episode_key'] as String,
+              e['enclosure_key'] as String,
+              (jsonDecode(e['aliases'] as String) as List).cast<String>()))
+          .toList();
+      final items = <PodcastIdentityItem>[];
+      for (final row in rows) {
+        if (await resolveAccountKey(
+                tx, scope, 'feed', '', row['feed_key'] as String) !=
+            canonical) {
+          throw StateError('Unexpected feed metadata');
+        }
+        final key = row['episode_key'] as String;
+        items.add(PodcastIdentityItem(
+            key.startsWith('guid:') ? key.substring(5) : '',
+            row['episode_url'] as String));
+      }
+      final matches = podcastMatchEpisodes(known, items);
+      for (var i = 0; i < rows.length; i++) {
+        final row = rows[i], match = matches[i];
+        if (match.key.isEmpty) continue;
+        final previous = known.where((e) => e.key == match.key).firstOrNull;
+        final aliases = <String>{
+          ...?previous?.aliases,
+          if (match.alias.isNotEmpty) match.alias,
+          if (row['episode_key'] != match.key) row['episode_key'] as String
+        };
+        final published =
+            DateTime.tryParse(row['published_at'] as String? ?? '');
+        final enclosure = row['episode_url'] as String;
+        await tx.insert(
+            'podcast_episodes',
+            {
+              'feed_key': deviceFeed,
+              'episode_key': match.key,
+              'title': row['title'] as String? ?? '',
+              'description': row['description'] as String? ?? '',
+              'image_url': row['image_url'] as String? ?? '',
+              'enclosure_url': enclosure,
+              'enclosure_key': podcastEnclosureKey(enclosure),
+              'published_at': published?.millisecondsSinceEpoch ?? 0,
+              'duration_seconds':
+                  (row['duration_seconds'] as num?)?.round() ?? 0,
+              'aliases': jsonEncode(aliases.toList())
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await tx.update(
+          'podcast_feeds',
+          {
+            // Keep the publisher error: this account-filtered catalogue page
+            // cannot establish that another account has a complete feed cache.
+            'last_checked_ms': DateTime.now().millisecondsSinceEpoch,
+            if (rows.isNotEmpty)
+              'image_url': rows.first['feed_image_url'] as String? ?? ''
+          },
+          where: 'feed_key=?',
+          whereArgs: [deviceFeed]);
+      if (!current()) throw StateError('Account changed');
+    });
+  }
+
+  Future<List<String>> uncachedSubscriptions(String scope) async {
+    final db = await database;
+    final cached = <String>{};
+    for (final row in await db.rawQuery(
+        'SELECT DISTINCT f.feed_key,f.aliases FROM podcast_feeds f JOIN podcast_episodes e USING(feed_key) WHERE f.last_error IS NULL')) {
+      for (final key in [
+        row['feed_key'] as String,
+        ...(jsonDecode(row['aliases'] as String) as List).cast<String>()
+      ]) {
+        cached.add(await resolveAccountKey(db, scope, 'feed', '', key));
+      }
+    }
+    return (await subscriptions(scope))
+        .map((s) => s['feed_key'] as String)
+        .where((key) => !cached.contains(key))
+        .toList();
   }
 
   Future<String> resolveFeed(DatabaseExecutor db, String key) async {
@@ -534,12 +675,19 @@ class PodcastRepository {
       'feed_key': feedKey,
       'episode_key': episodeKey
     };
-    for (final register in ['position', 'completion']) {
-      if ((row['${register}_ms'] as int) >
-          (old.firstOrNull?['${register}_ms'] as int? ?? 0)) {
+    for (final register in ['position', 'completion', 'deletion']) {
+      final incomingClock = row['${register}_ms'] as int;
+      final oldClock = old.firstOrNull?['${register}_ms'] as int? ?? 0;
+      final winsDeletionTie = register == 'deletion' &&
+          incomingClock > 0 &&
+          incomingClock == oldClock &&
+          row['deleted'] == 1;
+      if (incomingClock > oldClock || winsDeletionTie) {
         for (final field in register == 'position'
             ? ['position_seconds', 'position_ms']
-            : ['completed', 'completion_source', 'completion_ms']) {
+            : register == 'completion'
+                ? ['completed', 'completion_source', 'completion_ms']
+                : ['deleted', 'deletion_ms']) {
           merged[field] = row[field];
         }
         merged['${register}_pending_edit_id'] = podcastEditId();

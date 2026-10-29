@@ -191,8 +191,6 @@ class _SearchFilterBarState extends State<SearchFilterBar> {
         widget.scopeLabel!,
       if (_filter.type != null) label(mediaTypeOptions, _filter.type),
       if (_filter.favoritesOnly) 'Favourites',
-      if (_filter.sortBy != null)
-        'Sort: ${label(mediaSortOptions, _filter.sortBy)}',
       if (_filter.tags.isNotEmpty) 'Tags: ${_filter.tags.join(', ')}',
       if (_filter.minDuration != null)
         'Duration ≥ ${_filter.minDuration! / 60} min',

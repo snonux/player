@@ -295,6 +295,9 @@ func episodeEditOf(item model.PodcastEpisodeEdit) episodeEdit {
 	if c := item.Completion; c != nil {
 		e = e.withCompletion(c.Completed, c.Source, c.ObservedMS)
 	}
+	if d := item.Deletion; d != nil {
+		e = e.withDeletion(d.Deleted, d.ObservedMS)
+	}
 	return e
 }
 
@@ -306,6 +309,9 @@ func episodeEditIDs(item model.PodcastEpisodeEdit) []string {
 	}
 	if item.Completion != nil {
 		ids = append(ids, item.Completion.EditID)
+	}
+	if item.Deletion != nil {
+		ids = append(ids, item.Deletion.EditID)
 	}
 	return ids
 }
@@ -362,7 +368,7 @@ func addEditedEpisodes(ctx context.Context, tx *sql.Tx, keys []episodeStateKey, 
 		if err != nil {
 			return err
 		}
-		if state == nil || (state.Position == nil && state.Completion == nil) {
+		if state == nil || (state.Position == nil && state.Completion == nil && state.Deletion == nil) {
 			continue
 		}
 		out.Episodes = append(out.Episodes, *state)

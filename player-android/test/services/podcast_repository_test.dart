@@ -24,6 +24,66 @@ class FixtureFetcher extends PodcastFeedFetcher {
 void main() {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
+  test('v5 migration keeps listening state, subscriptions, GUIDs and downloads',
+      () async {
+    final directory = await Directory.systemTemp.createTemp('podcast-v5-');
+    final path = '${directory.path}/podcasts.db';
+    var repository =
+        PodcastRepository(databasePath: path, fetcher: FixtureFetcher());
+    try {
+      final key =
+          await repository.subscribe('local', 'https://example.com/feed');
+      var db = await repository.database;
+      await db.insert('podcast_episode_state', {
+        'scope': 'local',
+        'feed_key': key,
+        'episode_key': 'guid:a',
+        'position_seconds': 17,
+        'position_ms': 90,
+        'completed': 1,
+        'completion_ms': 100,
+        'position_pending_edit_id': 'position',
+        'completion_pending_edit_id': 'completion'
+      });
+      await db.insert('podcast_downloads', {
+        'id': 'copy',
+        'feed_key': key,
+        'episode_key': 'guid:a',
+        'state': 'available'
+      });
+      final subscriptions = await db.query('podcast_subscriptions');
+      final episodes = await db.query('podcast_episodes');
+      final downloads = await db.query('podcast_downloads');
+      for (final column in [
+        'deleted',
+        'deletion_ms',
+        'deletion_pending_edit_id'
+      ]) {
+        await db
+            .execute('ALTER TABLE podcast_episode_state DROP COLUMN $column');
+      }
+      await db.setVersion(5);
+      await repository.close();
+      repository = PodcastRepository(databasePath: path);
+      db = await repository.database;
+      expect(await db.getVersion(), 6);
+      expect(await db.query('podcast_subscriptions'), subscriptions);
+      expect(await db.query('podcast_episodes'), episodes);
+      expect(await db.query('podcast_downloads'), downloads);
+      final state = (await db.query('podcast_episode_state')).single;
+      expect(state['position_seconds'], 17);
+      expect(state['completed'], 1);
+      expect(state['position_pending_edit_id'], 'position');
+      expect(state['completion_pending_edit_id'], 'completion');
+      expect(state['deleted'], 0);
+      expect(state['deletion_ms'], 0);
+      expect(state['deletion_pending_edit_id'], isNull);
+    } finally {
+      await repository.close();
+      await directory.delete(recursive: true);
+    }
+  });
+
   for (final oldVersion in [3, 4]) {
     test('upgrading v$oldVersion reparses metadata and preserves episode state',
         () async {
@@ -108,7 +168,7 @@ void main() {
                     where: 'feed_key=?', whereArgs: [healthyKey]))
                 .single,
             {...healthy, 'etag': '', 'last_modified': ''});
-        expect(await db.getVersion(), 5);
+        expect(await db.getVersion(), 6);
         await repository.refresh(key);
         expect(validators.last, [null, null]);
         final episodes = await repository.episodes(key);

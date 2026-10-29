@@ -26,6 +26,8 @@ class PodcastDownloads extends ChangeNotifier {
   Directory? _directory;
   Future<void>? _initializing;
   String? _active;
+  Completer<void>? _activeFinished;
+  (String, String)? _activeIdentity;
   HttpClient? _client;
   bool _cancelled = false, _disposed = false;
 
@@ -141,6 +143,8 @@ class PodcastDownloads extends ChangeNotifier {
       throw StateError('Wait for the current podcast download.');
     }
     _active = '';
+    _activeIdentity = (feed, episode);
+    _activeFinished = Completer<void>();
     _cancelled = false;
     String? id;
     RandomAccessFile? output;
@@ -276,19 +280,48 @@ class PodcastDownloads extends ChangeNotifier {
         }
       } finally {
         _active = null;
+        _activeIdentity = null;
+        _activeFinished?.complete();
+        _activeFinished = null;
         _changed();
       }
     }
   }
 
-  Future<void> remove(String feed, String episode) async {
+  /// Episode deletion cancels only this episode's transfer before removing it.
+  Future<void> removeEpisodeCopy(String feed, String episode,
+      {bool Function()? current}) async {
+    await ready;
+    final identity = await _identity(feed, episode);
+    if (current?.call() == false) return;
+    final activeIdentity = _activeIdentity;
+    final activeFinished = _activeFinished;
+    if (activeIdentity != null &&
+        await _identity(activeIdentity.$1, activeIdentity.$2) == identity &&
+        identical(activeFinished, _activeFinished) &&
+        current?.call() != false) {
+      cancel();
+      await activeFinished?.future;
+    }
+    await _remove(feed, episode, current: current);
+  }
+
+  Future<void> remove(String feed, String episode) => _remove(feed, episode);
+
+  Future<void> _remove(String feed, String episode,
+      {bool Function()? current}) async {
     await ready;
     for (final row in await _copies(feed, episode)) {
+      if (current?.call() == false) return;
       final id = row['id'] as String;
       if (_active == id) throw StateError('Cancel this download first.');
       final file = _file(id);
       await playback.stopLocalSource(file.uri.toString());
-      if (await file.exists()) await file.delete();
+      if (current?.call() == false) return;
+      if (await file.exists()) {
+        if (current?.call() == false) return;
+        await file.delete();
+      }
       await (await repository.database).update('podcast_downloads',
           {'state': 'missing', 'size_bytes': 0, 'error': null},
           where: 'id=?', whereArgs: [id]);

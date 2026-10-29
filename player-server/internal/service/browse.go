@@ -411,12 +411,16 @@ func buildFoldersIn(layout thumb.Layout, folderMap map[string]*folderContent, me
 }
 
 func (s *browseService) BrowseSet(ctx context.Context, setID, userID int64, parent string) (*BrowseResult, error) {
+	return s.browseSet(ctx, setID, userID, parent, "")
+}
+
+func (s *browseService) browseSet(ctx context.Context, setID, userID int64, parent, order string) (*BrowseResult, error) {
 	if err := s.helper.checkSetPermission(ctx, setID, userID, ""); err != nil {
 		return nil, err
 	}
 
 	parent = filepath.ToSlash(strings.Trim(parent, "/"))
-	media, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
+	media, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID, UserID: userID, Sort: order})
 	if err != nil {
 		return nil, fmt.Errorf("list media: %w", err)
 	}
@@ -441,6 +445,17 @@ func (s *browseService) BrowseSet(ctx context.Context, setID, userID int64, pare
 	// Delegate podcast-specific grid augmentation to the injected strategy.
 	if s.podcastBrowser != nil {
 		_ = s.podcastBrowser.AugmentBrowseSet(ctx, result, set, userID, media)
+	}
+
+	if order != "" {
+		ranks := make(map[int64]int, len(media))
+		for i, item := range media {
+			ranks[item.ID] = i
+		}
+		sort.SliceStable(result.Media, func(i, j int) bool { return ranks[result.Media[i].ID] < ranks[result.Media[j].ID] })
+		if order == "name_desc" {
+			sort.SliceStable(result.Folders, func(i, j int) bool { return result.Folders[i].Name > result.Folders[j].Name })
+		}
 	}
 
 	return result, nil
@@ -650,4 +665,11 @@ func (s *browseService) listMediaWithListening(ctx context.Context, user int64, 
 		}
 	}
 	return media, nil
+}
+
+// BrowseSetSorted keeps folder grouping while applying the same media order as search.
+// Folder metadata has no aggregate meaning: folders stay first, alphabetically,
+// reversing only when the requested field is name descending.
+func (s *browseService) BrowseSetSorted(ctx context.Context, setID, userID int64, parent, order string) (*BrowseResult, error) {
+	return s.browseSet(ctx, setID, userID, parent, order)
 }

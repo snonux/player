@@ -20,7 +20,7 @@ const pullRowsQuery = `SELECT kind, change_seq, k1, k2, k3 FROM (
   FROM podcast_subscriptions WHERE user_id = ?1 AND change_seq > ?2
  UNION ALL
  SELECT 'e', change_seq, feed_key, episode_key, ''
-  FROM podcast_episode_state WHERE user_id = ?1 AND change_seq > ?2 AND (position_ms > 0 OR completion_ms > 0)
+  FROM podcast_episode_state WHERE user_id = ?1 AND change_seq > ?2 AND (position_ms > 0 OR completion_ms > 0 OR deletion_ms > 0)
  UNION ALL
  SELECT 'f', change_seq, alias_key, feed_key, '' FROM podcast_feed_aliases a WHERE change_seq > ?2 AND (
   EXISTS (SELECT 1 FROM podcast_subscriptions s WHERE s.user_id = ?1 AND s.feed_key = a.feed_key)
@@ -199,6 +199,9 @@ func getEpisodeState(ctx context.Context, q sqlQueryRower, userID int64, feedKey
 	}
 	if r.completionMS > 0 {
 		state.Completion = &model.PodcastCompletionRegister{Completed: r.completed, Source: r.completionSource, ObservedMS: r.completionMS}
+	}
+	if r.deletionMS > 0 {
+		state.Deletion = &model.PodcastDeletionRegister{Deleted: r.deleted, ObservedMS: r.deletionMS}
 	}
 	return state, nil
 }

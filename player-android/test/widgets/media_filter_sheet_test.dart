@@ -171,23 +171,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(result, MediaFilter(sortBy: 'duration'));
   });
-  testWidgets('type and sort are chosen in the sheet and apply together',
-      (tester) async {
+  testWidgets('type filters preserve the independent set sort', (tester) async {
     MediaFilter? result;
     await _open(tester, _Client(), (value) => result = value,
         filter: MediaFilter(sortBy: 'name', favoritesOnly: true));
-    expect(
-        tester
-            .widget<ChoiceChip>(find.byKey(const Key('sort_option_name')))
-            .selected,
-        isTrue);
     await tester.tap(find.byKey(const Key('type_chip_audio')));
-    await tester.tap(find.byKey(const Key('sort_option_random')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Apply'));
     await tester.pumpAndSettle();
     expect(result!.type, 'audio');
-    expect(result!.sortBy, 'random');
+    expect(result!.sortBy, 'name');
     expect(result!.favoritesOnly, isTrue);
   });
 }

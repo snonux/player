@@ -10,7 +10,9 @@ class PodcastSyncAccount {
       {required this.scope,
       required this.current,
       required this.supported,
-      required this.send});
+      required this.send,
+      this.supportsDeletion});
+  final Future<bool> Function()? supportsDeletion;
   final String scope;
   final bool Function() current;
   final Future<bool> Function() supported;
@@ -59,16 +61,20 @@ class PodcastSync {
       if (!await account.supported()) {
         return const PodcastSyncResult(full: true, supported: false);
       }
-      final starting = await store.pending(account.scope);
+      final includeDeletion = await account.supportsDeletion?.call() ?? true;
+      final starting =
+          await store.pending(account.scope, includeDeletion: includeDeletion);
       var rejected = false;
       var pageSize = 500;
       var hasMore = true;
       final attempted = <String>{};
       while (account.current()) {
-        final request = await store.payload(account.scope, limit: pageSize);
+        final request = await store.payload(account.scope,
+            limit: pageSize, includeDeletion: includeDeletion);
         final edits = PodcastSyncStore.editIds(request);
         if (!hasMore && edits.isEmpty) {
-          final remaining = await store.pending(account.scope);
+          final remaining = await store.pending(account.scope,
+              includeDeletion: includeDeletion);
           return PodcastSyncResult(
               full: !rejected && starting.intersection(remaining).isEmpty,
               errorKind: rejected ? 'rejected' : null);
@@ -76,7 +82,8 @@ class PodcastSync {
         // An acknowledged register that was replaced during the request may
         // remain pending. Do not let continuously arriving edits starve a run.
         if (!hasMore && edits.every(attempted.contains)) {
-          return const PodcastSyncResult(full: false, errorKind: 'server');
+          return PodcastSyncResult(
+              full: false, errorKind: rejected ? 'rejected' : 'server');
         }
         Map<String, dynamic> response;
         try {
@@ -112,8 +119,10 @@ class PodcastSync {
             !account.current()) {
           return;
         }
-        final request =
-            await store.payload(account.scope, feed: feed, episode: episode);
+        final request = await store.payload(account.scope,
+            feed: feed,
+            episode: episode,
+            includeDeletion: await account.supportsDeletion?.call() ?? true);
         if (!account.current()) return;
         final response = await account.send(request);
         if (account.current()) {

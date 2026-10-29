@@ -1,3 +1,4 @@
+import '../widgets/set_sort_button.dart';
 import '../widgets/podcast_artwork.dart';
 import '../widgets/podcast_publication_date.dart';
 import '../widgets/music_mini_player.dart';
@@ -77,6 +78,21 @@ const _kPageSize = 50;
 
 class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
   final _selected = <int>{};
+  Future<void> _changeSort(String value) async {
+    setState(() {
+      _filter = _filter.copyWith(sortBy: value);
+    });
+    _load();
+    try {
+      await saveSetSort(ref, widget.setId, value);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not save sort preference')));
+      }
+    }
+  }
+
   bool _selecting = false;
   bool _bulkBusy = false;
 
@@ -245,7 +261,14 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
     _scrollController = ScrollController()..addListener(_onScroll);
     // Defer the first load until after the first frame so [ref] is fully bound
     // and any provider overrides in the test environment are applied.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final saved = await readSetSort(ref, widget.setId);
+      if (!mounted) return;
+      setState(() {
+        _filter = _filter.copyWith(sortBy: saved);
+      });
+      _load();
+    });
   }
 
   @override
@@ -446,6 +469,18 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final sortKey = setSortKey(ref, widget.setId);
+    if (sortKey != null) {
+      ref.listen<String?>(setSortValueProvider(sortKey), (previous, next) {
+        if (next != null && next != _filter.sortBy) {
+          setState(() {
+            _filter = _filter.copyWith(sortBy: next);
+          });
+          _load();
+        }
+      });
+    }
+
     return PopScope(
         canPop: !_selecting && !_bulkBusy,
         onPopInvokedWithResult: (didPop, result) {
@@ -516,6 +551,8 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
               ? 'All sets'
               : 'Selected sets'),
       actions: [
+        SetSortButton(
+            value: _filter.sortBy ?? 'name_asc', onChanged: _changeSort),
         const MusicQueueButton(),
         OverflowMenuButton(
           items: (_) => [

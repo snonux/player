@@ -475,7 +475,7 @@ func scanEpisodeWithStatus(rows *sql.Rows) (model.PodcastEpisodeWithStatus, erro
 // completion and position registers.
 func (s *SQLite) ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
 	rows, err := s.db.QueryContext(ctx, episodeWithStatusSelect+`
-WHERE e.feed_id = ?
+WHERE e.feed_id = ? AND COALESCE(s.deleted, 0) = 0
 ORDER BY e.published_at DESC
 LIMIT ? OFFSET ?`, userID, feedID, limit, offset)
 	if err != nil {
@@ -511,7 +511,7 @@ func (s *SQLite) ListEpisodesByFeedIDsWithStatus(ctx context.Context, userID int
 	args = append(args, limit, offset)
 
 	query := fmt.Sprintf(episodeWithStatusSelect+`
-WHERE e.feed_id IN (%s)
+WHERE e.feed_id IN (%s) AND COALESCE(s.deleted, 0) = 0
 ORDER BY e.published_at DESC
 LIMIT ? OFFSET ?`, strings.Join(placeholders, ", "))
 

@@ -6,8 +6,9 @@ import "time"
 // All clocks are UTC Unix milliseconds captured when the user made the edit;
 // they are never stamped with send, receive or migration time.
 
-// Rejection reasons of the podcast sync API. A rejected edit can never
-// succeed, so clients drop it from their queue.
+// Rejection reasons of the podcast sync API. Clients record rejections for
+// diagnosis. Episode deletion edits remain pending for a later bounded retry
+// until acknowledged, including when server quota temporarily prevents them.
 const (
 	PodcastRejectInvalidKey      = "invalid_key"
 	PodcastRejectInvalidURL      = "invalid_url"
@@ -74,6 +75,7 @@ type PodcastEpisodeEdit struct {
 	EnclosureURL string                 `json:"enclosure_url"`
 	Position     *PodcastPositionEdit   `json:"position"`
 	Completion   *PodcastCompletionEdit `json:"completion"`
+	Deletion     *PodcastDeletionEdit   `json:"deletion"`
 }
 
 // PodcastPositionEdit is one edit of the position register.
@@ -89,6 +91,17 @@ type PodcastCompletionEdit struct {
 	Completed  bool   `json:"completed"`
 	Source     string `json:"source"`
 	ObservedMS int64  `json:"observed_ms"`
+}
+
+type PodcastDeletionEdit struct {
+	EditID     string `json:"edit_id"`
+	Deleted    bool   `json:"deleted"`
+	ObservedMS int64  `json:"observed_ms"`
+}
+
+type PodcastDeletionRegister struct {
+	Deleted    bool  `json:"deleted"`
+	ObservedMS int64 `json:"observed_ms"`
 }
 
 // PodcastSyncResponse is the answer of POST /api/v1/podcasts/sync.
@@ -141,6 +154,7 @@ type PodcastEpisodeState struct {
 	EpisodeKey string                     `json:"episode_key"`
 	Position   *PodcastPositionRegister   `json:"position,omitempty"`
 	Completion *PodcastCompletionRegister `json:"completion,omitempty"`
+	Deletion   *PodcastDeletionRegister   `json:"deletion,omitempty"`
 }
 
 // PodcastPositionRegister is the stored position register.

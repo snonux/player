@@ -2,37 +2,41 @@
  * each browser, native B finish, completed in both browsers, uncomplete once,
  * observe-uncompleted on all clients, cleanup and boundaries.
  *
- * PLAYER_PODCAST_STAGE=catalog|resume|natural-end|completed|uncomplete|observe-uncompleted|cleanup|boundaries|auth-visual|account-switch|episode-conflict
+ * PLAYER_PODCAST_STAGE=catalog|resume|natural-end|completed|uncomplete|observe-uncompleted|cleanup|boundaries|auth-visual|account-switch|episode-conflict|combined-deletion
  * PLAYER_PODCAST_FIXTURE=/marked/path npx playwright test -c playwright.podcasts.config.ts --project=chrome
  * No API edits supply listening/completion proof. GETs are read-only oracles;
  * download, playback, completion, retry and cleanup use actual visible controls.
  */
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { keyboardLogin, audioState, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
 import { installAudioTap } from './helpers/audio-tap';
 
 const directory = process.env.PLAYER_PODCAST_FIXTURE!;
 const stage = process.env.PLAYER_PODCAST_STAGE;
-const allowed = ['catalog', 'resume', 'natural-end', 'completed', 'uncomplete', 'observe-uncompleted', 'cleanup', 'boundaries', 'feedback', 'unsubscribed', 'conflict', 'auth-visual', 'account-switch', 'episode-conflict'];
+const allowed = ['catalog', 'resume', 'natural-end', 'completed', 'uncomplete', 'observe-uncompleted', 'cleanup', 'boundaries', 'feedback', 'unsubscribed', 'conflict', 'auth-visual', 'account-switch', 'episode-conflict', 'combined-deletion'];
 if (!allowed.includes(stage || '')) throw new Error('Select one explicit PLAYER_PODCAST_STAGE');
 const state = JSON.parse(readFileSync(join(directory, 'state.json'), 'utf8'));
 const auth = JSON.parse(readFileSync(join(directory, 'auth.json'), 'utf8'));
 const feed = state.feeds[0], episode = feed.episodes[0];
 const exactCard = (p: Page, key = episode.key) => p.locator('.episode-card').filter({ hasText: key === episode.key ? episode.title : feed.episodes[1].title });
 
-async function openEpisodes(p: Page, filter = 'Uncompleted') {
+async function openEpisodes(p: Page, filter = 'All') {
   const toggle = p.getByRole('button', { name: 'Toggle sets sidebar', exact: true });
   const all = p.getByRole('button', { name: 'All podcast episodes', exact: true });
   if (!await all.isVisible()) await toggle.click();
   await all.click();
   await expect(p.locator('.podcast-view-title')).toHaveText('All podcast episodes', { timeout: 15_000 });
-  if (filter === 'Uncompleted') {
-    await expect(p.getByRole('button', { name: 'Uncompleted', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(p.locator('.podcast-filter-bar')).toHaveCount(0);
+  if (filter !== 'All') {
+    const publisher = p.getByRole('button', { name: `Podcast ${feed.title}`, exact: true });
+    if (!await publisher.isVisible()) await toggle.click();
+    await publisher.click();
+    await p.getByRole('button', { name: filter, exact: true }).click();
+    await expect(p.getByRole('button', { name: filter, exact: true })).toHaveAttribute('aria-pressed', 'true');
   }
-  await p.getByRole('button', { name: filter, exact: true }).click();
-  await expect(p.locator('.podcast-view-title')).toHaveText('All podcast episodes');
 }
 
 async function rows(p: Page) {
@@ -47,12 +51,21 @@ async function history(p: Page, key = episode.key) {
   return result;
 }
 async function fullSync(p: Page) {
-  const button = p.locator('#global-sync button');
+  const button = p.locator('#menu-sync-now');
+  if (!await button.isVisible()) await p.locator('#header-menu-toggle').click();
   await expect(button).toBeEnabled();
   await button.click();
   await expect(p.locator('#global-sync [data-sync-status]')).toHaveText('Synced', { timeout: 30_000 });
 }
 async function actionByKeyboard(p: Page, target: Locator) {
+  if (!await target.isVisible()) {
+    const card = target.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " episode-card ")][1]');
+    if (await card.count()) {
+      const label = await target.getAttribute('aria-label');
+      await card.locator('.card-more').click();
+      target = p.locator('.shortcut-picker:popover-open').getByRole('button', { name: label!, exact: true });
+    }
+  }
   await target.scrollIntoViewIfNeeded();
   await target.focus();
   await expect(target).toBeFocused();
@@ -126,10 +139,79 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       return;
     }
     await fullSync(page);
-    // Each browser flips completion during the boundary check; the second
-    // browser must still find the same episode after the first one hides it.
-    await openEpisodes(page, ['boundaries', 'natural-end'].includes(stage!) ? 'All' : 'Uncompleted');
-    if (stage === 'unsubscribed') {
+    // Completion changes stay visible in the combined list in either browser.
+    await openEpisodes(page);
+    if (stage === 'combined-deletion') {
+      test.setTimeout(180_000);
+      const at = Math.min(10, feed.episodes.length - 2);
+      const targets = feed.episodes.slice(at, at + 2);
+      expect(targets).toHaveLength(2);
+      const card = (p: Page, item: any) => p.locator('.episode-card').filter({ hasText: item.title });
+      const scoped = async (item: any) => {
+        const response = await page.request.post('/api/podcasts/sync', {
+          data: { scope: { feed_key: feed.key, episode_key: item.key } },
+        });
+        expect(response.ok()).toBe(true);
+        return (await response.json()).episodes.find((row: any) => row.episode_key === item.key);
+      };
+      const before = await Promise.all(targets.map(scoped));
+      const other = await page.context().newPage();
+      const saved = () => page.evaluate(async account => {
+        const path = '/js/podcast-deletion-store.js';
+        return (await import(path)).readPodcastDeletions(account);
+      }, state.accounts.admin);
+      try {
+        await other.goto('/?view=podcasts');
+        await expect(card(other, targets[1])).toBeVisible();
+        // Model two existing tabs whose storage-event delivery is delayed.
+        // Their real localStorage writes and network requests still run.
+        for (const tab of [page, other]) await tab.evaluate(() => {
+          window.addEventListener('storage', event => event.stopImmediatePropagation(), true);
+        });
+        await page.context().route('**/api/podcasts/sync', route => route.abort('connectionrefused'));
+        for (const [tab, item] of [[page, targets[0]], [other, targets[1]]] as const) {
+          await card(tab, item).locator('.card-more').click();
+          tab.once('dialog', dialog => dialog.accept());
+          await tab.locator('.shortcut-picker:popover-open').getByRole('button', { name: 'Delete episode', exact: true }).click();
+          await expect(card(tab, item)).toHaveCount(0);
+        }
+        await expect.poll(async () => (await saved()).filter((row: any) => row.pending).length).toBe(2);
+        const replayIds = (await saved()).filter((row: any) => row.pending).map((row: any) => row.pending.edit_id).sort();
+        await page.reload();
+        await expect(page.locator('.podcast-view-title')).toHaveText('All podcast episodes');
+        for (const item of targets) await expect(card(page, item)).toHaveCount(0);
+        expect((await saved()).filter((row: any) => row.pending).map((row: any) => row.pending.edit_id).sort()).toEqual(replayIds);
+        await page.context().unroute('**/api/podcasts/sync');
+        await page.locator('#podcast-pending-hint').getByRole('button', { name: 'Retry', exact: true }).click();
+        await expect.poll(async () => (await rows(page)).filter((row: any) => targets.some((item: any) => item.key === row.episode_key)).length).toBe(0);
+        const after = await Promise.all(targets.map(scoped));
+        for (let i = 0; i < targets.length; i++) {
+          expect(after[i].deletion.deleted).toBe(true);
+          expect([after[i].position, after[i].completion]).toEqual([before[i]?.position, before[i]?.completion]);
+        }
+        const freshContext = await browser.newContext({ baseURL: state.origin });
+        try {
+          const fresh = await freshContext.newPage();
+          await keyboardLogin(fresh, auth.admin);
+          await openEpisodes(fresh);
+          for (const item of targets) await expect(card(fresh, item)).toHaveCount(0);
+        } finally { await freshContext.close(); }
+        record('two existing tabs retain both offline deletions across reload and replay to a fresh device without losing history');
+      } finally {
+        await page.context().unroute('**/api/podcasts/sync');
+        await other.close();
+        // Fixture-only cleanup restores the reusable targets. All deletion
+        // proof above came from real user controls, never setup API edits.
+        for (const item of targets) {
+          const current = await scoped(item);
+          await page.request.post('/api/podcasts/sync', { data: { episodes: [{
+            feed_key: feed.key, episode_key: item.key,
+            deletion: { edit_id: randomBytes(16).toString('base64url'), deleted: false,
+              observed_ms: Math.max(Date.now(), (current?.deletion?.observed_ms || 0) + 1) },
+          }] } });
+        }
+      }
+    } else if (stage === 'unsubscribed') {
       expect((await catalogFeed(page)).subscribed).toBe(false);
       await expect(page.getByRole('button', { name: 'Podcast Acceptance Alpha', exact: true })).toHaveCount(0);
       await expect(exactCard(page)).toHaveCount(0);
@@ -217,7 +299,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         // visible control, then give both tabs the same baseline.
         if ((await history(other, target.key)).completed) {
           await card(other).hover();
-          await card(other).getByRole('button', { name: 'Mark uncompleted', exact: true }).click();
+          await actionByKeyboard(other, card(other).getByRole('button', { name: 'Mark uncompleted', exact: true }));
           await expect.poll(async () => (await history(other, target.key)).completed).toBe(false);
         }
         if (!(await history(other, target.key)).server_copy?.media_id) {
@@ -228,7 +310,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         await fullSync(page);
         await openEpisodes(page, 'All');
         await card(page).hover();
-        await expect(card(page).getByRole('button', { name: 'Mark completed', exact: true })).toBeVisible();
+        await expect(card(page).getByRole('button', { name: 'Mark completed', exact: true })).toHaveCount(1);
 
         // Firefox's Playwright route.fetch loses this JSON POST body and times
         // out. Hold the response where the page's fetch owns the original body,
@@ -257,7 +339,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         // This card can rerender after the preceding pull. Pointer activation
         // follows the visible replacement control; keyboard focus is covered
         // by the separate completion journey.
-        await card(page).getByRole('button', { name: 'Mark completed', exact: true }).click();
+        await actionByKeyboard(page, card(page).getByRole('button', { name: 'Mark completed', exact: true }));
         await expect.poll(() => page.evaluate(() => (window as any).__podcastEpisodeConflictGate.held),
           { timeout: 15_000 }).toBe(true);
         const upstream = await page.evaluate(() => {
@@ -272,9 +354,9 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         await fullSync(other);
         await openEpisodes(other, 'All');
         await card(other).hover();
-        await expect(card(other).getByRole('button', { name: 'Mark uncompleted', exact: true })).toBeVisible();
+        await expect(card(other).getByRole('button', { name: 'Mark uncompleted', exact: true })).toHaveCount(1);
         await other.waitForTimeout(10);
-        await card(other).getByRole('button', { name: 'Mark uncompleted', exact: true }).click();
+        await actionByKeyboard(other, card(other).getByRole('button', { name: 'Mark uncompleted', exact: true }));
         await expect.poll(async () => (await history(other, target.key)).completed).toBe(false);
         await playCard(other, card(other));
         await expect.poll(async () => (await audioState(other)).time).toBeGreaterThan(2);
@@ -286,11 +368,11 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
 
         await page.evaluate(() => (window as any).__podcastEpisodeConflictGate.release());
         await card(page).hover();
-        await expect(card(page).getByRole('button', { name: 'Mark uncompleted', exact: true })).toBeVisible();
+        await expect(card(page).getByRole('button', { name: 'Mark uncompleted', exact: true })).toHaveCount(1);
         await fullSync(page);
         await openEpisodes(page, 'All');
         await card(page).hover();
-        await expect(card(page).getByRole('button', { name: 'Mark completed', exact: true })).toBeVisible();
+        await expect(card(page).getByRole('button', { name: 'Mark completed', exact: true })).toHaveCount(1);
         await expect(card(page).locator('.badge')).toContainText('Resume');
         const reconciled = await history(page, target.key);
         expect(reconciled.completed).toBe(false);
@@ -342,7 +424,8 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         { timeout: 15_000 }).toBe(true);
       const ended = await history(page, candidate.key);
       expect(ended.position_seconds).toBeGreaterThanOrEqual(ended.duration_seconds - 1);
-      await page.getByRole('button', { name: 'Uncompleted', exact: true }).click();
+      await expect(card).toHaveClass(/listened/);
+      await openEpisodes(page, 'Uncompleted');
       await expect(card).toHaveCount(0);
       await page.getByRole('button', { name: 'Completed', exact: true }).click();
       await expect(card).toBeVisible();
@@ -357,7 +440,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       const transfer = JSON.parse(readFileSync(transferFile, 'utf8'));
       expect(transfer.position_seconds).toBeGreaterThan(0);
       const current = await history(page);
-      const total = (await rows(page)).filter((row: any) => !row.completed).length;
+      const total = (await rows(page)).length;
       expect(current.position_seconds).toBeGreaterThanOrEqual(transfer.position_seconds - 1);
       const feedButton = page.getByRole('button', { name: 'Podcast Acceptance Alpha', exact: true });
       if (!await feedButton.isVisible()) await page.getByRole('button', { name: 'Toggle sets sidebar', exact: true }).click();
@@ -410,16 +493,18 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
         // stalled near EOF (podcastNaturalEnd). Fall back to the visible mark.
         completion = 'manual-mark';
         await short.hover();
-        await short.getByRole('button', { name: 'Mark completed', exact: true }).click();
+        await actionByKeyboard(page, short.getByRole('button', { name: 'Mark completed', exact: true }));
         await expect.poll(async () => (await history(page, key)).completed, { timeout: 15_000 }).toBe(true);
       }
       await pause(page);
-      await expect(short).toHaveCount(0);
-      record('completed episode hides from default filter', { episode_key: key, completion });
+      await expect(short).toHaveClass(/listened/);
+      record('completed episode stays grey in the combined list', { episode_key: key, completion });
     } else if (stage === 'completed' || stage === 'uncomplete' || stage === 'observe-uncompleted') {
       const completed = stage !== 'observe-uncompleted';
-      await expect(exactCard(page)).toHaveCount(completed ? 0 : 1);
-      await page.getByRole('button', { name: 'Completed', exact: true }).click();
+      await expect(exactCard(page)).toHaveCount(1);
+      if (completed) await expect(exactCard(page)).toHaveClass(/listened/);
+      else await expect(exactCard(page)).not.toHaveClass(/listened/);
+      await openEpisodes(page, 'Completed');
       await expect(exactCard(page)).toHaveCount(completed ? 1 : 0);
       if (stage === 'uncomplete') {
         const before = await history(page);

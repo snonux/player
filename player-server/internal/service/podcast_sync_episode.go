@@ -10,9 +10,9 @@ import (
 )
 
 // Validation of the episode items of a sync request
-// (docs/podcast-sync-contract.md §6.2). Each item carries up to two edits,
+// (docs/podcast-sync-contract.md §6.2). Each item carries up to three edits,
 // one per register; they are rejected independently, except that a
-// problem with the item's keys or enclosure URL rejects both.
+// problem with the item's keys or enclosure URL rejects all registers.
 
 // maxSyncPositionSeconds bounds a position, as SyncPlayback does.
 const maxSyncPositionSeconds = 9e12
@@ -28,7 +28,8 @@ func (v *syncValidation) episodes(items []model.PodcastEpisodeEdit) []model.Podc
 		itemProblem := episodeItemProblem(item)
 		item.Position = v.position(item.Position, itemProblem)
 		item.Completion = v.completion(item.Completion, itemProblem)
-		if item.Position != nil || item.Completion != nil {
+		item.Deletion = v.deletion(item.Deletion, itemProblem)
+		if item.Position != nil || item.Completion != nil || item.Deletion != nil {
 			valid = append(valid, item)
 		}
 	}
@@ -62,6 +63,19 @@ func (v *syncValidation) completion(c *model.PodcastCompletionEdit, itemProblem 
 	}
 	edit := *c
 	edit.ObservedMS = v.clamp(c.EditID, c.ObservedMS)
+	return &edit
+}
+
+func (v *syncValidation) deletion(d *model.PodcastDeletionEdit, itemProblem string) *model.PodcastDeletionEdit {
+	if d == nil {
+		return nil
+	}
+	if reason := firstProblem(editIDProblem(d.EditID), itemProblem, clockProblem(d.ObservedMS)); reason != "" {
+		v.reject(d.EditID, reason)
+		return nil
+	}
+	edit := *d
+	edit.ObservedMS = v.clamp(d.EditID, d.ObservedMS)
 	return &edit
 }
 
@@ -130,6 +144,9 @@ func episodeItemIDs(item model.PodcastEpisodeEdit) []string {
 	}
 	if item.Completion != nil {
 		ids = append(ids, item.Completion.EditID)
+	}
+	if item.Deletion != nil {
+		ids = append(ids, item.Deletion.EditID)
 	}
 	return ids
 }

@@ -95,6 +95,9 @@ func tableSnapshot(t *testing.T, q interface {
 }, table string) string {
 	t.Helper()
 	query := fmt.Sprintf(`SELECT * FROM %s ORDER BY rowid`, table)
+	if table == "podcast_episode_state" {
+		query = `SELECT user_id, feed_key, episode_key, position_seconds, position_ms, completed, completion_source, completion_ms, enclosure_url, change_seq, deleted, deletion_ms FROM podcast_episode_state ORDER BY rowid`
+	}
 	if table == "bookmarkColumns" {
 		query = `SELECT id, user_id, media_id, position_seconds, label, created_at FROM media_bookmarks ORDER BY id`
 	}
@@ -274,10 +277,10 @@ func checkMigratedState(t *testing.T, db *sql.DB) {
 	t.Helper()
 	c := migrationClock
 	got := tableSnapshot(t, db, "podcast_episode_state")
-	want := fmt.Sprintf(`1 feed:example.com/rss guid:g1 0 0 0 manual %d  5
-1 feed:example.com/rss guid:g4 300 %d 1 auto %d  6
-2 feed:example.com/rss guid:g1 0 0 1 manual %d  7
-2 feed:example.com/rss guid:g4 0 %d 0 manual %d  8
+	want := fmt.Sprintf(`1 feed:example.com/rss guid:g1 0 0 0 manual %d  5 0 0
+1 feed:example.com/rss guid:g4 300 %d 1 auto %d  6 0 0
+2 feed:example.com/rss guid:g1 0 0 1 manual %d  7 0 0
+2 feed:example.com/rss guid:g4 0 %d 0 manual %d  8 0 0
 `, c.t2.UnixMilli(), c.t4.UnixMilli(), c.t4.UnixMilli(), c.t1.UnixMilli(), c.t5.UnixMilli(), c.t5.UnixMilli())
 	if got != want {
 		t.Errorf("episode state:\n%s\nwant\n%s", got, want)

@@ -137,9 +137,10 @@ export const API = {
   tags: () => api('/api/tags'),
   download: (id) => api(`/api/media/${id}/download`),
   regenThumbnail: (id) => api(`/api/media/${id}/thumbnail`, { method: 'POST' }),
-  browse: (setId, parent) => {
+  browse: (setId, parent, sort) => {
     const params = new URLSearchParams();
     if (parent) params.set('parent', parent);
+    if (sort) params.set('sort', sort);
     const s = params.toString();
     return api(`/api/sets/${setId}/browse${s ? '?' + s : ''}`);
   },
