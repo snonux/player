@@ -42,7 +42,9 @@ void main() {
   test('missing subscription metadata is detected across the full library',
       () async {
     final repository = PodcastRepository(
-        databasePath: inMemoryDatabasePath, fetcher: FixtureFetcher());
+        databasePath: inMemoryDatabasePath,
+        fetcher: FixtureFetcher()
+          ..publication = 'Mon, 26 Oct 2026 14:00:00 GMT');
     try {
       await repository.subscribe('A', 'https://example.com/feed');
       final db = await repository.database;

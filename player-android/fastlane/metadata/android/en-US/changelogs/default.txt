@@ -2,3 +2,4 @@ Sort each set by name, date added, playbacks, size, duration or date taken. Your
 Browse all podcast episodes newest first, with listened episodes dimmed. Delete episodes without losing listening history.
 Podcast artwork, publication dates and show notes now appear throughout browsing.
 Fix the web playback window staying hidden after switching episodes.
+Repair missing cached podcast publication dates.

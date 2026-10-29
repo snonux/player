@@ -40,6 +40,20 @@ void main() {
         'position_seconds': 999,
       };
 
+  test('server enrichment repairs known metadata missing a publication date',
+      () async {
+    final db = await repository.database;
+    await db.update('podcast_feeds', {'last_error': null});
+    expect(await repository.uncachedSubscriptions('A'), [feed]);
+    final old = (await repository.episodes(feed)).single;
+    await repository.importServerEpisodes(
+        'A', feed, [row('guid:a', enclosure: old['enclosure_url'] as String)],
+        current: () => true);
+    expect(await repository.uncachedSubscriptions('A'), isEmpty);
+    expect((await repository.episodes(feed)).single['published_at'],
+        DateTime.utc(2026, 10, 28, 12).millisecondsSinceEpoch);
+  });
+
   test(
       'metadata import preserves GUID, downloaded copy, tombstone and all personal clocks',
       () async {

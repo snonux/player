@@ -272,21 +272,33 @@ class _LocalPodcastEpisodesScreenState
       var failures = 0;
       for (final key in keys) {
         if (!mounted || generation != refreshGeneration) return;
+        var fallbackAttempted = false;
+        final canFallback = scope.startsWith('account:') &&
+            metadata != null &&
+            metadata.scope == scope;
+        Future<void> fallback() async {
+          if (!canFallback) throw StateError('Server metadata unavailable');
+          fallbackAttempted = true;
+          await metadata.refresh(key, onPage: () {
+            if (mounted && generation == refreshGeneration) {
+              ref.invalidate(podcastSubscriptionsProvider);
+              reload();
+            }
+          });
+        }
+
         try {
           await repository.refreshSubscription(scope, key);
+          // A valid publisher response can still omit dates or all episodes.
+          // Enrich only incomplete metadata, without importing personal state.
+          if (canFallback &&
+              (await repository.uncachedSubscriptions(scope)).contains(key)) {
+            await fallback();
+          }
         } catch (_) {
           try {
-            if (!scope.startsWith('account:') ||
-                metadata == null ||
-                metadata.scope != scope) {
-              rethrow;
-            }
-            await metadata.refresh(key, onPage: () {
-              if (mounted && generation == refreshGeneration) {
-                ref.invalidate(podcastSubscriptionsProvider);
-                reload();
-              }
-            });
+            if (fallbackAttempted) rethrow;
+            await fallback();
           } catch (_) {
             failures++;
           }

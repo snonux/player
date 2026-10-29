@@ -372,7 +372,7 @@ class PodcastRepository {
     final db = await database;
     final cached = <String>{};
     for (final row in await db.rawQuery(
-        'SELECT DISTINCT f.feed_key,f.aliases FROM podcast_feeds f JOIN podcast_episodes e USING(feed_key) WHERE f.last_error IS NULL')) {
+        'SELECT DISTINCT f.feed_key,f.aliases FROM podcast_feeds f JOIN podcast_episodes e USING(feed_key) WHERE f.last_error IS NULL AND NOT EXISTS (SELECT 1 FROM podcast_episodes missing WHERE missing.feed_key=f.feed_key AND missing.published_at=0)')) {
       for (final key in [
         row['feed_key'] as String,
         ...(jsonDecode(row['aliases'] as String) as List).cast<String>()
@@ -476,10 +476,16 @@ class PodcastRepository {
         await db.query('podcast_feeds', where: 'feed_key=?', whereArgs: [key]);
     if (rows.isEmpty) return;
     final old = rows.single;
+    final repairDates = (await db.query('podcast_episodes',
+            columns: ['episode_key'],
+            where: 'feed_key=? AND published_at=0',
+            whereArgs: [key],
+            limit: 1))
+        .isNotEmpty;
     try {
       final feed = await fetcher.fetch(old['fetch_url'] as String,
-          etag: old['etag'] as String,
-          lastModified: old['last_modified'] as String);
+          etag: repairDates ? '' : old['etag'] as String,
+          lastModified: repairDates ? '' : old['last_modified'] as String);
       await db.transaction((tx) async {
         for (final url in feed.aliasUrls) {
           final target = await resolveFeed(tx, podcastFeedKey(url));

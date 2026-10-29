@@ -30,7 +30,7 @@ verification (Chrome, Firefox, two Android clients) belongs to `5i3`.
 
 Words in **must** / **must not** are requirements on the implementing tasks.
 
-## Episode deletion extension (0.14.0)
+## Episode deletion extension (0.14.1)
 
 `GET /api/v1/config` additionally advertises `podcast_episode_deletion: true`.
 The original `podcast_sync: 1` capability remains compatible. Clients must

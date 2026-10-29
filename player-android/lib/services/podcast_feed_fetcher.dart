@@ -126,6 +126,29 @@ DateTime? _publicationDate(String value) {
   final date = value.trim();
   final iso = DateTime.tryParse(date);
   if (iso != null) return iso;
+  // RFC 822 explicitly defines these North American zone names. Do not
+  // guess other ambiguous abbreviations or the device's local timezone.
+  final namedZone = RegExp(
+          r'^(.*\s)(UT|UTC|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT)$',
+          caseSensitive: false)
+      .firstMatch(date);
+  if (namedZone != null) {
+    const offsets = {
+      'UT': '+0000',
+      'UTC': '+0000',
+      'GMT': '+0000',
+      'EST': '-0500',
+      'EDT': '-0400',
+      'CST': '-0600',
+      'CDT': '-0500',
+      'MST': '-0700',
+      'MDT': '-0600',
+      'PST': '-0800',
+      'PDT': '-0700'
+    };
+    return _publicationDate(
+        '${namedZone[1]}${offsets[namedZone[2]!.toUpperCase()]}');
+  }
   // HttpDate only accepts GMT, while RSS commonly uses RFC 822 offsets.
   final numericZone = RegExp(r'^(.*\s)([+-])(\d{2})(\d{2})$').firstMatch(date);
   try {

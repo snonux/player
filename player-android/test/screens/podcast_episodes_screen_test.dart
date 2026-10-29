@@ -243,4 +243,17 @@ void main() {
     expect(find.text('Episode 0'), findsOneWidget);
     expect(find.textContaining('feeds unavailable'), findsOneWidget);
   });
+  testWidgets(
+      'valid publisher response still missing metadata uses authenticated enrichment',
+      (tester) async {
+    final repository = BrowsingRepository()..missingFeeds = ['undated'];
+    final metadata = FakeServerMetadata(repository, 'account:A');
+    await tester.pumpWidget(browsingApp(
+        const LocalPodcastEpisodesScreen(), repository,
+        scope: (_) async => 'account:A', serverMetadata: metadata));
+    await tester.pumpAndSettle();
+    expect(repository.refreshed, ['undated']);
+    expect(metadata.feeds, ['undated']);
+    expect(find.text('Episode 0'), findsOneWidget);
+  });
 }

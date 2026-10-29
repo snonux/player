@@ -11,6 +11,16 @@ void main() {
     'Tue, 27 Oct 2026 03:00:00 +1300',
     'Mon, 26 Oct 2026 02:00:00 -1200',
     'Mon, 26 Oct 2026 14:00:00 GMT',
+    'Mon, 26 Oct 2026 14:00:00 UT',
+    'Mon, 26 Oct 2026 14:00:00 UTC',
+    'Mon, 26 Oct 2026 09:00:00 EST',
+    'Mon, 26 Oct 2026 10:00:00 EDT',
+    'Mon, 26 Oct 2026 08:00:00 CST',
+    'Mon, 26 Oct 2026 09:00:00 CDT',
+    'Mon, 26 Oct 2026 07:00:00 MST',
+    'Mon, 26 Oct 2026 08:00:00 MDT',
+    'Mon, 26 Oct 2026 06:00:00 PST',
+    'Mon, 26 Oct 2026 07:00:00 PDT',
     '2026-10-26T19:30:00+05:30',
     '2026-10-26T14:00:00Z',
     '  Mon, 26 Oct 2026 14:00:00 +0000  ',
@@ -24,6 +34,19 @@ void main() {
       expect(feed.episodes.single.identity.guid, 'stable');
     });
   }
+  for (final sample in <String, DateTime>{
+    'Wed, 28 Oct 2026 12:57:50 +0000': DateTime.utc(2026, 10, 28, 12, 57, 50),
+    'Tue, 06 Oct 2026 09:25:40 PDT': DateTime.utc(2026, 10, 6, 16, 25, 40),
+    'Thu, 11 Jan 2024 00:00:00 PST': DateTime.utc(2024, 1, 11, 8),
+  }.entries) {
+    test('observed Planet Money / FLOSS publication date ${sample.key}', () {
+      final feed = parsePodcastFeed(
+          '<rss><channel><item><guid>stable</guid><pubDate>${sample.key}</pubDate><enclosure url="https://example.com/a.mp3"/></item></channel></rss>',
+          fetchUrl: 'https://example.com/feed');
+      expect(feed.episodes.single.publishedAt,
+          sample.value.millisecondsSinceEpoch);
+    });
+  }
   test('Atom publication date preserves ISO offset support', () {
     final feed = parsePodcastFeed(
         '<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>stable</id>'
@@ -34,6 +57,7 @@ void main() {
   for (final date in [
     '',
     'not a date',
+    'Mon, 26 Oct 2026 14:00:00 IST',
     'Mon, 26 Oct 2026 14:00:00 +2400',
     'Mon, 26 Oct 2026 14:00:00 -0360',
     'Mon, 26 Oct 2026 14:00:00 +000',

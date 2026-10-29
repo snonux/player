@@ -9,13 +9,14 @@ class FixtureFetcher extends PodcastFeedFetcher {
   bool fail = false;
   String? moved;
   String guid = 'a';
+  String publication = '';
   String enclosure = 'https://cdn.example/e.mp3';
   @override
   Future<PublisherFeed> fetch(String url,
       {String etag = '', String lastModified = ''}) async {
     if (fail) throw const SocketException('offline');
     return parsePodcastFeed(
-        '<rss><channel><title>Fixture</title><item><title>Episode</title><guid>$guid</guid><enclosure url="$enclosure"/></item></channel></rss>',
+        '<rss><channel><title>Fixture</title><item><title>Episode</title><guid>$guid</guid><pubDate>$publication</pubDate><enclosure url="$enclosure"/></item></channel></rss>',
         fetchUrl: moved ?? url,
         aliasUrls: moved == null ? [] : [moved!]);
   }
@@ -24,6 +25,75 @@ class FixtureFetcher extends PodcastFeedFetcher {
 void main() {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
+  test(
+      'existing zero-date cache refreshes without validators and retains history and copies',
+      () async {
+    final directory =
+        await Directory.systemTemp.createTemp('podcast-date-repair-');
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final validators = <List<String?>>[];
+    final requests = server.listen((request) async {
+      final conditional = [
+        request.headers.value(HttpHeaders.ifNoneMatchHeader),
+        request.headers.value(HttpHeaders.ifModifiedSinceHeader)
+      ];
+      validators.add(conditional);
+      if (conditional.any((v) => v != null)) {
+        request.response.statusCode = 304;
+      } else {
+        request.response.headers.set(HttpHeaders.etagHeader, 'fixture');
+        request.response.headers.set(
+            HttpHeaders.lastModifiedHeader, 'Wed, 28 Oct 2026 12:57:50 GMT');
+        request.response.write(
+            '<rss><channel><title>Planet fixture</title><item><guid>stable</guid><title>Episode</title><pubDate>Wed, 28 Oct 2026 12:57:50 +0000</pubDate><enclosure url="https://example.com/a.mp3"/></item></channel></rss>');
+      }
+      await request.response.close();
+    });
+    final repository =
+        PodcastRepository(databasePath: '${directory.path}/test.db');
+    try {
+      final key = await repository.subscribe(
+          'local', 'http://127.0.0.1:${server.port}/rss');
+      final db = await repository.database;
+      await db.update('podcast_episodes', {'published_at': 0});
+      await db.insert('podcast_episode_state', {
+        'scope': 'local',
+        'feed_key': key,
+        'episode_key': 'guid:stable',
+        'position_seconds': 31,
+        'position_ms': 100,
+        'completed': 1,
+        'completion_ms': 200,
+        'deleted': 1,
+        'deletion_ms': 300,
+        'deletion_pending_edit_id': 'keep-edit'
+      });
+      await db.insert('podcast_downloads', {
+        'id': 'copy',
+        'feed_key': key,
+        'episode_key': 'guid:stable',
+        'state': 'available'
+      });
+      final states = await db.query('podcast_episode_state'),
+          copies = await db.query('podcast_downloads');
+      expect(await repository.uncachedSubscriptions('local'), [key]);
+      await repository.refreshSubscription('local', key);
+      expect(validators.last, [null, null]);
+      expect((await repository.episodes(key)).single['published_at'],
+          DateTime.utc(2026, 10, 28, 12, 57, 50).millisecondsSinceEpoch);
+      expect(await repository.uncachedSubscriptions('local'), isEmpty);
+      expect(await db.query('podcast_episode_state'), states);
+      expect(await db.query('podcast_downloads'), copies);
+      await repository.refreshSubscription('local', key);
+      expect(validators.last, ['fixture', 'Wed, 28 Oct 2026 12:57:50 GMT']);
+    } finally {
+      await repository.close();
+      await requests.cancel();
+      await server.close(force: true);
+      await directory.delete(recursive: true);
+    }
+  });
+
   test('v5 migration keeps listening state, subscriptions, GUIDs and downloads',
       () async {
     final directory = await Directory.systemTemp.createTemp('podcast-v5-');
