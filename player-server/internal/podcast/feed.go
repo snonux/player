@@ -18,6 +18,7 @@ type Episode struct {
 	GUID            string
 	Title           string
 	Description     string
+	ImageURL        string
 	PublishedAt     *time.Time
 	EpisodeURL      string
 	DurationSeconds *float64
@@ -75,6 +76,13 @@ func parsedFeedFromGoFeed(feed *gofeed.Feed) *ParsedFeed {
 			GUID:        item.GUID,
 			Title:       item.Title,
 			Description: item.Description,
+			ImageURL:    extractEpisodeImageURL(item),
+		}
+
+		if strings.TrimSpace(item.Content) != "" {
+			ep.Description = item.Content
+		} else if strings.TrimSpace(ep.Description) == "" && item.ITunesExt != nil {
+			ep.Description = item.ITunesExt.Summary
 		}
 
 		if item.PublishedParsed != nil {
@@ -105,6 +113,24 @@ func parsedFeedFromGoFeed(feed *gofeed.Feed) *ParsedFeed {
 	}
 
 	return result
+}
+
+// extractEpisodeImageURL keeps publisher episode artwork separate from feed art.
+func extractEpisodeImageURL(item *gofeed.Item) string {
+	if item.ITunesExt != nil && strings.TrimSpace(item.ITunesExt.Image) != "" {
+		return strings.TrimSpace(item.ITunesExt.Image)
+	}
+	if item.Image != nil && strings.TrimSpace(item.Image.URL) != "" {
+		return strings.TrimSpace(item.Image.URL)
+	}
+	for _, name := range []string{"thumbnail", "content"} {
+		for _, ext := range item.Extensions["media"][name] {
+			if value := strings.TrimSpace(ext.Attrs["url"]); value != "" && (name == "thumbnail" || strings.HasPrefix(ext.Attrs["type"], "image/")) {
+				return value
+			}
+		}
+	}
+	return ""
 }
 
 // extractImageURL looks for podcast cover images in RSS 2.0, Atom, and iTunes feed metadata.

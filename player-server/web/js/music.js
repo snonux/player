@@ -2,7 +2,7 @@
 export function mediaTitle(media) {
  const name = media?.file_name || '';
  if (media?.type !== 'audio') return name;
- return media.music?.title?.trim() || name.replace(/\.[^.]+$/, '') || name;
+ return media.podcast?.title?.trim() || media.music?.title?.trim() || name.replace(/\.[^.]+$/, '') || name;
 }
 export function musicSubtitle(media) {
  if (media?.type !== 'audio' || !media.music) return '';

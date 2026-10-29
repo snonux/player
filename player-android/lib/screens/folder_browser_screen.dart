@@ -1,3 +1,5 @@
+import '../widgets/podcast_artwork.dart';
+import '../widgets/podcast_publication_date.dart';
 import '../widgets/music_mini_player.dart';
 import '../widgets/music_queue_sheet.dart';
 import 'package:flutter/material.dart';
@@ -235,8 +237,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
     final currentPath = widget.path ?? '';
     if (crumbPath == currentPath) return; // already here
 
-    final target =
-        AppRoutes.folderBrowserPath(widget.setId, path: crumbPath);
+    final target = AppRoutes.folderBrowserPath(widget.setId, path: crumbPath);
 
     if (_isFolderPathAncestor(currentPath, crumbPath)) {
       if (_popToFolderBrowserAncestor(crumbPath)) return;
@@ -647,13 +648,25 @@ class _MediaTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       title: Row(children: [
-        _MediaThumbnail(
-          key: Key('media_thumb_${item.id}'),
-          thumbnailUrl: thumbnailUrl,
-          fileName: item.fileName,
-          type: item.type,
-          size: thumbnailSize,
-        ),
+        if (item.podcast != null)
+          PodcastArtwork(
+              imageUrl: item.podcast!.imageUrl,
+              fallbackUrl: item.podcast!.feedImageUrl,
+              title: item.displayTitle,
+              size: thumbnailSize,
+              unavailable: _MediaThumbnail(
+                  thumbnailUrl: thumbnailUrl,
+                  fileName: item.fileName,
+                  type: item.type,
+                  size: thumbnailSize))
+        else
+          _MediaThumbnail(
+            key: Key('media_thumb_${item.id}'),
+            thumbnailUrl: thumbnailUrl,
+            fileName: item.fileName,
+            type: item.type,
+            size: thumbnailSize,
+          ),
         const SizedBox(width: 16),
         Expanded(
             child: Column(
@@ -665,6 +678,8 @@ class _MediaTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+            if (item.podcast != null)
+              PodcastPublicationDate(date: item.podcast!.publishedAt),
             if (item.musicSubtitle.isNotEmpty)
               Text(item.musicSubtitle,
                   maxLines: 1, overflow: TextOverflow.ellipsis),

@@ -13,6 +13,7 @@ class BrowsingRepository extends PodcastRepository {
   bool completed = false, failSave = false;
   final queries = <(String?, String, int)>[];
   int count = 1;
+  Map<String, Object?> metadata = {};
   Completer<void>? gate;
   @override
   Future<List<Map<String, Object?>>> subscriptions(String scope) async => [
@@ -47,7 +48,8 @@ class BrowsingRepository extends PodcastRepository {
               'duration_seconds': 100,
               'position_seconds': 30.0,
               'completed': completed ? 1 : 0,
-              'enclosure_url': 'https://example/audio.mp3'
+              'enclosure_url': 'https://example/audio.mp3',
+              ...metadata
             }).skip(offset).take(limit).toList();
   }
 }

@@ -1,3 +1,4 @@
+import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from './podcast-metadata.js';
 // podcastUI.js — Podcast feed manager + episode rendering.
 import { API } from './api.js';
 import { state } from './state.js';
@@ -167,6 +168,7 @@ function renderEpisodeCard(card, ep) {
   const focusedAction = card.contains(document.activeElement) ? document.activeElement?.dataset.action : null;
   const downloading = Boolean(downloadControllers.get(card));
   card.innerHTML = episodeSetFolderCardHtml(ep, { downloading });
+  bindPodcastMetadata(card);
 
   const playBtn = card.querySelector('[data-action="play"]');
   const downloadBtn = card.querySelector('[data-action="download-episode"]');
@@ -245,7 +247,7 @@ async function downloadEpisode(card, ep, play) {
 export function episodeSetFolderCardHtml(ep, { downloading = false } = {}) {
   const completed = Boolean(ep.is_completed);
   const downloaded = Boolean(ep.is_downloaded);
-  const dateStr = ep.published_at ? new Date(ep.published_at).toLocaleDateString() : '';
+  const dateStr = publicationDate(ep.published_at);
   const duration = ep.duration_seconds ? fmtDur(ep.duration_seconds) : '';
   const hasProgress = Number(ep.position_seconds) > 0;
   const canResume = downloaded && hasProgress;
@@ -258,10 +260,7 @@ export function episodeSetFolderCardHtml(ep, { downloading = false } = {}) {
   const completeLabel = completed ? 'Mark uncompleted' : 'Mark completed';
   const metaBits = [dateStr, duration, position, downloadState].filter(Boolean).join(' · ');
   const playLabel = !downloaded ? 'Download and play' : canResume ? 'Resume' : 'Play';
-  const description = (ep.description || '').trim();
-  const descriptionBlock = description
-    ? `<details class="episode-description"><summary>Description</summary><p class="subtitle">${escapeHtml(description)}</p></details>`
-    : '';
+  const descriptionBlock = showNotesHTML(ep.description);
   const primary = downloading
     ? '<button type="button" class="icon-btn btn-sm" data-action="cancel-download" title="Cancel download" aria-label="Cancel download">✕</button>'
     : `${downloaded ? '' : '<button type="button" class="icon-btn btn-sm btn-download-episode" data-action="download-episode" title="Download episode" aria-label="Download episode">↓</button>'}
@@ -273,7 +272,7 @@ export function episodeSetFolderCardHtml(ep, { downloading = false } = {}) {
         ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="delete-download" title="Delete downloaded file" aria-label="Delete downloaded file">🗑</button>' : ''}`;
   return `
     <div class="thumb-wrap">
-      <span class="placeholder">🎙️</span>
+      ${episodeArtworkHTML(ep)}
       <span class="badge">${escapeHtml(metaBits)}</span>
       <div class="card-actions">
         ${primary}

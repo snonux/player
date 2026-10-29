@@ -2266,3 +2266,16 @@ Refresh stores feed and episode metadata only, without artwork, media downloads
 or set permission grants. Public outbound address and response-size restrictions
 apply even when an administrator created the catalog feed. Browsing can continue
 while a client awaits this optional refresh and then reloads its episode list.
+
+### Podcast artwork and server-copy metadata
+
+Podcast episode listings add `image_url` (publisher episode artwork) and
+`feed_image_url` (fallback feed artwork). `description` prefers complete publisher
+show notes when available; `published_at` remains the publisher's publication
+instant or null when unknown. These fields do not participate in identity.
+
+Ordinary media list/detail responses may include `podcast` with `title`,
+`feed_title`, `description`, `published_at`, `image_url`, and `feed_image_url` when
+that media is linked to a podcast episode. Clients prefer its title for display,
+without rewriting `file_name`, paths, or embedded `music` metadata. Publication
+instants are JSON RFC3339 UTC, preserving stored precision.

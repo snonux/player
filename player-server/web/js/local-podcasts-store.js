@@ -98,10 +98,21 @@ export async function listLocalPodcastEpisodes(feedKey) {
 
 function textOf(node, names) {
   for (const name of names) {
-    const el = node.querySelector(name) || node.getElementsByTagName(name)[0];
+    const el = node.getElementsByTagName(name)[0] || (name.includes(':') ? null : node.querySelector(name));
     if (el?.textContent?.trim()) return el.textContent.trim();
   }
   return '';
+}
+
+function imageOf(node) {
+ for (const el of [...node.children]) {
+  if (el.localName === 'image') {
+   const value = el.getAttribute('href') || textOf(el, ['url']);
+   if (value) return value;
+  }
+  if (el.localName === 'thumbnail' && el.getAttribute('url')) return el.getAttribute('url');
+ }
+ return '';
 }
 
 export function parsePodcastFeedXML(xmlText, feedURL) {
@@ -111,6 +122,7 @@ export function parsePodcastFeedXML(xmlText, feedURL) {
   if (!channel) throw new Error('Not a podcast RSS/Atom feed');
   const title = textOf(channel, ['title']) || feedURL;
   const description = textOf(channel, ['description', 'subtitle']);
+  const image_url = imageOf(channel);
   const items = [...doc.querySelectorAll('item, entry')];
   const feed_key = feedKeyFromURL(feedURL);
   const episodes = [];
@@ -126,12 +138,14 @@ export function parsePodcastFeedXML(xmlText, feedURL) {
       episode_key: `${feed_key}|${guid}`,
       feed_key,
       title: epTitle,
-      description: textOf(item, ['description', 'summary']),
+      description: textOf(item, ['content:encoded', 'content', 'description', 'summary']),
+      image_url: imageOf(item),
+      feed_image_url: image_url,
       enclosure_url: href,
       published_at,
     });
   }
-  return { feed_key, feed_url: feedURL, title, description, episodes, refreshed_at: Date.now() };
+  return { feed_key, feed_url: feedURL, title, description, image_url, episodes, refreshed_at: Date.now() };
 }
 
 export async function fetchPodcastFeed(feedURL) {

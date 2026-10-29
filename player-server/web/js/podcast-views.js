@@ -1,3 +1,4 @@
+import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from './podcast-metadata.js';
 import { openPodcastDiscovery } from './podcast-discovery.js';
 import { setSubscribed, listAccountPodcastSubscriptions } from './podcast-subscriptions.js';
 import { podcastFeedKey } from './podcast-identity.js';
@@ -340,6 +341,7 @@ function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
   const focusedAction = card.contains(document.activeElement) ? document.activeElement?.dataset.action : null;
   const downloading = Boolean(downloadControllers.get(card));
   card.innerHTML = episodeCardHtml(ep, { showFeed, downloading });
+  bindPodcastMetadata(card);
   const playBtn = card.querySelector('[data-action="play"]');
   const downloadBtn = card.querySelector('[data-action="download-episode"]');
   const cancelBtn = card.querySelector('[data-action="cancel-download"]');
@@ -389,7 +391,7 @@ function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
 export function episodeCardHtml(ep, { showFeed, downloading = false } = {}) {
   const completed = Boolean(ep.completed);
   const downloaded = Boolean(ep.server_copy?.media_id);
-  const dateStr = ep.published_at ? new Date(ep.published_at).toLocaleDateString() : '';
+  const dateStr = publicationDate(ep.published_at);
   const duration = ep.duration_seconds ? fmtDur(ep.duration_seconds) : '';
   const hasProgress = Number(ep.position_seconds) > 0;
   const canResume = downloaded && hasProgress;
@@ -405,10 +407,7 @@ export function episodeCardHtml(ep, { showFeed, downloading = false } = {}) {
     : '';
   const metaBits = [dateStr, duration, position, downloadState].filter(Boolean).join(' · ');
   const playLabel = !downloaded ? 'Download and play' : canResume ? 'Resume' : 'Play';
-  const description = (ep.description || '').trim();
-  const descriptionBlock = description
-    ? `<details class="episode-description"><summary>Description</summary><p class="subtitle">${escapeHtml(description)}</p></details>`
-    : '';
+  const descriptionBlock = showNotesHTML(ep.description);
   const primary = downloading
     ? '<button type="button" class="icon-btn btn-sm" data-action="cancel-download" title="Cancel download" aria-label="Cancel download">✕</button>'
     : `${downloaded ? '' : '<button type="button" class="icon-btn btn-sm btn-download-episode" data-action="download-episode" title="Download to server" aria-label="Download episode to server">↓</button>'}
@@ -420,7 +419,7 @@ export function episodeCardHtml(ep, { showFeed, downloading = false } = {}) {
         ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="delete-download" title="Delete downloaded file" aria-label="Delete downloaded file">🗑</button>' : ''}`;
   return `
     <div class="thumb-wrap">
-      <span class="placeholder">🎙️</span>
+      ${episodeArtworkHTML(ep)}
       <span class="badge">${escapeHtml(metaBits)}</span>
       <div class="card-actions">
         ${primary}

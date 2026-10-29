@@ -20,7 +20,7 @@ type ingestFeed struct {
 
 // IngestFeedEpisodes implements PodcastCatalogRepo. Re-ingesting the same
 // document changes nothing; known episodes keep their ids, media links and
-// metadata, only their latest enclosure (key and URL) is refreshed, so a
+// state. Publisher metadata and the latest enclosure (key and URL) are refreshed, so a
 // rotating signed URL neither creates episodes nor accumulates aliases.
 //
 // The episodes known to the feed are those of every catalog row sharing its
@@ -79,10 +79,12 @@ func applyIngestMatch(ctx context.Context, tx *sql.Tx, feed ingestFeed, m podcas
 		}
 		return nil
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE podcast_episodes SET enclosure_key = ?3, episode_url = ?4
+	if _, err := tx.ExecContext(ctx, `UPDATE podcast_episodes SET enclosure_key = ?3, episode_url = ?4,
+ title=CASE WHEN ?5<>'' THEN ?5 ELSE title END, description=CASE WHEN ?6<>'' THEN ?6 ELSE description END,
+ published_at=COALESCE(?7,published_at), image_url=CASE WHEN ?8<>'' THEN ?8 ELSE image_url END
 WHERE (episode_key = ?1 OR episode_key IN (SELECT alias_key FROM podcast_episode_aliases WHERE feed_key = ?2 AND episode_key = ?1))
  AND feed_id IN (SELECT id FROM podcast_feeds WHERE feed_key = ?2)`,
-		m.Key, feed.key, enc, ep.EpisodeURL); err != nil {
+		m.Key, feed.key, enc, ep.EpisodeURL, strings.TrimSpace(ep.Title), strings.TrimSpace(ep.Description), sqlNullTime(ep.PublishedAt), ep.ImageURL); err != nil {
 		return fmt.Errorf("refresh episode %q: %w", m.Key, err)
 	}
 	return recordIngestIdentity(ctx, tx, feed.key, m, itemKey)

@@ -641,6 +641,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         artist: media.music?.artist ?? '',
         album: media.music?.album ?? '',
         music: media.music,
+        podcast: media.podcast,
         artworkUri: media.thumbnailPath.isNotEmpty
             ? Uri.parse(client.thumbnailUrl(media.id))
             : null,
@@ -687,6 +688,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         artist: display.artist,
         album: display.album,
         music: display.music,
+        podcast: display.podcast,
         artworkUri: display.artworkUri,
         sourceName: request.sourceName,
         startPosition: request.startPosition,
@@ -1113,11 +1115,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                   : 'Audio – ${widget.mediaId}')),
         ),
         body: Column(children: [
-          Expanded(
-              child: casting ? const CastPlaybackView() : _buildBody()),
+          Expanded(child: casting ? const CastPlaybackView() : _buildBody()),
           // Bottom strip: reachable with the thumb; hidden while idle.
           SleepTimerControl(timer: ref.read(audioHandlerProvider).sleepTimer),
-          if (!casting && !_isLoading && _error == null && _activeRequest != null)
+          if (!casting &&
+              !_isLoading &&
+              _error == null &&
+              _activeRequest != null)
             _buildBottomTransport(ref.read(audioHandlerProvider)),
         ]),
       ),
@@ -1624,8 +1628,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                   color: Colors.white, size: 36),
               onPressed: () =>
                   music ? handler.skipToPrevious() : _skip(-_kSkipDuration),
-              onLongPress:
-                  music ? () => _skip(-_kSkipDuration) : null,
+              onLongPress: music ? () => _skip(-_kSkipDuration) : null,
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               tooltip: music
                   ? '${context.tr('Previous track')} · hold −15s'

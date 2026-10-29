@@ -115,7 +115,16 @@ void main() {
     await repository.close();
     downloads = PodcastDownloads(repository, PlaybackSessionCoordinator(),
         directory: Directory('${directory.path}/audio'));
-    final request = await downloads.playbackRequest('local', feed, episode);
+    final request = await downloads.playbackRequest('local', feed, {
+      ...episode,
+      'image_url': 'https://publisher.example/item.jpg',
+      'feed_image_url': 'https://publisher.example/feed.jpg',
+      'podcast_title': 'Podcast',
+      'published_at': 1793023200000
+    });
+    expect(request.podcast!.imageUrl, 'https://publisher.example/item.jpg');
+    expect(request.podcast!.feedImageUrl, 'https://publisher.example/feed.jpg');
+    expect(request.podcast!.publishedAt, DateTime.utc(2026, 10, 26, 14));
     expect(request, isA<PodcastPlaybackRequest>());
     expect(request.kind, PlaybackSourceKind.local);
     expect(await File.fromUri(request.sourceUri).readAsBytes(), [1, 2, 3, 4]);

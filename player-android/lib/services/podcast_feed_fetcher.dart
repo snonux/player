@@ -5,9 +5,10 @@ import 'podcast_identity.dart';
 
 class PublisherEpisode {
   const PublisherEpisode(this.identity, this.title, this.description,
-      this.publishedAt, this.durationSeconds);
+      this.publishedAt, this.durationSeconds,
+      {this.imageUrl = ''});
   final PodcastIdentityItem identity;
-  final String title, description;
+  final String title, description, imageUrl;
   final int publishedAt, durationSeconds;
 }
 
@@ -100,7 +101,7 @@ class PodcastFeedFetcher {
       }
     }
     final parsed = parsePodcastFeed(utf8.decode(bytes),
-        fetchUrl: fetchUrl, aliasUrls: aliases);
+        fetchUrl: fetchUrl, aliasUrls: aliases, documentUrl: uri.toString());
     return PublisherFeed(
         title: parsed.title,
         description: parsed.description,
@@ -140,8 +141,53 @@ DateTime? _publicationDate(String value) {
   }
 }
 
+String _artwork(XmlElement node, String documentUrl, {bool atom = false}) {
+  final candidates = <String>[];
+  for (final e in node.childElements) {
+    if (e.name.local == 'image') {
+      candidates.add(e.getAttribute('href') ?? _text(e, 'url'));
+    } else if (e.name.local == 'thumbnail' ||
+        e.name.local == 'content' &&
+            (e.getAttribute('medium') == 'image' ||
+                (e.getAttribute('type') ?? '').startsWith('image/'))) {
+      candidates.add(e.getAttribute('url') ?? '');
+    } else if (atom && ['logo', 'icon'].contains(e.name.local)) {
+      candidates.add(e.innerText);
+    }
+  }
+  for (final value in candidates) {
+    if (value.trim().isEmpty) continue;
+    final relative = Uri.tryParse(value.trim());
+    if (relative == null) continue;
+    final uri = Uri.parse(documentUrl).resolveUri(relative);
+    if (['http', 'https'].contains(uri.scheme) &&
+        uri.host.isNotEmpty &&
+        uri.userInfo.isEmpty) {
+      return uri.toString();
+    }
+  }
+  return '';
+}
+
+String _showNotes(XmlElement item, bool atom) {
+  // Full publisher content often contains notes omitted from the short summary.
+  for (final name in atom
+      ? ['content', 'summary']
+      : ['encoded', 'description', 'summary']) {
+    for (final element
+        in item.childElements.where((e) => e.name.local == name)) {
+      final value =
+          element.childElements.isEmpty ? element.innerText : element.innerXml;
+      if (value.trim().isNotEmpty) return value;
+    }
+  }
+  return '';
+}
+
 PublisherFeed parsePodcastFeed(String xml,
-    {required String fetchUrl, List<String> aliasUrls = const []}) {
+    {required String fetchUrl,
+    List<String> aliasUrls = const [],
+    String? documentUrl}) {
   final root = XmlDocument.parse(xml).rootElement;
   final atom = root.name.local == 'feed';
   final channel = atom
@@ -150,11 +196,7 @@ PublisherFeed parsePodcastFeed(String xml,
   if (channel == null) {
     throw const FormatException('Not an RSS or Atom podcast feed');
   }
-  var image = '';
-  for (final e in channel.childElements.where((e) => e.name.local == 'image')) {
-    image = e.getAttribute('href') ?? _text(e, 'url');
-    if (image.isNotEmpty) break;
-  }
+  final image = _artwork(channel, documentUrl ?? fetchUrl, atom: atom);
   final moved = _text(channel, 'new-feed-url');
   if (moved.isNotEmpty) {
     podcastFeedKey(moved);
@@ -180,9 +222,10 @@ PublisherFeed parsePodcastFeed(String xml,
     episodes.add(PublisherEpisode(
         PodcastIdentityItem(_text(item, atom ? 'id' : 'guid'), url),
         _text(item, 'title'),
-        _text(item, atom ? 'summary' : 'description'),
+        _showNotes(item, atom),
         published?.millisecondsSinceEpoch ?? 0,
-        duration));
+        duration,
+        imageUrl: _artwork(item, documentUrl ?? fetchUrl, atom: atom)));
   }
   return PublisherFeed(
       title: _text(channel, 'title'),

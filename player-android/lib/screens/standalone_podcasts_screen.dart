@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/podcast_library_provider.dart';
 import '../services/podcast_identity.dart';
 import '../widgets/podcast_download_controls.dart';
+import '../widgets/podcast_artwork.dart';
+import '../widgets/podcast_show_notes.dart';
+import '../widgets/podcast_publication_date.dart';
+import '../services/podcast_metadata.dart';
 import '../providers/global_sync_provider.dart';
 
 class StandalonePodcastsScreen extends ConsumerStatefulWidget {
@@ -153,7 +157,10 @@ class _StandalonePodcastsScreenState
                           : ListView(children: [
                               for (final feed in items)
                                 ListTile(
-                                    leading: const Icon(Icons.podcasts),
+                                    leading: PodcastArtwork(
+                                        imageUrl: feed['image_url'] as String? ??
+                                            '',
+                                        title: feed['title'] as String),
                                     title: Text(feed['title'] as String),
                                     subtitle: Text(
                                         feed['last_error'] as String? ??
@@ -326,6 +333,11 @@ class _LocalPodcastEpisodesScreenState
                             ListTile(
                                 key:
                                     ValueKey((e['feed_key'], e['episode_key'])),
+                                leading: PodcastArtwork(
+                                    imageUrl: e['image_url'] as String? ?? '',
+                                    fallbackUrl:
+                                        e['feed_image_url'] as String? ?? '',
+                                    title: e['title'] as String),
                                 title: Text(e['title'] as String),
                                 subtitle: Column(
                                     crossAxisAlignment:
@@ -333,6 +345,9 @@ class _LocalPodcastEpisodesScreenState
                                     children: [
                                       if (widget.feedKey == null)
                                         Text(e['podcast_title'] as String),
+                                      PodcastPublicationDate(
+                                          date: podcastPublicationDate(
+                                              e['published_at'])),
                                       Text(_progressSummary(e)),
                                       if ((e['position_seconds'] as num) > 0 &&
                                           (e['duration_seconds'] as num) > 0)
@@ -342,25 +357,29 @@ class _LocalPodcastEpisodesScreenState
                                                     (e['duration_seconds']
                                                         as num))
                                                 .clamp(0.0, 1.0)),
+                                      PodcastShowNotes(
+                                          description:
+                                              e['description'] as String? ??
+                                                  ''),
                                       PodcastDownloadControls(
-                                          feed: e['feed_key'] as String,
-                                          scope: e['browse_scope'] as String,
-                                          episode: e,
-                                          onPlaybackReturn: reload,
-                                          completeLabel: e['completed'] == 1
-                                              ? 'Mark uncompleted'
-                                              : 'Mark completed',
-                                          onToggleComplete: scope == null ||
-                                                  pending.contains(
-                                                      '${e['scope_feed_key']}:${e['scope_episode_key']}')
-                                              ? null
-                                              : () => complete(e, scope),
-                                          detailsTitle: e['title'] as String,
-                                          detailsBody:
-                                              e['description'] as String?),
+                                        feed: e['feed_key'] as String,
+                                        scope: e['browse_scope'] as String,
+                                        episode: e,
+                                        onPlaybackReturn: reload,
+                                        completeLabel: e['completed'] == 1
+                                            ? 'Mark uncompleted'
+                                            : 'Mark completed',
+                                        onToggleComplete: scope == null ||
+                                                pending.contains(
+                                                    '${e['scope_feed_key']}:${e['scope_episode_key']}')
+                                            ? null
+                                            : () => complete(e, scope),
+                                      ),
                                     ])),
-                          Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                          Wrap(
+                              alignment: WrapAlignment.center,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8,
                               children: [
                                 TextButton(
                                     onPressed: offset == 0

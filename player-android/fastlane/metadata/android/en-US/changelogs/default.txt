@@ -1,1 +1,3 @@
-Maintenance release with refreshed signed Android builds and synchronized server and app versions.
+Show podcast episode artwork, publication dates and readable show notes.
+Use publisher episode titles for downloaded podcasts instead of placeholder audio tags.
+Keep existing downloads, listening progress and subscriptions.

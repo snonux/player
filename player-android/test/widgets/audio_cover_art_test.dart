@@ -9,6 +9,8 @@ import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/server_endpoint_provider.dart';
 import 'package:player_android/models/user.dart';
+import 'package:player_android/models/media.dart';
+import 'package:player_android/widgets/podcast_artwork.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/widgets/audio_cover_art.dart';
 import 'package:player_android/widgets/authenticated_network_image.dart';
@@ -94,6 +96,21 @@ void main() {
     expect(server.requests.single.$1.path, '/api/v1/media/1/thumbnail');
     expect(server.requests.single.$2['authorization'], 'Bearer artwork-token');
 
+    // Keep real CachedNetworkImage scenarios in this one fake-async zone;
+    // its cache singleton cannot cross widget-test zones.
+    await tester.pumpWidget(const SizedBox.shrink());
+    final podcast = ServerPlaybackRequest(
+        mediaId: 5043,
+        serverOrigin: _origin,
+        userId: 1,
+        sourceUri: Uri.parse('$_origin/api/v1/media/5043/stream'),
+        title: 'Episode',
+        podcast: const MediaPodcastMetadata(title: 'Episode'));
+    await tester.pumpWidget(_art(podcast));
+    await pumpUntilFound(tester, _decoded);
+    expect(server.requests.last.$1.path, '/api/v1/media/5043/thumbnail');
+    expect(server.requests.last.$2['authorization'], 'Bearer artwork-token');
+
     // A retained route must drop its image instead of using the next user's
     // credentials, even when the server origin has not changed.
     final container =
@@ -131,6 +148,39 @@ void main() {
     expect(headers.containsKey('cookie'), isFalse);
     await tester.pumpWidget(const SizedBox.shrink());
     await settleImageCache(tester);
+  });
+
+  testWidgets(
+      'podcast artwork prefers publisher metadata and device copies avoid the account API',
+      (tester) async {
+    const metadata = MediaPodcastMetadata(
+        title: 'Canonical episode',
+        imageUrl: 'https://publisher.example/episode.jpg',
+        feedImageUrl: 'https://publisher.example/feed.jpg');
+    for (final request in <PlaybackRequest>[
+      ServerPlaybackRequest(
+          mediaId: 5043,
+          serverOrigin: _origin,
+          userId: 1,
+          sourceUri: Uri.parse('$_origin/api/v1/media/5043/stream'),
+          title: 'Canonical episode',
+          podcast: metadata),
+      PodcastPlaybackRequest(
+          identity: 'podcast:local:feed:episode',
+          sourceUri: Uri.file('/private/episode.mp3'),
+          title: 'Canonical episode',
+          podcast: metadata),
+    ]) {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(
+          _art(request, allowAccount: request is ServerPlaybackRequest));
+      await tester.pump();
+      await tester.pump();
+      final art = tester.widget<PodcastArtwork>(find.byType(PodcastArtwork));
+      expect(art.imageUrl, metadata.imageUrl);
+      expect(art.fallbackUrl, metadata.feedImageUrl);
+      expect(tester.takeException(), isNull);
+    }
   });
 
   testWidgets('device files and offline copies never access the account',

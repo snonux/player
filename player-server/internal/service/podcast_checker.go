@@ -282,6 +282,7 @@ func ingestParsedEpisodes(ctx context.Context, svc *podcastService, feed *model.
 			GUID:            ep.GUID,
 			Title:           ep.Title,
 			Description:     ep.Description,
+			ImageURL:        ep.ImageURL,
 			PublishedAt:     ep.PublishedAt,
 			EpisodeURL:      ep.EpisodeURL,
 			DurationSeconds: ep.DurationSeconds,

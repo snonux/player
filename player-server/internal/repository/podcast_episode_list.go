@@ -40,7 +40,7 @@ var _ PodcastEpisodeViewRepo = (*SQLite)(nil)
 // otherwise keep the oldest row for stable metadata and download controls.
 const subscribedEpisodesQuery = `WITH candidates AS (
 SELECT e.id, f.feed_key, COALESCE(a.episode_key, e.episode_key) AS episode_key, COALESCE(f.title, '') AS feed_title, COALESCE(e.title, '') AS title,
- COALESCE(e.description, '') AS description, e.published_at, e.duration_seconds, e.episode_url,
+ COALESCE(e.description, '') AS description, COALESCE(e.image_url, '') AS image_url, COALESCE(f.image_url, '') AS feed_image_url, e.published_at, e.duration_seconds, e.episode_url,
  COALESCE(s.completed, 0) AS completed, COALESCE(s.completion_source, '') AS completion_source,
  COALESCE(s.position_seconds, 0) AS position_seconds,
  CASE WHEN m.id IS NOT NULL AND m.deleted_at IS NULL AND
@@ -61,7 +61,7 @@ WHERE f.merged_into IS NULL
 ), ranked AS (
  SELECT *, ROW_NUMBER() OVER (PARTITION BY feed_key, episode_key ORDER BY readable_copy IS NULL, id) AS rank FROM candidates
 )
-SELECT id, feed_key, episode_key, feed_title, title, description, published_at, duration_seconds, episode_url,
+SELECT id, feed_key, episode_key, feed_title, title, description, image_url, feed_image_url, published_at, duration_seconds, episode_url,
  completed, completion_source, position_seconds, readable_copy, set_id
 FROM ranked WHERE rank = 1
 ORDER BY published_at IS NULL, published_at DESC, episode_key, feed_key
@@ -100,7 +100,7 @@ func scanEpisodeView(rows *sql.Rows) (model.PodcastEpisodeView, error) {
 	var published sql.NullTime
 	var duration sql.NullFloat64
 	var mediaID sql.NullInt64
-	err := rows.Scan(&v.ID, &v.FeedKey, &v.EpisodeKey, &v.FeedTitle, &v.Title, &v.Description, &published, &duration,
+	err := rows.Scan(&v.ID, &v.FeedKey, &v.EpisodeKey, &v.FeedTitle, &v.Title, &v.Description, &v.ImageURL, &v.FeedImageURL, &published, &duration,
 		&v.EpisodeURL, &v.Completed, &v.CompletionSource, &v.PositionSeconds, &mediaID, &v.SetID)
 	if err != nil {
 		return v, err

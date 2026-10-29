@@ -46,6 +46,53 @@ ServerPlaybackRequest _request() => ServerPlaybackRequest(
     );
 
 void main() {
+  test(
+      'podcast subtitle prefers publisher feed title and preserves music fallbacks',
+      () {
+    PlaybackRequest request(
+            {String? feed,
+            String artist = 'Embedded artist',
+            String album = 'Embedded album'}) =>
+        ServerPlaybackRequest(
+            mediaId: 7,
+            serverOrigin: 'https://player.test',
+            userId: 3,
+            sourceUri: Uri.parse('https://player.test/api/v1/media/7/stream'),
+            title: 'Episode',
+            artist: artist,
+            album: album,
+            podcast:
+                feed == null ? null : MediaPodcastMetadata(feedTitle: feed));
+    expect(request(feed: ' Beyond Coding ').subtitle, 'Beyond Coding');
+    expect(request(feed: '').subtitle, 'Embedded artist · Embedded album');
+    expect(
+        request(feed: '   ', artist: '', album: '').subtitle, 'Unknown artist');
+    expect(request().subtitle, 'Embedded artist · Embedded album');
+  });
+  test(
+      'podcast playback prefers canonical title and retains public artwork metadata across source retry',
+      () async {
+    final client = _Client()
+      ..media = Media.fromJson({
+        'id': 7,
+        'type': 'audio',
+        'file_name': 'episode.mp3',
+        'music': {'title': 'Title Placeholder'},
+        'podcast': {
+          'title': 'Real episode',
+          'feed_title': 'Beyond Coding',
+          'feed_image_url': 'https://publisher.example/cover.jpg'
+        }
+      });
+    final resolved = await resolveServerPlaybackSource(_request(), client)
+        as ServerPlaybackRequest;
+    expect(resolved.title, 'Real episode');
+    expect(
+        resolved.podcast!.feedImageUrl, 'https://publisher.example/cover.jpg');
+    expect(
+        resolved.withSourceUri(Uri.parse('https://player.test/compat')).podcast,
+        same(resolved.podcast));
+  });
   test('existing queue snapshot resolves latest quality on each opening',
       () async {
     SharedPreferences.setMockInitialValues({});

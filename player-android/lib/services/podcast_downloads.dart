@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import '../models/media.dart' show MediaPodcastMetadata;
+import 'podcast_metadata.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
@@ -357,6 +359,13 @@ class PodcastDownloads extends ChangeNotifier {
     return PodcastPlaybackRequest(
       identity: 'podcast:$scope:$feed:$key',
       title: episode['title'] as String,
+      podcast: MediaPodcastMetadata(
+          title: episode['title'] as String,
+          feedTitle: episode['podcast_title'] as String? ?? '',
+          description: episode['description'] as String? ?? '',
+          imageUrl: episode['image_url'] as String? ?? '',
+          feedImageUrl: episode['feed_image_url'] as String? ?? '',
+          publishedAt: podcastPublicationDate(episode['published_at'])),
       sourceName: 'Podcast on this device',
       sourceUri: _file(row!['id'] as String).uri,
       synchronize: synchronize,

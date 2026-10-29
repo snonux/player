@@ -1,3 +1,4 @@
+import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from './podcast-metadata.js';
 import { openPodcastDiscovery } from './podcast-discovery.js';
 import { t, html } from './i18n.js';
 import { initPlayer } from './player.js';
@@ -93,7 +94,15 @@ export function initLocalPodcastsApp() {
           play.type = 'button';
           play.textContent = episode.title;
           play.onclick = () => playEpisode(episode);
-          li.append(play);
+          const copy = document.createElement('div');
+          copy.className = 'local-podcast-copy';
+          const meta = document.createElement('p');
+          meta.className = 'subtitle'; meta.textContent = publicationDate(episode.published_at);
+          copy.append(play, meta);
+          const notes = document.createElement('div'); notes.innerHTML = showNotesHTML(episode.description); copy.append(notes);
+          const artwork = document.createElement('span'); artwork.innerHTML = episodeArtworkHTML(episode);
+          li.append(artwork, copy);
+          bindPodcastMetadata(li);
           list.append(li);
         }
         results.append(list);

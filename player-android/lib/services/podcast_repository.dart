@@ -21,7 +21,7 @@ class PodcastRepository {
   final PodcastFeedFetcher fetcher;
   Future<Database>? _opening;
   Future<Database> get database => _opening ??=
-          openDatabase(databasePath, version: 4, onUpgrade: (db, old, _) async {
+          openDatabase(databasePath, version: 5, onUpgrade: (db, old, _) async {
         if (old < 2) await createSyncSchema(db);
         if (old < 3) await createDownloadSchema(db);
         if (old < 4) {
@@ -30,6 +30,17 @@ class PodcastRepository {
           await db.update('podcast_feeds', {'etag': '', 'last_modified': ''},
               where: 'feed_key IN '
                   '(SELECT feed_key FROM podcast_episodes WHERE published_at=0)');
+        }
+        if (old < 5) {
+          // Existing dates and identities remain intact. Re-read publisher
+          // content once so a 304 cannot hide newly supported artwork/notes.
+          final columns =
+              await db.rawQuery('PRAGMA table_info(podcast_episodes)');
+          if (!columns.any((column) => column['name'] == 'image_url')) {
+            await db.execute(
+                'ALTER TABLE podcast_episodes ADD COLUMN image_url TEXT NOT NULL DEFAULT ""');
+          }
+          await db.update('podcast_feeds', {'etag': '', 'last_modified': ''});
         }
       }, onCreate: (db, _) async {
         await createSyncSchema(db);
@@ -43,7 +54,7 @@ class PodcastRepository {
         await db.execute(
             'CREATE TABLE podcast_feeds(feed_key TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT "", description TEXT NOT NULL DEFAULT "", image_url TEXT NOT NULL DEFAULT "", fetch_url TEXT NOT NULL, etag TEXT NOT NULL DEFAULT "", last_modified TEXT NOT NULL DEFAULT "", last_checked_ms INTEGER, last_error TEXT, aliases TEXT NOT NULL DEFAULT "[]")');
         await db.execute(
-            'CREATE TABLE podcast_episodes(feed_key TEXT NOT NULL, episode_key TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, enclosure_url TEXT NOT NULL, enclosure_key TEXT NOT NULL, published_at INTEGER NOT NULL, duration_seconds INTEGER NOT NULL, aliases TEXT NOT NULL DEFAULT "[]", PRIMARY KEY(feed_key,episode_key))');
+            'CREATE TABLE podcast_episodes(feed_key TEXT NOT NULL, episode_key TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, enclosure_url TEXT NOT NULL, enclosure_key TEXT NOT NULL, published_at INTEGER NOT NULL, duration_seconds INTEGER NOT NULL, image_url TEXT NOT NULL DEFAULT "", aliases TEXT NOT NULL DEFAULT "[]", PRIMARY KEY(feed_key,episode_key))');
         await db.execute(
             'CREATE TABLE podcast_sync_rejections(id INTEGER PRIMARY KEY AUTOINCREMENT, scope TEXT NOT NULL, edit_id TEXT NOT NULL, reason TEXT NOT NULL)');
       });
@@ -182,6 +193,7 @@ class PodcastRepository {
             'feed_key': deviceFeed, 'episode_key': e['episode_key'],
             'scope_feed_key': scopedFeed, 'scope_episode_key': key,
             'podcast_title': subscriptions[scopedFeed]!['title'],
+            'feed_image_url': metadata?['image_url'] ?? '',
             'completed': completed ? 1 : 0,
             'position_seconds': state['position_seconds'] ?? 0.0,
             'enclosure_url': e['enclosure_url'],
@@ -391,6 +403,7 @@ class PodcastRepository {
                 'episode_key': match.key,
                 'title': e.title,
                 'description': e.description,
+                'image_url': e.imageUrl,
                 'enclosure_url': e.identity.enclosureUrl,
                 'enclosure_key': podcastEnclosureKey(e.identity.enclosureUrl),
                 'published_at': e.publishedAt,

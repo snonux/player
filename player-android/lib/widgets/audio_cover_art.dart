@@ -7,6 +7,7 @@ import '../providers/auth_state_provider.dart';
 import '../services/playback_request.dart';
 import 'authenticated_network_image.dart';
 import 'public_network_image.dart';
+import 'podcast_artwork.dart';
 
 /// Artwork uses the same source and account boundary as playback. Device files
 /// and offline copies do not have a server artwork source.
@@ -31,12 +32,42 @@ class AudioCoverArt extends ConsumerWidget {
     if (source is ServerPlaybackRequest &&
         source.serverOrigin == ref.watch(playerBaseUrlProvider).origin &&
         _ownsAccount(ref, source)) {
-      image = AuthenticatedNetworkImage(
-        imageUrl: ref.read(apiClientProvider).thumbnailUrl(source.mediaId),
-        fit: fit,
-        placeholder: (_, __) => loading,
-        errorWidget: (_, __, ___) => fallback,
-      );
+      if (source.podcast != null) {
+        image = PodcastArtwork(
+            imageUrl: source.podcast!.imageUrl,
+            fallbackUrl: source.podcast!.feedImageUrl,
+            title: source.title,
+            size: null,
+            fit: fit,
+            unavailable: Consumer(builder: (context, coverRef, _) {
+              if (source.serverOrigin !=
+                      coverRef.watch(playerBaseUrlProvider).origin ||
+                  !_ownsAccount(coverRef, source)) {
+                return fallback;
+              }
+              return AuthenticatedNetworkImage(
+                  imageUrl: coverRef
+                      .read(apiClientProvider)
+                      .thumbnailUrl(source.mediaId),
+                  fit: fit,
+                  placeholder: (_, __) => loading,
+                  errorWidget: (_, __, ___) => fallback);
+            }));
+      } else {
+        image = AuthenticatedNetworkImage(
+          imageUrl: ref.read(apiClientProvider).thumbnailUrl(source.mediaId),
+          fit: fit,
+          placeholder: (_, __) => loading,
+          errorWidget: (_, __, ___) => fallback,
+        );
+      }
+    } else if (source is PodcastPlaybackRequest && source.podcast != null) {
+      image = PodcastArtwork(
+          imageUrl: source.podcast!.imageUrl,
+          fallbackUrl: source.podcast!.feedImageUrl,
+          title: source.title,
+          size: null,
+          fit: fit);
     } else if (source is PublicSharePlaybackRequest) {
       // Keep the viewing credential and any server path prefix. This endpoint
       // only probes the share and never opens another viewing.

@@ -47,4 +47,35 @@ void main() {
       expect(feed.episodes.single.publishedAt, 0);
     });
   }
+  test(
+      'episode artwork and full notes prefer publisher content with feed fallback',
+      () {
+    final feed = parsePodcastFeed(
+        '''<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel>
+      <title>Publisher</title><itunes:image href="/feed.jpg"/>
+      <item><guid>one</guid><itunes:image href="../one.jpg"/><description>Short summary</description><content:encoded><![CDATA[<p>Full &amp; useful notes</p>]]></content:encoded></item>
+      <item><guid>two</guid><itunes:image href="javascript:bad"/><description>Only summary</description></item>
+    </channel></rss>''',
+        fetchUrl: 'https://publisher.example/rss/feed');
+    expect(feed.imageUrl, 'https://publisher.example/feed.jpg');
+    expect(feed.episodes.first.imageUrl, 'https://publisher.example/one.jpg');
+    expect(feed.episodes.first.description, '<p>Full &amp; useful notes</p>');
+    expect(feed.episodes.last.imageUrl, isEmpty);
+    expect(feed.episodes.last.description, 'Only summary');
+  });
+  test('Atom logo and XHTML notes retain readable content and date', () {
+    final feed = parsePodcastFeed(
+        '''<feed xmlns="http://www.w3.org/2005/Atom"><logo>/logo.png</logo><entry><id>one</id><published>2026-10-26T14:00:00Z</published><summary>Short</summary><content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>Paragraph</p><a href="https://example.com">Link</a></div></content></entry></feed>''',
+        fetchUrl: 'https://publisher.example/rss');
+    expect(feed.imageUrl, 'https://publisher.example/logo.png');
+    expect(feed.episodes.single.description, contains('<p>Paragraph</p>'));
+    expect(feed.episodes.single.publishedAt, expected);
+  });
+  test('publisher artwork rejects credential-bearing and non-http sources', () {
+    final feed = parsePodcastFeed(
+        '''<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><itunes:image href="https://user:pass@example.com/a.jpg"/><item><itunes:image href="data:image/png,bytes"/></item></channel></rss>''',
+        fetchUrl: 'https://publisher.example/feed');
+    expect(feed.imageUrl, isEmpty);
+    expect(feed.episodes.single.imageUrl, isEmpty);
+  });
 }

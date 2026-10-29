@@ -29,7 +29,7 @@ const base = {
   assert(!html.includes('data-action="play-beginning"'), 'restart only when downloaded');
   assert(!html.includes('data-action="delete-download"'), 'delete only when downloaded');
   assert(html.includes('<details class="episode-description">'), 'description is expandable');
-  assert(html.includes('<summary>Description</summary>'), 'description starts collapsed behind summary');
+  assert(html.includes('<summary>Show notes</summary>'), 'description starts collapsed behind summary');
   assert(html.includes('Not downloaded'), 'status shows download state');
   assert(html.includes('In progress ·'), 'in-progress without server_copy (Android 1t3 parity)');
   assert(html.includes('Feed'), 'feed title when showFeed');

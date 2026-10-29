@@ -22,7 +22,7 @@ const feedColumns = `id, set_id, feed_url, title, description, image_url, last_c
 
 // episodeColumns are the podcast_episodes columns scanEpisode reads.
 const episodeColumns = `id, feed_id, media_id, guid, episode_key, enclosure_key, title, description,
- published_at, episode_url, duration_seconds, file_size, file_name, is_downloaded, created_at`
+ published_at, episode_url, duration_seconds, file_size, file_name, is_downloaded, created_at, image_url`
 
 // CreateFeed stores a new catalog feed and returns its database ID. A feed
 // without a FeedKey gets the key of its URL, or "legacy-feed:<id>" when the
@@ -266,10 +266,10 @@ func insertEpisode(ctx context.Context, ex sqlExecer, episode *model.PodcastEpis
 		fileSize = sql.NullInt64{Int64: *episode.FileSize, Valid: true}
 	}
 	res, err := ex.ExecContext(ctx,
-		`INSERT INTO podcast_episodes (feed_id, media_id, guid, episode_key, enclosure_key, title, description, published_at, episode_url, duration_seconds, file_size, file_name, is_downloaded, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO podcast_episodes (feed_id, media_id, guid, episode_key, enclosure_key, title, description, published_at, episode_url, duration_seconds, file_size, file_name, is_downloaded, created_at, image_url)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		episode.FeedID, mediaID, sqlNullString(episode.GUID), episode.EpisodeKey, episode.EnclosureKey, sqlNullString(episode.Title), sqlNullString(episode.Description),
-		published, episode.EpisodeURL, duration, fileSize, sqlNullString(episode.FileName), boolToInt(episode.IsDownloaded), episode.CreatedAt,
+		published, episode.EpisodeURL, duration, fileSize, sqlNullString(episode.FileName), boolToInt(episode.IsDownloaded), episode.CreatedAt, episode.ImageURL,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert podcast episode: %w", err)
@@ -286,7 +286,7 @@ func scanEpisode(row sqlScanner) (*model.PodcastEpisode, error) {
 	var fileSize sql.NullInt64
 	var isDownloadedInt int
 	var guid sql.NullString
-	err := row.Scan(&e.ID, &e.FeedID, &mediaID, &guid, &e.EpisodeKey, &e.EnclosureKey, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &isDownloadedInt, &e.CreatedAt)
+	err := row.Scan(&e.ID, &e.FeedID, &mediaID, &guid, &e.EpisodeKey, &e.EnclosureKey, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &isDownloadedInt, &e.CreatedAt, &e.ImageURL)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -426,7 +426,7 @@ func (s *SQLite) DeleteEpisodesByFeed(ctx context.Context, feedID int64) error {
 // episodeWithStatusSelect lists episodes with the user's registers; the
 // first placeholder is the user id.
 const episodeWithStatusSelect = `SELECT e.id, e.feed_id, e.media_id, e.guid, COALESCE(a.episode_key, e.episode_key), e.enclosure_key, e.title, e.description,
- e.published_at, e.episode_url, e.duration_seconds, e.file_size, e.file_name, e.is_downloaded, e.created_at, f.feed_key,
+ e.published_at, e.episode_url, e.duration_seconds, e.file_size, e.file_name, e.is_downloaded, e.created_at, COALESCE(e.image_url,''), COALESCE(f.image_url,''), f.feed_key,
  COALESCE(s.completed, 0), COALESCE(s.position_seconds, 0)
 FROM podcast_episodes e
 JOIN podcast_feeds f ON f.id = e.feed_id
@@ -443,7 +443,7 @@ func scanEpisodeWithStatus(rows *sql.Rows) (model.PodcastEpisodeWithStatus, erro
 	var isDownloadedInt, isCompletedInt int
 	var positionSeconds sql.NullFloat64
 	var guid sql.NullString
-	err := rows.Scan(&e.ID, &e.FeedID, &mediaID, &guid, &e.EpisodeKey, &e.EnclosureKey, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &isDownloadedInt, &e.CreatedAt, &e.FeedKey, &isCompletedInt, &positionSeconds)
+	err := rows.Scan(&e.ID, &e.FeedID, &mediaID, &guid, &e.EpisodeKey, &e.EnclosureKey, &title, &description, &published, &e.EpisodeURL, &duration, &fileSize, &fileName, &isDownloadedInt, &e.CreatedAt, &e.ImageURL, &e.FeedImageURL, &e.FeedKey, &isCompletedInt, &positionSeconds)
 	if err != nil {
 		return e, err
 	}

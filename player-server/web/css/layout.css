@@ -1023,7 +1023,7 @@ body {
   cursor: pointer;
   color: var(--text-muted);
   font-size: 0.8rem;
-  min-height: var(--control-height-sm);
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
 }
@@ -1179,3 +1179,17 @@ body {
 .podcast-discovery-dialog summary { min-height: 44px; }
 .podcast-discovery-dialog .podcast-feed-row > span { min-width: 0; overflow-wrap: anywhere; }
 .podcast-discovery-dialog .podcast-feed-row > button { flex-shrink: 0; }
+
+/* Publisher episode artwork is optional and never blocks episode controls. */
+.episode-card .thumb-wrap, .audio-card .thumb-wrap { position: relative; }
+.podcast-episode-cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--bg-elevated); }
+.podcast-episode-cover[hidden] { display: none; }
+.episode-description > p { margin: .35rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.local-podcasts .podcast-episode-cover { position: static; width: 3rem; height: 3rem; flex: 0 0 auto; }
+.local-podcast-copy { flex: 1; min-width: 0; }
+
+/* Notes own their pointer/native keyboard activation above the card opener. */
+.media-card .episode-description { position: relative; z-index: 2; }
+.episode-description > summary { min-height: 44px; display: inline-flex; align-items: center; cursor: pointer; }
+.episode-description > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.episode-description a { color: var(--accent); text-underline-offset: 0.15em; }

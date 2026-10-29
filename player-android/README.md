@@ -116,6 +116,16 @@ history across devices are outside this feature.
 
 ## Podcasts on this device
 
+Episode rows show publisher artwork (episode cover first, podcast cover as
+fallback), the publication date, and expandable **Show notes**. Artwork uses a
+public disk cache without Player credentials; downloaded server copies retain
+existing embedded/server thumbnails if publisher images are missing or fail.
+Artwork never blocks browsing or playback. Notes are selectable text with readable paragraphs and
+copyable publisher URLs, rather than executable publisher HTML. Dates absent
+from the publisher are labeled unavailable. **Refresh feeds** repairs older
+cached summaries and fetches newly supported episode covers; existing episode
+identities, progress and downloads are retained.
+
 Open **Podcasts** from the server menu or **Podcasts on this device** from
 the local library. Subscribe using a publisher feed URL and use **Refresh feeds**
 or a podcast's **Refresh feed** menu to fetch metadata directly. Subscription

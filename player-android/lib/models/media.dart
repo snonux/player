@@ -1,6 +1,34 @@
 import 'json_helpers.dart';
 import 'music_metadata.dart';
 
+class MediaPodcastMetadata {
+  const MediaPodcastMetadata(
+      {this.title = '',
+      this.feedTitle = '',
+      this.description = '',
+      this.imageUrl = '',
+      this.feedImageUrl = '',
+      this.publishedAt});
+  final String title, feedTitle, description, imageUrl, feedImageUrl;
+  final DateTime? publishedAt;
+  factory MediaPodcastMetadata.fromJson(Map<String, dynamic> json) =>
+      MediaPodcastMetadata(
+          title: json['title'] as String? ?? '',
+          feedTitle: json['feed_title'] as String? ?? '',
+          description: json['description'] as String? ?? '',
+          imageUrl: json['image_url'] as String? ?? '',
+          feedImageUrl: json['feed_image_url'] as String? ?? '',
+          publishedAt: dateTimeFromJson(json['published_at']));
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'feed_title': feedTitle,
+        'description': description,
+        'image_url': imageUrl,
+        'feed_image_url': feedImageUrl,
+        'published_at': dateTimeToJson(publishedAt)
+      };
+}
+
 class Media {
   final int rating;
   final int personalPlayCount;
@@ -15,19 +43,24 @@ class Media {
       thumbnailPath;
   final double duration;
   final MusicMetadata? music;
+  final MediaPodcastMetadata? podcast;
   String get displayTitle {
     if (type != 'audio') return fileName;
+    final episodeTitle = podcast?.title.trim() ?? '';
+    if (episodeTitle.isNotEmpty) return episodeTitle;
     final title = music?.title.trim() ?? '';
     if (title.isNotEmpty) return title;
     final stem = fileName.replaceFirst(RegExp(r'\.[^.]+$'), '');
     return stem.isEmpty ? fileName : stem;
   }
 
-  String get musicSubtitle => type == 'audio'
-      ? [music?.artist ?? '', music?.album ?? '']
-          .where((s) => s.isNotEmpty)
-          .join(' · ')
-      : '';
+  String get musicSubtitle => type == 'audio' && podcast != null
+      ? podcast!.feedTitle
+      : type == 'audio'
+          ? [music?.artist ?? '', music?.album ?? '']
+              .where((s) => s.isNotEmpty)
+              .join(' · ')
+          : '';
   final bool favorite;
 
   /// True when this device should play the server's compatibility stream
@@ -58,6 +91,7 @@ class Media {
       required this.thumbnailPath,
       required this.playCount,
       this.music,
+      this.podcast,
       this.rating = 0,
       this.personalPlayCount = 0,
       this.lastPlayedAt,
@@ -69,6 +103,10 @@ class Media {
       this.positionSeconds});
 
   factory Media.fromJson(Map<String, dynamic> json) => Media(
+      podcast: json['podcast'] is Map<String, dynamic>
+          ? MediaPodcastMetadata.fromJson(
+              json['podcast'] as Map<String, dynamic>)
+          : null,
       music: json['music'] is Map<String, dynamic>
           ? MusicMetadata.fromJson(json['music'] as Map<String, dynamic>)
           : null,
@@ -102,6 +140,7 @@ class Media {
 
   Map<String, dynamic> toJson() => {
         if (music != null) 'music': music!.toJson(),
+        if (podcast != null) 'podcast': podcast!.toJson(),
         'id': id,
         'set_id': setId,
         'rel_path': relPath,

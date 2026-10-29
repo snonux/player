@@ -24,106 +24,119 @@ class FixtureFetcher extends PodcastFeedFetcher {
 void main() {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
-  test('upgrading zero dates reparses cached feeds and preserves episode state',
-      () async {
-    final directory = await Directory.systemTemp.createTemp('podcast-dates-');
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final origin = 'http://127.0.0.1:${server.port}';
-    final validators = <List<String?>>[];
-    final subscription = server.listen((request) async {
-      final conditional = [
-        request.headers.value(HttpHeaders.ifNoneMatchHeader),
-        request.headers.value(HttpHeaders.ifModifiedSinceHeader)
-      ];
-      validators.add(conditional);
-      if (conditional.any((value) => value != null)) {
-        request.response.statusCode = 304;
-      } else {
-        request.response.headers.set(HttpHeaders.etagHeader, 'fixture');
-        request.response.headers.set(
-            HttpHeaders.lastModifiedHeader, 'Mon, 26 Oct 2026 14:00:00 GMT');
-        request.response.write('<rss><channel><title>Fixture</title>'
-            '<item><guid>a-older</guid><title>Older</title>'
-            '<pubDate>Mon, 26 Oct 2026 15:00:00 +0200</pubDate>'
-            '<enclosure url="https://cdn.example/older.mp3"/></item>'
-            '<item><guid>z-newer</guid><title>Newer</title>'
-            '<pubDate>Mon, 26 Oct 2026 10:30:00 -0330</pubDate>'
-            '<enclosure url="https://cdn.example/newer.mp3"/></item>'
-            '</channel></rss>');
+  for (final oldVersion in [3, 4]) {
+    test('upgrading v$oldVersion reparses metadata and preserves episode state',
+        () async {
+      final directory = await Directory.systemTemp.createTemp('podcast-dates-');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final origin = 'http://127.0.0.1:${server.port}';
+      final validators = <List<String?>>[];
+      final subscription = server.listen((request) async {
+        final conditional = [
+          request.headers.value(HttpHeaders.ifNoneMatchHeader),
+          request.headers.value(HttpHeaders.ifModifiedSinceHeader)
+        ];
+        validators.add(conditional);
+        if (conditional.any((value) => value != null)) {
+          request.response.statusCode = 304;
+        } else {
+          request.response.headers.set(HttpHeaders.etagHeader, 'fixture');
+          request.response.headers.set(
+              HttpHeaders.lastModifiedHeader, 'Mon, 26 Oct 2026 14:00:00 GMT');
+          request.response.write(
+              '<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Fixture</title><itunes:image href="https://cdn.example/feed.jpg"/>'
+              '<item><guid>a-older</guid><title>Older</title>'
+              '<pubDate>Mon, 26 Oct 2026 15:00:00 +0200</pubDate>'
+              '<enclosure url="https://cdn.example/older.mp3"/></item>'
+              '<item><guid>z-newer</guid><title>Newer</title><itunes:image href="https://cdn.example/episode.jpg"/><description>Short</description><content:encoded><![CDATA[<p>Full notes</p>]]></content:encoded>'
+              '<pubDate>Mon, 26 Oct 2026 10:30:00 -0330</pubDate>'
+              '<enclosure url="https://cdn.example/newer.mp3"/></item>'
+              '</channel></rss>');
+        }
+        await request.response.close();
+      });
+      final path = '${directory.path}/podcasts.db';
+      var repository = PodcastRepository(databasePath: path);
+      try {
+        final key = await repository.subscribe('local', '$origin/feed');
+        final healthyKey =
+            await repository.subscribe('local', '$origin/healthy');
+        var db = await repository.database;
+        if (oldVersion == 3) {
+          await db.update('podcast_episodes', {'published_at': 0},
+              where: 'feed_key=?', whereArgs: [key]);
+        }
+        await db.insert('podcast_episode_state', {
+          'scope': 'local',
+          'feed_key': key,
+          'episode_key': 'guid:z-newer',
+          'position_seconds': 42.0,
+          'position_ms': 100,
+          'completed': 1,
+          'completion_ms': 200,
+          'completion_source': 'manual'
+        });
+        await db.insert('podcast_downloads', {
+          'id': 'download',
+          'feed_key': key,
+          'episode_key': 'guid:z-newer',
+          'state': 'complete',
+          'size_bytes': 12345
+        });
+        final state = await db.query('podcast_episode_state');
+        final downloads = await db.query('podcast_downloads');
+        final subscriptions = await db.query('podcast_subscriptions');
+        final healthy = (await db.query('podcast_feeds',
+                where: 'feed_key=?', whereArgs: [healthyKey]))
+            .single;
+        final affected = (await db
+                .query('podcast_feeds', where: 'feed_key=?', whereArgs: [key]))
+            .single;
+        // Simulate a persisted pre-fix cache, including validators which would
+        // otherwise hide the original numeric dates behind a 304 response.
+        await db.execute('ALTER TABLE podcast_episodes DROP COLUMN image_url');
+        await db.setVersion(oldVersion);
+        await repository.close();
+        repository = PodcastRepository(databasePath: path);
+        db = await repository.database;
+        final repaired = (await db
+                .query('podcast_feeds', where: 'feed_key=?', whereArgs: [key]))
+            .single;
+        expect(repaired, {...affected, 'etag': '', 'last_modified': ''});
+        expect(
+            (await db.query('podcast_feeds',
+                    where: 'feed_key=?', whereArgs: [healthyKey]))
+                .single,
+            {...healthy, 'etag': '', 'last_modified': ''});
+        expect(await db.getVersion(), 5);
+        await repository.refresh(key);
+        expect(validators.last, [null, null]);
+        final episodes = await repository.episodes(key);
+        expect(episodes.map((episode) => episode['episode_key']),
+            ['guid:z-newer', 'guid:a-older']);
+        expect(episodes.map((episode) => episode['published_at']), [
+          DateTime.utc(2026, 10, 26, 14).millisecondsSinceEpoch,
+          DateTime.utc(2026, 10, 26, 13).millisecondsSinceEpoch
+        ]);
+        expect(episodes.first['image_url'], 'https://cdn.example/episode.jpg');
+        expect(episodes.first['description'], '<p>Full notes</p>');
+        final browse =
+            await repository.browseEpisodes('local', feed: key, filter: 'all');
+        expect(browse.first['feed_image_url'], 'https://cdn.example/feed.jpg');
+        expect(await db.query('podcast_episode_state'), state);
+        expect(await db.query('podcast_downloads'), downloads);
+        expect(await db.query('podcast_subscriptions'), subscriptions);
+        await repository.refresh(key);
+        expect(validators.last, ['fixture', 'Mon, 26 Oct 2026 14:00:00 GMT']);
+        expect(await repository.episodes(key), episodes);
+      } finally {
+        await repository.close();
+        await subscription.cancel();
+        await server.close(force: true);
+        await directory.delete(recursive: true);
       }
-      await request.response.close();
     });
-    final path = '${directory.path}/podcasts.db';
-    var repository = PodcastRepository(databasePath: path);
-    try {
-      final key = await repository.subscribe('local', '$origin/feed');
-      final healthyKey = await repository.subscribe('local', '$origin/healthy');
-      var db = await repository.database;
-      await db.update('podcast_episodes', {'published_at': 0},
-          where: 'feed_key=?', whereArgs: [key]);
-      await db.insert('podcast_episode_state', {
-        'scope': 'local',
-        'feed_key': key,
-        'episode_key': 'guid:z-newer',
-        'position_seconds': 42.0,
-        'position_ms': 100,
-        'completed': 1,
-        'completion_ms': 200,
-        'completion_source': 'manual'
-      });
-      await db.insert('podcast_downloads', {
-        'id': 'download',
-        'feed_key': key,
-        'episode_key': 'guid:z-newer',
-        'state': 'complete',
-        'size_bytes': 12345
-      });
-      final state = await db.query('podcast_episode_state');
-      final downloads = await db.query('podcast_downloads');
-      final subscriptions = await db.query('podcast_subscriptions');
-      final healthy = (await db.query('podcast_feeds',
-              where: 'feed_key=?', whereArgs: [healthyKey]))
-          .single;
-      final affected = (await db
-              .query('podcast_feeds', where: 'feed_key=?', whereArgs: [key]))
-          .single;
-      // Simulate a persisted pre-fix cache, including validators which would
-      // otherwise hide the original numeric dates behind a 304 response.
-      await db.setVersion(3);
-      await repository.close();
-      repository = PodcastRepository(databasePath: path);
-      db = await repository.database;
-      final repaired = (await db
-              .query('podcast_feeds', where: 'feed_key=?', whereArgs: [key]))
-          .single;
-      expect(repaired, {...affected, 'etag': '', 'last_modified': ''});
-      expect(
-          (await db.query('podcast_feeds',
-                  where: 'feed_key=?', whereArgs: [healthyKey]))
-              .single,
-          healthy);
-      await repository.refresh(key);
-      expect(validators.last, [null, null]);
-      final episodes = await repository.episodes(key);
-      expect(episodes.map((episode) => episode['episode_key']),
-          ['guid:z-newer', 'guid:a-older']);
-      expect(episodes.map((episode) => episode['published_at']), [
-        DateTime.utc(2026, 10, 26, 14).millisecondsSinceEpoch,
-        DateTime.utc(2026, 10, 26, 13).millisecondsSinceEpoch
-      ]);
-      expect(await db.query('podcast_episode_state'), state);
-      expect(await db.query('podcast_downloads'), downloads);
-      expect(await db.query('podcast_subscriptions'), subscriptions);
-      await repository.refresh(key);
-      expect(validators.last, ['fixture', 'Mon, 26 Oct 2026 14:00:00 GMT']);
-      expect(await repository.episodes(key), episodes);
-    } finally {
-      await repository.close();
-      await subscription.cancel();
-      await server.close(force: true);
-      await directory.delete(recursive: true);
-    }
-  });
+  }
   test('association readiness and account change roll back the entire copy',
       () async {
     final repository = PodcastRepository(

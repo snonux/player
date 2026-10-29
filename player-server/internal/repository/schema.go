@@ -370,6 +370,9 @@ func initializeSchema(db *sql.DB) error {
 	if err := migratePodcastSync(db); err != nil {
 		return fmt.Errorf("migrate podcast sync: %w", err)
 	}
+	if err := migratePodcastEpisodeArtwork(db); err != nil {
+		return fmt.Errorf("migrate podcast artwork: %w", err)
+	}
 	if err := execSchema(db, "indexes", indexesSchema); err != nil {
 		return err
 	}

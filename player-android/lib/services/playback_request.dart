@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../models/music_metadata.dart';
+import '../models/media.dart' show MediaPodcastMetadata;
 
 enum PlaybackSourceKind { server, local, publicShare }
 
@@ -22,6 +23,7 @@ sealed class PlaybackRequest {
     this.artist = '',
     this.album = '',
     this.artworkUri,
+    this.podcast,
     this.music,
     required this.sourceUri,
     this.startPosition,
@@ -37,10 +39,16 @@ sealed class PlaybackRequest {
   final String artist;
   final String album;
   final Uri? artworkUri;
+  final MediaPodcastMetadata? podcast;
   final MusicMetadata? music;
-  String get subtitle => [artist.isEmpty ? 'Unknown artist' : artist, album]
-      .where((s) => s.isNotEmpty)
-      .join(' · ');
+  String get subtitle {
+    final feedTitle = podcast?.feedTitle.trim() ?? '';
+    if (feedTitle.isNotEmpty) return feedTitle;
+    return [artist.isEmpty ? 'Unknown artist' : artist, album]
+        .where((s) => s.isNotEmpty)
+        .join(' · ');
+  }
+
   String get visualContext => '$sourceName $title ${sourceUri.path}';
   final Uri sourceUri;
   final double? startPosition;
@@ -67,6 +75,7 @@ final class ServerPlaybackRequest extends PlaybackRequest {
     super.artist,
     super.album,
     super.artworkUri,
+    super.podcast,
     super.music,
     super.startPosition,
     super.readPosition,
@@ -91,6 +100,7 @@ final class ServerPlaybackRequest extends PlaybackRequest {
         artist: artist,
         album: album,
         artworkUri: artworkUri,
+        podcast: podcast,
         music: music,
         startPosition: startPosition,
         readPosition: readPosition,
@@ -134,6 +144,7 @@ final class PodcastPlaybackRequest extends PlaybackRequest {
     required super.sourceUri,
     required super.title,
     super.sourceName,
+    super.podcast,
     super.readPosition,
     super.savePosition,
     super.markFinished,

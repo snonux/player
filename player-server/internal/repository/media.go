@@ -31,7 +31,7 @@ func (s *SQLite) CreateMedia(ctx context.Context, media *model.Media) (int64, er
 // a query selects after it (e.g. the saved position for in-progress media).
 func scanMedia(row sqlScanner, extra ...any) (*model.Media, error) {
 	var m model.Media
-	var music sql.NullString
+	var music, podcastMetadata sql.NullString
 	var deleted sql.NullTime
 	var mediaType string
 	var thumbnail sql.NullString
@@ -54,7 +54,7 @@ func scanMedia(row sqlScanner, extra ...any) (*model.Media, error) {
 		&duration, &codec, &resolution, &bitrate, &fileSize,
 		&width, &height, &exifCamera, &exifLens, &exifDate, &exifISO,
 		&exifFNumber, &exifExposure, &exifFocalLength,
-		&thumbnail, &m.PlayCount, &deleted, &m.CreatedAt, &music,
+		&thumbnail, &m.PlayCount, &deleted, &m.CreatedAt, &music, &podcastMetadata,
 	}
 	err := row.Scan(append(dest, extra...)...)
 	if err == sql.ErrNoRows {
@@ -66,6 +66,13 @@ func scanMedia(row sqlScanner, extra ...any) (*model.Media, error) {
 	if music.Valid && music.String != "" {
 		if err := json.Unmarshal([]byte(music.String), &m.Music); err != nil {
 			return nil, fmt.Errorf("decode music tags: %w", err)
+		}
+	}
+	if podcastMetadata.Valid && podcastMetadata.String != "" {
+		var err error
+		m.Podcast, err = decodePodcastMediaMetadata(podcastMetadata.String)
+		if err != nil {
+			return nil, err
 		}
 	}
 	m.Type = model.MediaType(mediaType)
@@ -123,14 +130,14 @@ func scanMedia(row sqlScanner, extra ...any) (*model.Media, error) {
 // GetMediaByID retrieves a media by ID.
 func (s *SQLite) GetMediaByID(ctx context.Context, id int64) (*model.Media, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at, music FROM media WHERE id = ? AND deleted_at IS NULL`, id)
+		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at, music, `+podcastMediaColumn+` FROM media WHERE id = ? AND deleted_at IS NULL`, id)
 	return scanMedia(row)
 }
 
 // GetMediaByIDAny retrieves a media by ID including soft-deleted rows (identity recovery).
 func (s *SQLite) GetMediaByIDAny(ctx context.Context, id int64) (*model.Media, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at, music FROM media WHERE id = ?`, id)
+		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at, music, `+podcastMediaColumn+` FROM media WHERE id = ?`, id)
 	return scanMedia(row)
 }
 
@@ -190,9 +197,16 @@ func (s *SQLite) HardDeleteMedia(ctx context.Context, id int64) error {
 	return nil
 }
 
+// podcastMediaColumn projects public publisher metadata with one indexed lookup.
+// Stored publication times are normalized to UTC at startup; JSON uses RFC3339.
+const podcastMediaColumn = `(SELECT json_object('title',COALESCE(e.title,''),'feed_title',COALESCE(f.title,''),
+ 'description',COALESCE(e.description,''),'image_url',COALESCE(e.image_url,''),'feed_image_url',COALESCE(f.image_url,''),
+ 'published_at',e.published_at)
+ FROM podcast_episodes e JOIN podcast_feeds f ON f.id=e.feed_id WHERE e.media_id=media.id ORDER BY e.id LIMIT 1)`
+
 // mediaListColumns is the column list scanMedia expects, qualified with the
 // media table because ListMedia may join favorites and tags.
-const mediaListColumns = `media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.width, media.height, media.exif_camera, media.exif_lens, media.exif_date, media.exif_iso, media.exif_f_number, media.exif_exposure, media.exif_focal_length, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at, media.music`
+const mediaListColumns = `media.id, media.set_id, media.rel_path, media.file_name, media.abs_path, media.type, media.duration, media.codec, media.resolution, media.bitrate, media.file_size_bytes, media.width, media.height, media.exif_camera, media.exif_lens, media.exif_date, media.exif_iso, media.exif_f_number, media.exif_exposure, media.exif_focal_length, media.thumbnail_path, media.play_count, media.deleted_at, media.created_at, media.music, ` + podcastMediaColumn
 
 // mediaQuery collects SQL fragments with their bind arguments. JOIN and WHERE
 // arguments are kept apart because JOIN placeholders precede WHERE
@@ -332,7 +346,7 @@ func anySlice[T any](values []T) []any {
 // ListDeletedMedia returns all soft-deleted media.
 func (s *SQLite) ListDeletedMedia(ctx context.Context) ([]model.Media, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at, music FROM media WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`)
+		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at, music, `+podcastMediaColumn+` FROM media WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list deleted media: %w", err)
 	}

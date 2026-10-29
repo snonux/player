@@ -1,3 +1,4 @@
+import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from '../podcast-metadata.js';
 import { bindMediaMultiselect } from './media-multiselect.js';
 import { downloadMusic } from '../music-downloads.js';
 import { songActionButtons, bindSongActions } from '../queue-actions.js';
@@ -506,6 +507,7 @@ function bindMediaItems(grid) {
     if (song?.type === 'audio') row.insertAdjacentHTML('beforeend', songActionButtons(song));
   });
   bindSongActions(grid);
+  bindPodcastMetadata(grid);
   grid.querySelectorAll('.media-card, .media-row').forEach((el) => {
     el.querySelector('.media-open')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -653,13 +655,14 @@ function renderItem(m, index) {
     <div class="media-card audio-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" role="group" aria-label="${title}">
       <button type="button" class="media-open" aria-label="${title}"></button>
       <div class="thumb-wrap">
-        ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No cover</span>`}
+        ${m.podcast ? episodeArtworkHTML(m.podcast, { thumbnailURL: m.thumbnail_path ? `/api/media/${m.id}/thumbnail` : '' }) : m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No cover</span>`}
         <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
       </div>
       ${renderMediaActions(m)}
       <div class="meta">
         <div class="title" title="${title}">${title}</div>
-        <div class="subtitle">${escapeHtml(musicSubtitle(m))}</div>
+        <div class="subtitle">${escapeHtml(m.podcast ? publicationDate(m.podcast.published_at) : musicSubtitle(m))}</div>
+        ${m.podcast ? showNotesHTML(m.podcast.description) : ''}
       </div>
     </div>
   `;

@@ -195,3 +195,16 @@ episode view also has **Refresh feed**. Subscribed feeds appear in the sidebar
 from the user's own sync registers even when the user has no permission to the
 server's shared podcast set. Subscription and metadata refresh grant no access
 to server audio copies or folders.
+
+## Episode metadata
+
+Episode cards show publisher artwork (episode artwork first, feed artwork as a
+fallback), a labeled publication date, and expandable **Show notes**. Notes are
+rendered as readable text with safe HTTP(S) links; publisher HTML cannot execute
+scripts or load embedded resources. Missing dates are explicitly marked
+unavailable, and feeds without notes omit the expander.
+
+Refreshing a feed updates publisher metadata without changing episode keys,
+progress, completion, or downloaded-file links. Existing server copies expose
+optional `media.podcast` metadata, so their display title uses the RSS episode
+title while the original filename and embedded `music` tags remain intact.

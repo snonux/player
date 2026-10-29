@@ -50,6 +50,8 @@ type PodcastEpisode struct {
 	EnclosureKey    string     `json:"-"`
 	Title           string     `json:"title"`
 	Description     string     `json:"description"`
+	ImageURL        string     `json:"image_url"`
+	FeedImageURL    string     `json:"feed_image_url"`
 	PublishedAt     *time.Time `json:"published_at"`
 	EpisodeURL      string     `json:"episode_url"`
 	DurationSeconds *float64   `json:"duration_seconds"`
@@ -94,6 +96,8 @@ type PodcastEpisodeView struct {
 	FeedTitle       string     `json:"feed_title"`
 	Title           string     `json:"title"`
 	Description     string     `json:"description"`
+	ImageURL        string     `json:"image_url"`
+	FeedImageURL    string     `json:"feed_image_url"`
 	PublishedAt     *time.Time `json:"published_at"`
 	DurationSeconds *float64   `json:"duration_seconds"`
 	EpisodeURL      string     `json:"episode_url"`
@@ -113,4 +117,15 @@ type PodcastEpisodeView struct {
 // PodcastServerCopy names the media row of an episode's server copy.
 type PodcastServerCopy struct {
 	MediaID int64 `json:"media_id"`
+}
+
+// PodcastMediaMetadata is publisher metadata for an existing server copy. It
+// never replaces the file identity or its embedded music tags.
+type PodcastMediaMetadata struct {
+	Title        string     `json:"title"`
+	FeedTitle    string     `json:"feed_title"`
+	Description  string     `json:"description"`
+	PublishedAt  *time.Time `json:"published_at"`
+	ImageURL     string     `json:"image_url"`
+	FeedImageURL string     `json:"feed_image_url"`
 }

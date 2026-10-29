@@ -1,3 +1,4 @@
+import { publicationDate, showNotesHTML } from '../podcast-metadata.js';
 import { mountRelatedMusic } from '../music-related.js';
 import { mediaTitle, musicRows, musicDetailGroups } from '../music.js';
 import { API } from '../api.js';
@@ -117,6 +118,7 @@ function renderMediaInfo(detail) {
   const basicRows = [
     ['Title', mediaTitle(media)],
  ['Filename', media.file_name],
+ ...(media.podcast ? [['Podcast', media.podcast.feed_title], ['Publication', publicationDate(media.podcast.published_at)]] : []),
  ...musicRows(media),
   ];
   let rows = [
@@ -176,6 +178,7 @@ function renderMediaInfo(detail) {
     </div>
     <table class="media-info-table">${basicTable}</table>
     ${groups}
+    ${media.podcast ? showNotesHTML(media.podcast.description) : ''}
     <table class="media-info-table">${table}</table>
     <details class="media-info-raw">
       <summary>Raw API detail</summary>

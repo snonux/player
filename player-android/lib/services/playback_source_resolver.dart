@@ -32,12 +32,14 @@ Future<PlaybackRequest> resolveServerPlaybackSource(
         serverOrigin: request.serverOrigin,
         userId: request.userId,
         sourceUri: Uri.parse(client.playbackUrl(media)),
-        title: media.music?.title.trim().isNotEmpty == true
+        title: media.podcast?.title.trim().isNotEmpty == true ||
+                media.music?.title.trim().isNotEmpty == true
             ? media.displayTitle
             : request.title,
         artist: media.music?.artist ?? '',
         album: media.music?.album ?? '',
         music: media.music,
+        podcast: media.podcast,
         artworkUri: media.thumbnailPath.isNotEmpty
             ? Uri.parse(client.thumbnailUrl(media.id))
             : null,
