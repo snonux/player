@@ -1,4 +1,1 @@
-Unlock saved downloads with fingerprint while the server is offline; progress syncs after reconnecting.
-Swipe, zoom and pan pictures, and select multiple thumbnails for bulk actions.
-Fix podcast feed parsing, first subscription setup and episode date ordering.
-Remove web offline music browsing while keeping local files, podcasts and download controls.
+Maintenance release with refreshed signed Android builds and synchronized server and app versions.
