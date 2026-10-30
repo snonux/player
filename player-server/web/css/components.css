@@ -422,8 +422,19 @@ label {
 
 /* Share descriptions retain author line breaks and fit narrow guest pages. */
 .share-description { white-space: pre-wrap; overflow-wrap: anywhere; }
-/* Global sync stays quiet and wraps on touch-sized viewports. */
+/* Transient sync status overlays the page without moving library content. */
 .global-sync {
+  position: fixed;
+  inset-block-start: calc(var(--header-height) + .5rem);
+  inset-inline-end: 1rem;
+  width: min(32rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - var(--header-height) - 2rem);
+  overflow: auto;
+  box-sizing: border-box;
+  z-index: 45;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
   display: flex;
   align-items: center;
   gap: var(--space-sm, 8px);
@@ -457,8 +468,23 @@ label {
 }
 
 /* A single disclosure keeps each set's order available beside its result count. */
-.set-sort { margin-block: .5rem; }
+/* Opening the sort controls keeps the toolbar at one touch-friendly row. */
+.set-sort { position: relative; flex: 1; min-width: 0; margin-block: .5rem; min-height: 44px; }
 .set-sort summary, .set-sort select { min-height: 44px; }
-.set-sort summary { cursor: pointer; display: list-item; align-content: center; }
-.set-sort label { display: inline-block; margin-inline-end: 1rem; }
-.set-sort p { color: var(--text-muted); }
+.set-sort summary { cursor: pointer; display: list-item; align-content: center; width: max-content; max-width: 100%; }
+.set-sort[open] summary { width: 4.5rem; }
+.set-sort[open] .set-sort-current { display: none; }
+.set-sort-controls {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 4.5rem;
+  inset-inline-end: 0;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-block-end: .25rem;
+}
+.set-sort label { display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; white-space: nowrap; }
+.set-sort p { flex: 0 0 auto; margin: 0; color: var(--text-muted); white-space: nowrap; }
