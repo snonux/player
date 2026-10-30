@@ -177,7 +177,7 @@ function ensureSidebar() {
   section.id = 'podcast-nav';
   section.innerHTML = `
     <div class="sidebar-header"><h2>Podcasts</h2></div>
-    <button id="podcast-all-episodes" type="button" class="btn btn-ghost" aria-label="All podcast episodes">All podcast episodes</button>
+    <button id="podcast-all-episodes" type="button" class="btn btn-ghost" aria-label="All podcast episodes" aria-keyshortcuts="o" title="All podcast episodes (o)">All podcast episodes</button>
     <button id="podcast-explore" type="button" class="btn btn-ghost">Explore podcasts</button>
     <div id="podcast-nav-list" class="podcast-nav-list" aria-label="Subscribed podcasts"></div>`;
   const setList = document.getElementById('set-list');

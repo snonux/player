@@ -59,7 +59,7 @@ import { initAdmin } from './admin.js';
 import { initTrash, moveToTrash } from './trash.js';
 import { initModalFocus } from './modal-focus.js';
 import { initPodcasts } from './podcasts.js';
-import { initPodcastViews, updatePodcastSidebarUI, clearPodcastView } from './podcast-views.js';
+import { initPodcastViews, openAllPodcastEpisodes, updatePodcastSidebarUI, clearPodcastView } from './podcast-views.js';
 import { state, setAuthenticatedUser } from './state.js';
 import { initPWA } from './pwa.js';
 import { closeAllModals } from './dom.js';
@@ -324,6 +324,7 @@ async function initApp() {
     ...keyboardHandlers(),
     isQueueFocused, queueKey, toggleQueue, cycleQueueRepeat,
     queueNext: () => queueSelected('next'), queueAppend: () => queueSelected('append'),
+    podcasts: openAllPodcastEpisodes,
     radio: () => document.getElementById('radio-toggle')?.click(),
     menu: () => headerMenu?.open(),
     togglePictureLayout: initPictureLayout(document.getElementById('media-grid')),

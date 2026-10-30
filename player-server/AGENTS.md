@@ -149,6 +149,7 @@ Global shortcuts are registered in `web/js/keyboard.js`. They are **disabled** w
 | `F` | Toggle favorite for the selected media |
 | `A` | Open the admin panel (admins only) |
 | `u` | Upload to the current set |
+| `o` | Open All podcast episodes, newest first |
 | `w` | Open web radio (explore, auto explore, bookmarks); inside it `j`/`k`/arrows move between stations, `Enter` plays, `Esc` closes while the station keeps playing |
 
 ---

@@ -387,6 +387,11 @@ export function initKeyboard(handlers) {
       case 'd': handlers.toggleDetach?.(e); break;
       case 'D': handlers.download?.(e); break;
       case 'u': handlers.upload?.(e); break;
+      case 'o':
+        if (e.isComposing || e.repeat) return;
+        e.preventDefault();
+        handlers.podcasts?.(e);
+        break;
       case 'w':
         e.preventDefault();
         handlers.radio?.(e);
