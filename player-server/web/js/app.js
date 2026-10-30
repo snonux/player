@@ -59,7 +59,7 @@ import { initAdmin } from './admin.js';
 import { initTrash, moveToTrash } from './trash.js';
 import { initModalFocus } from './modal-focus.js';
 import { initPodcasts } from './podcasts.js';
-import { initPodcastViews, openAllPodcastEpisodes, updatePodcastSidebarUI, clearPodcastView } from './podcast-views.js';
+import { initPodcastViews, openAllPodcastEpisodes, openPodcastFeed, selectedPodcastEpisodeAction, updatePodcastSidebarUI, clearPodcastView } from './podcast-views.js';
 import { state, setAuthenticatedUser } from './state.js';
 import { initPWA } from './pwa.js';
 import { closeAllModals } from './dom.js';
@@ -325,6 +325,7 @@ async function initApp() {
     isQueueFocused, queueKey, toggleQueue, cycleQueueRepeat,
     queueNext: () => queueSelected('next'), queueAppend: () => queueSelected('append'),
     podcasts: openAllPodcastEpisodes,
+    podcastAction: selectedPodcastEpisodeAction,
     radio: () => document.getElementById('radio-toggle')?.click(),
     menu: () => headerMenu?.open(),
     togglePictureLayout: initPictureLayout(document.getElementById('media-grid')),
@@ -410,12 +411,20 @@ function isDialogOpen() {
   return Boolean(document.querySelector('.modal-overlay.open'));
 }
 
+function navigatePodcastSelection(navigate) {
+  navigate();
+  const selected = currentElement();
+  if (selected?.classList.contains('episode-card')) {
+    selected.querySelector('[data-action="play"]')?.focus({preventScroll:true});
+  }
+}
+
 function keyboardHandlers() {
   return {
-    navUp: () => navUp(),
-    navDown: () => navDown(),
-    navLeft: () => navLeft(),
-    navRight: () => navRight(),
+    navUp: () => navigatePodcastSelection(navUp),
+    navDown: () => navigatePodcastSelection(navDown),
+    navLeft: () => navigatePodcastSelection(navLeft),
+    navRight: () => navigatePodcastSelection(navRight),
     seekBackward: (e) => seekByKeyboard(-1, e.repeat),
     seekForward: (e) => seekByKeyboard(1, e.repeat),
     seekPercent: (e, percent) => {
@@ -575,6 +584,7 @@ function firstGridElement() {
 function activateGridElement(el) {
   if (!el) return;
   selectByElement(el);
+  if (el.dataset.podcastFeedKey) { openPodcastFeed(el.dataset.podcastFeedKey); return; }
   if (el.dataset.collectionKey) { el.querySelector('.collection-open')?.click(); return; }
   if (el.dataset.playlist) { el.click(); return; }
   if (el.dataset.artistCard) { el.click(); return; }
@@ -603,6 +613,7 @@ function openSet(id) {
   forgetSearchView();
   state.music = null;
   if (!Number.isFinite(id)) return;
+  if (state.sets.some(set => set.id === id && set.is_podcast)) { openAllPodcastEpisodes(); return; }
   state.virtualSet = '';
   state.podcastFeedKey = '';
   state.selectedSetId = id;

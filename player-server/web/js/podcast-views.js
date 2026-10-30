@@ -10,7 +10,7 @@ import { API } from './api.js';
 import { state, setMedia } from './state.js';
 import { escapeHtml, fmtDur, toast } from './utils.js';
 import { setEpisodeCompleted, setEpisodeDeleted, episodeSnapshot, podcastSyncStatus, retryPodcastEpisodeEdits } from './podcast-episode-state.js';
-import { clearSelection, selectByElement } from './selection.js';
+import { clearSelection, selectByElement, currentElement } from './selection.js';
 import { dismissSidebarAfterNav } from './views/help.js';
 
 // episodePlayableMedia builds a state.media slot for playMediaById /
@@ -86,6 +86,21 @@ export function isPodcastVirtualView() {
   return state.virtualSet === 'podcasts';
 }
 
+// Reuse the actual card actions, including download state and delete confirmation.
+export function selectedPodcastEpisodeAction(action) {
+  if (!isPodcastVirtualView()) return false;
+  const card = currentElement();
+  if (!card?.classList.contains('episode-card')) return false;
+  const button = card.querySelector(`[data-action="${action}"]`);
+  if (!button) return false;
+  if (!button.disabled) button.click();
+  return true;
+}
+
+export function openPodcastOverview() {
+  openPodcastView('', true);
+}
+
 export function openAllPodcastEpisodes() {
   openPodcastView('');
 }
@@ -95,9 +110,10 @@ export function openPodcastFeed(feedKey) {
   openPodcastView(feedKey);
 }
 
-function openPodcastView(feedKey) {
+function openPodcastView(feedKey, overview = false) {
   state.music = null;
   state.virtualSet = 'podcasts';
+  state.podcastOverview = overview;
   state.podcastFeedKey = feedKey || '';
   if (!state.podcastFilter) state.podcastFilter = 'uncompleted';
   state.selectedSetId = null;
@@ -203,6 +219,19 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
   if (!grid) return null;
   setPodcastViewPageSize(size);
   breadcrumbHidden(true);
+  if (state.podcastOverview) {
+    const generation = podcastSyncStatus().generation;
+    const feeds = await listAccountPodcastSubscriptions(await API.podcasts());
+    if ((alive && !alive()) || generation !== podcastSyncStatus().generation) return null;
+    grid.innerHTML = filterBarHtml('Podcasts', 'all') + feeds.map(feed =>
+      `<div class="media-card podcast-feed-card" data-podcast-feed-key="${escapeHtml(feed.feed_key)}"><button type="button" class="podcast-feed-open" aria-label="Podcast ${escapeHtml(feed.title)}"><div class="thumb-wrap">${episodeArtworkHTML({feed_image_url:feed.image_url})}</div><div class="meta"><div class="title">${escapeHtml(feed.title)}</div></div></button></div>`
+    ).join('') + (feeds.length ? '' : '<p>No subscribed podcasts yet. Use Explore podcasts to subscribe.</p>');
+    grid.querySelectorAll('[data-podcast-feed-key]').forEach(card => card.querySelector('button').onclick = () => openPodcastFeed(card.dataset.podcastFeedKey));
+    bindFilterBar(grid);
+    bindPodcastMetadata(grid);
+    clearSelection();
+    return {page:0,total:feeds.length,hasPrev:false,hasNext:false};
+  }
   const filter = state.podcastFeedKey ? (state.podcastFilter || 'uncompleted') : 'all';
   const generation = podcastSyncStatus().generation;
   const feedKey = state.podcastFeedKey || '';
@@ -304,6 +333,8 @@ function filterBarHtml(title, filter) {
   }).join('');
   return `<div class="podcast-view-toolbar grid-full" role="region" aria-label="Podcast episodes">
     <h2 class="podcast-view-title">${escapeHtml(title)}</h2>
+    <div role="group" aria-label="Podcast view"><button type="button" class="btn btn-ghost" data-podcast-view="episodes" aria-pressed="${!state.podcastOverview}">Episodes</button><button type="button" class="btn btn-ghost" data-podcast-view="podcasts" aria-pressed="${!!state.podcastOverview}">Podcasts</button></div>
+    ${!state.podcastFeedKey && state.sets.some(set => set.is_podcast) ? `<a class="btn btn-ghost" href="/?set=${state.sets.find(set => set.is_podcast).id}">Downloaded server files</a>` : ''}
     ${state.podcastFeedKey ? `<div class="podcast-filter-bar" role="group" aria-label="Completion filter">${buttons}</div>` : '<p class="text-muted text-sm">Newest first · Listened episodes stay in this list.</p>'}
     <p id="podcast-pending-hint" class="text-muted text-sm" role="status"></p>
   </div>`;
@@ -319,6 +350,10 @@ function pagerHtml(page, place) {
 }
 
 function bindFilterBar(grid) {
+  grid.querySelectorAll('[data-podcast-view]').forEach(button => button.onclick = () => {
+    if (button.dataset.podcastView === 'podcasts') openPodcastOverview();
+    else openAllPodcastEpisodes();
+  });
   grid.querySelectorAll('[data-podcast-filter]').forEach((btn) => {
     btn.addEventListener('click', () => setPodcastFilter(btn.dataset.podcastFilter));
   });

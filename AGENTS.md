@@ -18,6 +18,8 @@ Apply these principles to every Android screen and web view, including dialogs,
 players, settings, and administration. Aim for a snappy, uncomplicated listening
 and browsing experience: KISS, less is more, and content comes first.
 
+- Review every feature and UI change from the listener’s point of view: is the purpose clear, does the next action behave as expected, and is it comfortable to use? Check common journeys, focus, labels, touch reach, and layout stability before considering the work complete.
+
 - Aim for at most five visible primary buttons per screen where practical.
   Consider the whole visible screen, including navigation, player chrome, and
   repeated row actions. This is a design target, not a reason to hide essential

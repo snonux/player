@@ -393,7 +393,9 @@ class _SetCard extends StatelessWidget {
         // Pass the set name as a route extra so MediaGridScreen can show it in
         // the app bar immediately, without making a second API call.
         onTap: () => context.push(
-          AppRoutes.mediaGridPath(mediaSet.id),
+          mediaSet.isPodcast
+              ? '${AppRoutes.podcasts}?setId=${mediaSet.id}&name=${Uri.encodeQueryComponent(mediaSet.name)}'
+              : AppRoutes.mediaGridPath(mediaSet.id),
           extra: mediaSet.name,
         ),
         child: Column(

@@ -6,10 +6,15 @@ import 'podcast_browsing_fakes.dart';
 
 void main() {
   testWidgets(
-      'native Podcasts opens device folders and all episodes without a server API',
+      'native Podcasts defaults to all episodes and keeps feeds available without a server API',
       (tester) async {
     final repository = BrowsingRepository();
     await tester.pumpWidget(browsingApp(const PodcastListScreen(), repository));
+    await tester.pumpAndSettle();
+    expect(find.text('All podcast episodes'), findsOneWidget);
+    expect(repository.queries.last.$1, isNull);
+    expect(repository.queries.last.$2, 'all');
+    await tester.tap(find.text('Podcasts'));
     await tester.pumpAndSettle();
     expect(find.text('Podcasts on this device'), findsOneWidget);
     await tester.tap(find.text('My podcast'));
@@ -26,11 +31,28 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pageBack();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('All podcast episodes'));
+    await tester.tap(find.text('Episodes'));
     await tester.pumpAndSettle();
-    expect(repository.queries.last.$1, isNull);
+    expect(
+        repository.queries
+            .any((query) => query.$1 == null && query.$2 == 'all'),
+        isTrue);
     expect(find.text('My podcast'), findsOneWidget);
     expect(find.text('Download'), findsOneWidget);
+  });
+
+  testWidgets('podcast set keeps downloaded server files reachable',
+      (tester) async {
+    await tester.pumpWidget(browsingApp(
+        const PodcastListScreen(serverSetId: 42, serverSetName: 'Podcasts'),
+        BrowsingRepository()));
+    await tester.pumpAndSettle();
+    expect(find.text('All podcast episodes'), findsOneWidget);
+    await tester.tap(find.byTooltip('Podcast views'));
+    await tester.pumpAndSettle();
+    expect(find.text('Downloaded server files'), findsOneWidget);
+    expect(find.text('Subscriptions and feeds'), findsNothing);
+    expect(find.text('Podcasts'), findsOneWidget);
   });
 
   testWidgets(

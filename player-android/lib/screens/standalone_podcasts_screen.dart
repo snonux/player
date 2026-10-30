@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'podcast_discovery_screen.dart';
+import 'media_grid_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/podcast_library_provider.dart';
@@ -13,7 +14,10 @@ import '../services/podcast_metadata.dart';
 import '../providers/global_sync_provider.dart';
 
 class StandalonePodcastsScreen extends ConsumerStatefulWidget {
-  const StandalonePodcastsScreen({super.key});
+  const StandalonePodcastsScreen(
+      {super.key, this.viewSwitcher, this.syncMessage});
+  final Widget? viewSwitcher;
+  final String? syncMessage;
   @override
   ConsumerState<StandalonePodcastsScreen> createState() =>
       _StandalonePodcastsScreenState();
@@ -82,6 +86,12 @@ class _StandalonePodcastsScreenState
   void _refreshFeeds() => run(() async {
         final repository = ref.read(podcastRepositoryProvider);
         final refreshScope = await ref.read(podcastScopeProvider.future);
+        ref.invalidate(podcastServerSubscriptionsProvider);
+        await ref.read(podcastServerSubscriptionsProvider.future);
+        final currentScope = await ref.read(podcastScopeProvider.future);
+        if (!mounted || currentScope != refreshScope) {
+          return;
+        }
         final subscriptions = await repository.subscriptions(refreshScope);
         var failed = 0;
         for (final feed in subscriptions) {
@@ -103,41 +113,56 @@ class _StandalonePodcastsScreenState
     final feeds = ref.watch(podcastSubscriptionsProvider);
     final scope = ref.watch(podcastScopeProvider).valueOrNull;
     return Scaffold(
-        appBar: AppBar(title: const Text('Podcasts on this device'), actions: [
-          IconButton(
-              tooltip: 'Explore podcasts',
-              onPressed: busy
-                  ? null
-                  : () => Navigator.of(context).push(MaterialPageRoute<void>(
-                      builder: (_) => const PodcastDiscoveryScreen())),
-              icon: const Icon(Icons.explore_outlined)),
-          PopupMenuButton<String>(
-              tooltip: 'Podcast options',
-              icon: const Icon(Icons.menu),
-              style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
-              enabled: !busy,
-              onSelected: (action) {
-                if (action == 'refresh') {
-                  _refreshFeeds();
-                } else {
-                  subscribe();
-                }
-              },
-              itemBuilder: (_) => const [
-                    PopupMenuItem(
-                        value: 'refresh', child: Text('Refresh feeds')),
-                    PopupMenuItem(value: 'url', child: Text('Add feed URL')),
-                  ])
-        ]),
+        appBar: AppBar(
+            bottom: widget.viewSwitcher == null
+                ? null
+                : PreferredSize(
+                    preferredSize: const Size.fromHeight(56),
+                    child: widget.viewSwitcher!),
+            title:
+                Text(scope == 'local' ? 'Podcasts on this device' : 'Podcasts'),
+            actions: [
+              IconButton(
+                  tooltip: 'Explore podcasts',
+                  onPressed: busy
+                      ? null
+                      : () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                              builder: (_) => const PodcastDiscoveryScreen())),
+                  icon: const Icon(Icons.explore_outlined)),
+              PopupMenuButton<String>(
+                  tooltip: 'Podcast options',
+                  icon: const Icon(Icons.menu),
+                  style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+                  enabled: !busy,
+                  onSelected: (action) {
+                    if (action == 'refresh') {
+                      _refreshFeeds();
+                    } else {
+                      subscribe();
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                        PopupMenuItem(
+                            value: 'refresh', child: Text('Refresh feeds')),
+                        PopupMenuItem(
+                            value: 'url', child: Text('Add feed URL')),
+                      ])
+            ]),
         body: Column(children: [
+          if (widget.syncMessage != null)
+            Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text(widget.syncMessage!)),
           if (busy) const LinearProgressIndicator(),
           if (error != null)
             Padding(padding: const EdgeInsets.all(16), child: Text(error!)),
-          ListTile(
-              leading: const Icon(Icons.folder_copy_outlined),
-              title: const Text('All podcast episodes'),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const LocalPodcastEpisodesScreen()))),
+          if (widget.viewSwitcher == null)
+            ListTile(
+                leading: const Icon(Icons.folder_copy_outlined),
+                title: const Text('All podcast episodes'),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const LocalPodcastEpisodesScreen()))),
           Expanded(
               child: feeds.when(
                   loading: () =>
@@ -210,7 +235,17 @@ class _StandalonePodcastsScreenState
 
 class LocalPodcastEpisodesScreen extends ConsumerStatefulWidget {
   const LocalPodcastEpisodesScreen(
-      {super.key, this.feedKey, this.title = 'All podcast episodes'});
+      {super.key,
+      this.feedKey,
+      this.title = 'All podcast episodes',
+      this.serverSetId,
+      this.serverSetName,
+      this.viewSwitcher,
+      this.syncMessage});
+  final int? serverSetId;
+  final String? serverSetName;
+  final Widget? viewSwitcher;
+  final String? syncMessage;
   final String? feedKey;
   final String title;
   @override
@@ -254,6 +289,14 @@ class _LocalPodcastEpisodesScreenState
       final repository = ref.read(podcastRepositoryProvider);
       final scope = await ref.read(podcastScopeProvider.future);
       if (!mounted || generation != refreshGeneration) return;
+      if (!missingOnly) ref.invalidate(podcastServerSubscriptionsProvider);
+      await ref.read(podcastServerSubscriptionsProvider.future);
+      final currentScope = await ref.read(podcastScopeProvider.future);
+      if (!mounted ||
+          generation != refreshGeneration ||
+          currentScope != scope) {
+        return;
+      }
       final keys = widget.feedKey != null
           ? [widget.feedKey!]
           : missingOnly
@@ -426,13 +469,46 @@ class _LocalPodcastEpisodesScreenState
     final episodes =
         ref.watch(podcastEpisodePageProvider((widget.feedKey, filter, offset)));
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title), actions: [
-        IconButton(
-            tooltip: 'Reload episodes',
-            onPressed: refreshing ? null : () => refreshFeeds(),
-            icon: const Icon(Icons.refresh))
-      ]),
+      appBar: AppBar(
+          bottom: widget.viewSwitcher == null
+              ? null
+              : PreferredSize(
+                  preferredSize: const Size.fromHeight(56),
+                  child: widget.viewSwitcher!),
+          title: Text(widget.title),
+          actions: [
+            if (widget.feedKey == null &&
+                (widget.viewSwitcher == null || widget.serverSetId != null))
+              PopupMenuButton<String>(
+                tooltip: 'Podcast views',
+                icon: const Icon(Icons.menu),
+                onSelected: (view) =>
+                    Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => view == 'files'
+                      ? MediaGridScreen(
+                          setId: widget.serverSetId!,
+                          setName: widget.serverSetName)
+                      : const StandalonePodcastsScreen(),
+                )),
+                itemBuilder: (_) => [
+                  if (widget.viewSwitcher == null)
+                    const PopupMenuItem(
+                        value: 'feeds', child: Text('Subscriptions and feeds')),
+                  if (widget.serverSetId != null)
+                    const PopupMenuItem(
+                        value: 'files', child: Text('Downloaded server files')),
+                ],
+              ),
+            IconButton(
+                tooltip: 'Reload episodes',
+                onPressed: refreshing ? null : () => refreshFeeds(),
+                icon: const Icon(Icons.refresh))
+          ]),
       body: Column(children: [
+        if (widget.syncMessage != null)
+          Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text(widget.syncMessage!)),
         if (refreshing) const LinearProgressIndicator(),
         if (refreshing) Text('Refreshing feeds $refreshDone of $refreshTotal'),
         if (widget.feedKey == null)

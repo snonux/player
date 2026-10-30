@@ -25,6 +25,7 @@ export function readLibraryURL(search) {
     music,
     sets, folder: safeFolder && sets.length === 1 ? folder : '', filters,
     virtual: !music && view === 'in-progress' ? 'in-progress' : podcastView ? 'podcasts' : '',
+    ...(podcastView && params.get('pview') === 'podcasts' ? {podcastOverview:true} : {}),
     podcastFeedKey: podcastView ? (params.get('feed_key') || '') : '',
     podcastFilter: podcastView ? podcastFilter : 'uncompleted',
     page: !music && /^\d+$/.test(params.get('page') || '') && Number.isSafeInteger(Number(params.get('page'))) ? Number(params.get('page')) : undefined,
@@ -42,6 +43,7 @@ export function libraryURL(state, media = null, shuffle = false) {
   if (!state.music) {
   if (state.virtualSet) params.set('view', state.virtualSet);
   if (state.virtualSet === 'podcasts') {
+    if (state.podcastOverview) params.set('pview','podcasts');
     if (state.podcastFeedKey) params.set('feed_key', state.podcastFeedKey);
     if (state.podcastFilter && state.podcastFilter !== 'uncompleted') params.set('pfilter', state.podcastFilter);
   }

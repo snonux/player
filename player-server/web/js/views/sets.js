@@ -1,3 +1,4 @@
+import { openAllPodcastEpisodes } from '../podcast-views.js';
 import { state } from '../state.js';
 import { escapeHtml } from '../utils.js';
 import { dismissSidebarAfterNav } from './help.js';
@@ -29,7 +30,9 @@ export function renderSets() {
 
 export function selectSet(id) {
   if (!Number.isFinite(id)) return false;
-  if (!state.sets.some((set) => set.id === id)) return false;
+  const set = state.sets.find(set => set.id === id);
+  if (!set) return false;
+  if (set.is_podcast) { openAllPodcastEpisodes(); return true; }
   state.selectedSetIds = [id];
   state.selectedSetId = id;
   state.folderPath = '';

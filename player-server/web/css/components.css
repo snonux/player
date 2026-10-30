@@ -120,7 +120,7 @@ label {
 /* Search bar */
 .shortcut-letter { text-decoration: underline; text-underline-offset: 0.18em; text-decoration-thickness: 0.12em; }
 [data-shortcut-key]:not(input):not(textarea):not(select) { position: relative; }
-[data-shortcut-key]:not(input):not(textarea):not(select)::after {
+[data-shortcut-key]:not(input):not(textarea):not(select):not(:has(.shortcut-letter))::after {
   content: attr(data-shortcut-key);
   position: absolute;
   inset: -0.4rem -0.15rem auto auto;
@@ -488,3 +488,6 @@ label {
 }
 .set-sort label { display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; white-space: nowrap; }
 .set-sort p { flex: 0 0 auto; margin: 0; color: var(--text-muted); white-space: nowrap; }
+
+.podcast-feed-open { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: start; }
+.podcast-feed-open .meta { min-height: 44px; }

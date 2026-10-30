@@ -350,7 +350,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         // Device subscriptions are available without server authentication.
         // Podcast list screen — shows all sets with isPodcast == true.
         path: AppRoutes.podcasts,
-        builder: (context, state) => const PodcastListScreen(),
+        builder: (context, state) => PodcastListScreen(
+          serverSetId: int.tryParse(state.uri.queryParameters['setId'] ?? ''),
+          serverSetName: state.uri.queryParameters['name'],
+        ),
       ),
       GoRoute(
         // Old numeric links open the standalone subscription picker.

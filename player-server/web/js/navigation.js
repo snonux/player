@@ -56,6 +56,7 @@ export function initNavigation({ isShuffle, setShuffle, syncChrome }) {
       state.selectedSetId = state.selectedSetIds.at(-1) || null;
       state.virtualSet = route.virtual;
       state.podcastFeedKey = route.podcastFeedKey || '';
+      state.podcastOverview = !!route.podcastOverview;
       state.podcastFilter = route.podcastFilter || 'uncompleted';
       state.music = route.music;
       state.folderPath = route.folder;

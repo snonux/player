@@ -258,7 +258,7 @@ export function initKeyboardAccess() {
       const card = document.querySelector('#media-grid .selected');
       if (card) { event.preventDefault(); event.stopImmediatePropagation(); openMediaActions(card); return; }
     }
-    if (!active && !local && !typing && event.key === 'o') {
+    if (!active && !local && !typing && event.key === 'O') {
       const player = document.querySelector('.player.open:not(.hidden):not(.minimized)');
       if (player) {
         event.preventDefault(); event.stopImmediatePropagation();

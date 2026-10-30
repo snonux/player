@@ -53,6 +53,64 @@ class PodcastSyncResult {
 class PodcastSync {
   PodcastSync(this.store);
   final PodcastSyncStore store;
+
+  /// Reconcile the complete account subscription list when opening Podcasts.
+  /// This read sends no edits and leaves the incremental sync checkpoint alone.
+  Future<PodcastSyncResult> refreshSubscriptions(
+      PodcastSyncAccount account) async {
+    try {
+      if (!account.current()) {
+        return const PodcastSyncResult(full: false, errorKind: 'auth');
+      }
+      if (!await account.supported()) {
+        return const PodcastSyncResult(full: true, supported: false);
+      }
+      var epoch = '';
+      var since = 0;
+      while (account.current()) {
+        final response = await account.send({
+          'epoch': epoch,
+          'since': since,
+          'limit': 500,
+          'subscriptions': <Object>[],
+          'episodes': <Object>[],
+        });
+        if (!account.current()) {
+          return const PodcastSyncResult(full: false, errorKind: 'auth');
+        }
+        final nextEpoch = response['epoch'];
+        final nextSince = response['next_since'];
+        if (nextEpoch is! String ||
+            nextSince is! int ||
+            response['has_more'] is! bool ||
+            response['subscriptions'] is! List ||
+            (epoch.isNotEmpty && nextEpoch != epoch) ||
+            (response['has_more'] == true && nextSince <= since)) {
+          throw StateError('Invalid subscription page');
+        }
+        await store.apply(
+            account.scope,
+            {
+              ...response,
+              'episodes': <Object>[],
+              'acked': <Object>[],
+              'rejected': <Object>[],
+              'resolved': <Object>[],
+            },
+            account.current,
+            scoped: true);
+        if (response['has_more'] == false) {
+          return const PodcastSyncResult(full: true);
+        }
+        epoch = nextEpoch;
+        since = nextSince;
+      }
+      return const PodcastSyncResult(full: false, errorKind: 'auth');
+    } catch (error) {
+      return PodcastSyncResult(full: false, errorKind: syncErrorKind(error));
+    }
+  }
+
   Future<PodcastSyncResult> sync(PodcastSyncAccount account) async {
     try {
       if (!account.current()) {

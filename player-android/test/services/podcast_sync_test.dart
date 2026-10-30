@@ -50,6 +50,85 @@ void main() {
     await repository.close();
     await temp.delete(recursive: true);
   });
+
+  test(
+      'opening podcasts reconciles all 23 subscriptions without changing cursor or pending edits',
+      () async {
+    final db = await repository.database;
+    await db.update('podcast_scopes', {'epoch': 'saved', 'cursor': 777},
+        where: 'scope=?', whereArgs: [scope]);
+    final rows = List.generate(
+        23,
+        (i) => <String, dynamic>{
+              'feed_key': 'feed:example.com/$i',
+              'title': 'Podcast $i',
+              'fetch_url': 'https://example.com/$i',
+              'urls': <String>[],
+              'subscribed': true,
+              'subscription_ms': 10,
+            });
+    await store.apply(
+        scope, reply(subscriptions: rows.take(2).toList()), () => true,
+        scoped: true);
+    var calls = 0;
+    final account = PodcastSyncAccount(
+        scope: scope,
+        current: () => true,
+        supported: () async => true,
+        send: (request) async {
+          expect(request['subscriptions'], isEmpty);
+          expect(request['episodes'], isEmpty);
+          calls++;
+          return calls.isOdd
+              ? reply(
+                  subscriptions: rows.take(12).toList(), more: true, cursor: 12)
+              : reply(subscriptions: rows.skip(12).toList(), cursor: 23);
+        });
+    expect(
+        (await PodcastSync(store).refreshSubscriptions(account)).full, isTrue);
+    expect((await repository.subscriptions(scope)).length, 23);
+    expect((await store.status(scope))['cursor'], 777);
+    expect((await store.status(scope))['epoch'], 'saved');
+    await db.update(
+        'podcast_subscriptions',
+        {
+          'subscribed': 0,
+          'subscription_ms': 20,
+          'pending_edit_id': 'keep-local'
+        },
+        where: 'scope=? AND feed_key=?',
+        whereArgs: [scope, rows.first['feed_key']]);
+    expect(
+        (await PodcastSync(store).refreshSubscriptions(account)).full, isTrue);
+    final pending = (await db.query('podcast_subscriptions',
+            where: 'scope=? AND feed_key=?',
+            whereArgs: [scope, rows.first['feed_key']]))
+        .single;
+    expect(pending['subscribed'], 0);
+    expect(pending['pending_edit_id'], 'keep-local');
+    expect((await repository.subscriptions(scope)).length, 22);
+  });
+
+  test(
+      'subscription reconciliation rejects a late reply after leaving the account',
+      () async {
+    var current = true;
+    final result =
+        await PodcastSync(store).refreshSubscriptions(PodcastSyncAccount(
+            scope: scope,
+            current: () => current,
+            supported: () async => true,
+            send: (_) async {
+              current = false;
+              return reply(subscriptions: [
+                {'feed_key': feed, 'subscribed': true, 'subscription_ms': 10}
+              ]);
+            }));
+    expect(result.full, isFalse);
+    expect(result.errorKind, 'auth');
+    expect(await repository.subscriptions(scope), isEmpty);
+  });
+
   test(
       'rejected deletion keeps its exact edit for a bounded later retry and acknowledgement',
       () async {

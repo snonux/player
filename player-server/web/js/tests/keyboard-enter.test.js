@@ -440,6 +440,20 @@ testSpaceOnSidebarButtonPlays();
 testItemShortcutsDispatch();
 testBackspaceRespectsViewsAndTyping();
 
+// Episode action keys are scoped by the supplied card handler; native Enter stays intact.
+{
+  const actions = [];
+  initKeyboard({podcastAction: action => {actions.push(action);return true;}});
+  assert(pressKey('v'), 'Listened toggle handles its key');
+  assert(pressKey('Delete'), 'Episode deletion handles its key');
+  assert(actions.join(',') === 'complete,delete-episode', 'Episode shortcuts reuse card actions');
+  pressKey('Enter',{tagName:'BUTTON'});
+  pressKey('v',{tagName:'INPUT'});
+  initKeyboard({isModalOpen:()=>true,podcastAction:()=>{actions.push('behind-dialog');return true;}});
+  pressKey('Delete');
+  assert(actions.length === 2, 'Typing, dialogs and native button Enter stay intact');
+}
+
 if (failures.length) {
   console.error('FAILURES:');
   failures.forEach((m) => console.error('  - ' + m));

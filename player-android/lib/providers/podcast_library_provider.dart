@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/podcast_repository.dart';
+import '../services/podcast_sync.dart';
 import '../services/podcast_server_metadata.dart';
 import '../api/dio_player_api_client.dart';
 import '../services/podcast_downloads.dart';
@@ -96,4 +97,26 @@ final podcastServerMetadataProvider = Provider<PodcastServerMetadata?>((ref) {
       current: current,
       fetchPage: (feed, offset, limit) => client
           .listSubscribedPodcastEpisodes(feed, offset: offset, limit: limit));
+});
+
+/// Opening either podcast view refreshes account membership independently of
+/// the durable incremental cursor. Cached browsing remains available meanwhile.
+final podcastServerSubscriptionsProvider =
+    FutureProvider.autoDispose<PodcastSyncResult?>((ref) async {
+  var active = true;
+  ref.onDispose(() => active = false);
+  final scope = await ref.watch(podcastScopeProvider.future);
+  if (!active || !scope.startsWith('account:')) return null;
+  final account = captureSyncAccount(ref);
+  if (account == null || account.podcast.scope != scope) return null;
+  final lease = PodcastSyncAccount(
+    scope: account.podcast.scope,
+    current: () => active && account.podcast.current(),
+    supported: account.podcast.supported,
+    send: account.podcast.send,
+  );
+  final result =
+      await ref.read(podcastSyncProvider).refreshSubscriptions(lease);
+  if (active && lease.current()) ref.invalidate(podcastSubscriptionsProvider);
+  return result;
 });
