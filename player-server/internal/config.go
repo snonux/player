@@ -25,6 +25,7 @@ const (
 	DefaultShareDefaultExpiryDays = 7
 	DefaultPodcastCheckMinutes    = 60
 	DefaultMediaPageSize          = 100
+	DefaultScanWatchSeconds       = 30
 	DefaultLogLevel               = "info"
 	DefaultSecureCookies          = true
 	// DefaultTranscodeCacheDirSuffix is appended to the database path to
@@ -53,9 +54,9 @@ const (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	// ScanWatchSeconds enables source-metadata polling; zero disables it.
+	// ScanWatchSeconds enables source-metadata polling (default 30); zero disables it.
 	ScanWatchSeconds int
-	// ScanIntervalMinutes enables periodic full rescans; zero disables it.
+	// ScanIntervalMinutes enables periodic quick inventory scans; zero disables it.
 	ScanIntervalMinutes int
 	// MusicEnrichmentURL is an optional operator-configured external metadata agent.
 	MusicEnrichmentURL string
@@ -161,6 +162,7 @@ func defaultConfig() *Config {
 		ShareDefaultExpiryDays: DefaultShareDefaultExpiryDays,
 		PodcastCheckMinutes:    DefaultPodcastCheckMinutes,
 		MediaPageSize:          DefaultMediaPageSize,
+		ScanWatchSeconds:       DefaultScanWatchSeconds,
 		LogLevel:               DefaultLogLevel,
 		SecureCookies:          DefaultSecureCookies,
 		TranscodeCacheMaxMB:    DefaultTranscodeCacheMaxMB,

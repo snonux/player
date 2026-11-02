@@ -229,10 +229,12 @@ class _AdminRescanScreenState extends ConsumerState<AdminRescanScreen> {
             const SizedBox(height: 12),
             const SelectableText('Configure on the server, then restart:\n'
                 'SCAN_WATCH_SECONDS=30\nSCAN_INTERVAL_MINUTES=60\n'
-                'Both default to 0 (off). Watch supports 10–86400 seconds; schedule supports 1–10080 minutes. '
+                'A quick scan runs at startup. Watch defaults to 30 seconds; 0 disables polling. '
+                'Schedule defaults to 0 (off). Watch supports 10–86400 seconds; schedule supports 1–10080 minutes. '
                 'Manage roots in Libraries. Polling checks file names, size and modification time; '
                 'same-size edits with unchanged time need a manual rescan. '
-                'Automatic scans retain absent records; manual rescans use the existing deletion policy. '
+                'Quick scans index new files, refresh changed music and retain absent records. '
+                'Use Rescan for full thumbnail repair and missing-file cleanup. '
                 'Generated caches are ignored. Back leaves scans running; Cancel scan stops active and queued work.'),
           ],
         ),

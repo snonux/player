@@ -30,6 +30,7 @@ type scanService struct {
 	appCtx                             context.Context
 	doneCh                             chan<- struct{}
 	active, stopped, automationStarted bool
+	startupFollowUpCancelled           bool
 	pending, trigger, state            string
 	wg                                 sync.WaitGroup
 	autoCancel                         context.CancelFunc
@@ -70,6 +71,7 @@ func (s *scanService) CancelScan(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pending = ""
+	s.startupFollowUpCancelled = true
 	if s.active {
 		s.state = "cancelling"
 		s.scanCancel()
@@ -90,14 +92,22 @@ func (s *scanService) ScanProgress(ctx context.Context) model.ScanProgress {
 	return p.Copy()
 }
 
-// StartScanAutomation starts at most one observer/scheduler on the app lifecycle.
+// StartScanAutomation starts one startup inventory and optional observation/scheduling.
 func (s *scanService) StartScanAutomation() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.automationStarted || s.stopped || (s.watchSeconds == 0 && s.intervalMinutes == 0) {
+	if s.automationStarted || s.stopped || s.appCtx.Err() != nil {
 		return
 	}
 	s.automationStarted = true
+	// A manual scan already in progress covers startup. Never cancel or queue
+	// extra startup work behind an explicit operator request.
+	if !s.active {
+		_ = s.requestScanLocked("startup")
+	}
+	if s.watchSeconds == 0 && s.intervalMinutes == 0 {
+		return
+	}
 	ctx, cancel := context.WithCancel(s.appCtx)
 	s.autoCancel = cancel
 	s.wg.Add(1)
@@ -122,6 +132,10 @@ func (s *scanService) StopScans() {
 func (s *scanService) requestScan(trigger string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.requestScanLocked(trigger)
+}
+
+func (s *scanService) requestScanLocked(trigger string) error {
 	if s.scanner == nil {
 		return errors.New("scanner not configured")
 	}
@@ -245,20 +259,23 @@ func (s *scanService) automationTick(ctx context.Context, now time.Time, state *
 func (s *scanService) observe(ctx context.Context, previous *string, baseline *bool) {
 	value, err := s.inspectSources(ctx)
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.watchError = ""
-	if err != nil && ctx.Err() == nil {
-		s.watchError = "Could not inspect library files. Check root access, then refresh or rescan."
-	}
-	s.mu.Unlock()
 	if err != nil {
+		if ctx.Err() == nil {
+			s.watchError = "Could not inspect library files. Check root access, then refresh or rescan."
+		}
 		s.logger.Warn("scan watcher inspection failed", "err", err)
 		return
 	}
-	// First observation establishes a baseline without changing startup behavior.
+	// The first observation may finish after startup discovered a directory.
+	// Coalesce one quick follow-up so files arriving in that gap are not lost
+	// into the baseline. Cancel/manual requests suppress this startup follow-up.
+	startupFollowUp := !*baseline && !s.startupFollowUpCancelled && s.trigger == "startup" && (s.state == "running" || s.state == "complete" || s.state == "failed")
 	changed := *baseline && value != *previous
 	*previous, *baseline = value, true
-	if changed {
-		_ = s.requestScan("watch")
+	if changed || startupFollowUp {
+		_ = s.requestScanLocked("watch")
 	}
 }
 

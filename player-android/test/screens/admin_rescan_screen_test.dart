@@ -193,6 +193,8 @@ void main() {
     await tester.tap(find.text('Scan settings'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Configure on the server'), findsOneWidget);
+    expect(find.textContaining('A quick scan runs at startup'), findsOneWidget);
+    expect(find.textContaining('Watch defaults to 30 seconds; 0 disables polling'), findsOneWidget);
     expect(find.textContaining('polling every 30 seconds'), findsOneWidget);
     expect(find.textContaining('every 60 minutes'), findsOneWidget);
   });

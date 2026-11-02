@@ -28,6 +28,31 @@ Admins implicitly see all sets without explicit permission rows.
 
 ### Rescanning the Library
 
+Player starts a quick inventory in the background on every server startup.
+It discovers new files and refreshes changed music without requiring Rescan.
+Source polling checks names, sizes and modification times every 30 seconds by
+default and queues another quick inventory when they change. Browsing and
+playback stay available while inventory runs; open Library scan in Admin to
+see progress or cancel active and queued work.
+
+Set `SCAN_WATCH_SECONDS=0` to disable ongoing polling, or 10–86400 to change
+its interval. Startup inventory still runs. `SCAN_INTERVAL_MINUTES` optionally
+schedules additional quick inventories (default 0, off; range 1–10080).
+Restart after changing environment settings. The initial observation may queue
+one extra inventory to cover files arriving during startup discovery.
+
+Quick inventory skips unchanged music probes, existing thumbnail repairs and
+thumbnail temporary-file cleanup. New files receive their normal metadata and
+thumbnails, and discovered sidecar artwork is refreshed. Temporarily missing
+files remain in the catalog, and intentional trash remains trashed. Changes
+that preserve both file size and modification time need a manual Rescan.
+Initial indexing can still take time when many new files need probing.
+
+Use **Rescan** for a full music metadata refresh, thumbnail repair and
+missing-file cleanup. Manual scans take priority over automatic inventory;
+Cancel scan stops the active scan and clears queued work. Polling resumes on
+later source changes.
+
 Click **Rescan** in the admin panel, or call:
 
 ```bash

@@ -1350,6 +1350,34 @@ must run serially against the shared fixture. The Android runner below reuses
 the same fixture before teardown.
 
 
+## Startup and default polling acceptance
+
+Use a fresh disposable music fixture built from the current server binary.
+This suite restarts only its marked localhost fixture, first with polling
+explicitly disabled to verify startup discovery, then with scan environment
+variables unset to verify default 30-second polling. It checks real catalog
+results and admin settings in installed Chrome and Firefox. Run serially:
+
+```sh
+PLAYER_MUSIC_FIXTURE=/tmp/player-pz3-fixture PLAYER_PZ3_ISOLATED=1 \
+  npx playwright test --config=playwright.music.config.ts \
+  tests/music-quickscan.test.ts --workers=1
+```
+
+For native acceptance, use the same fixture and one leased online Android
+emulator with a normal debug APK (from `flutter build apk --debug`):
+
+```sh
+python3 player-android/test/e2e-live/music_quickscan_e2e.py \
+  /tmp/player-pz3-fixture --evidence-dir /tmp/player-pz3-native-evidence \
+  --apk player-android/build/app/outputs/flutter-apk/app-debug.apk
+```
+
+The native runner restarts the owned fixture, verifies startup with polling
+explicitly disabled and ongoing detection with default settings, then finds
+each arriving song through native browsing and checks Scan settings. It clears
+Player app data and restores the fixture port's prior adb reverse route.
+
 ## Podcast discovery acceptance
 
 Use a marked, disposable music or podcast fixture with a Player server running

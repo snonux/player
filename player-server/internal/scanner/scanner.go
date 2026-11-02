@@ -165,6 +165,7 @@ func (s *FSScanner) Scan(ctx context.Context, root string, progress *model.ScanP
 
 // ScanInventory adds and refreshes files without orphan/trash reconciliation.
 // Automatic work must not interpret a temporarily disconnected root as deletion.
+// It skips existing thumbnail repair and temporary cleanup; manual Scan repairs them.
 func (s *FSScanner) ScanInventory(ctx context.Context, root string, progress *model.ScanProgress) error {
 	return s.scan(ctx, root, progress, true)
 }
@@ -588,8 +589,10 @@ func (s *FSScanner) discoverSet(ctx context.Context, sc *setScan, progress *mode
 	}
 	sc.seenRel = seenRel
 
-	s.sweepStaleTemporaries(sc.path, files)
-	sc.stale = staleThumbnails(sc.existing, seenRel, sc.path, s.fileExists, s.layout)
+	if !sc.inventory {
+		s.sweepStaleTemporaries(sc.path, files)
+		sc.stale = staleThumbnails(sc.existing, seenRel, sc.path, s.fileExists, s.layout)
+	}
 	if len(sc.stale) > 0 {
 		// old_names is the migration backlog and unreachable the rows of
 		// an abandoned thumbnail cache; both reach zero once their

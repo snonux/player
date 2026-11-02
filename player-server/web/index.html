@@ -558,7 +558,7 @@
         <details id="admin-scan-options" class="mt-2">
           <summary tabindex="0">Scan settings</summary>
           <p id="admin-scan-settings" class="text-xs">Loading effective settings…</p>
-          <p class="text-muted text-xs">Configure on the server, then restart: SCAN_WATCH_SECONDS=30 enables source polling (0 disables; 10–86400 seconds). SCAN_INTERVAL_MINUTES=60 schedules scans (0 disables; 1–10080 minutes). Both default off. Roots are managed in Libraries. Polling checks file names, size and modification time; a same-size edit with unchanged time needs a manual rescan. Generated caches are ignored.</p>
+          <p class="text-muted text-xs">Configure on the server, then restart: A quick scan runs at startup. Source polling defaults to every 30 seconds (SCAN_WATCH_SECONDS=0 disables polling; 10–86400 seconds enables it). SCAN_INTERVAL_MINUTES=60 schedules quick scans (default 0, off; 1–10080 minutes). Automatic scans index new files, refresh changed music and retain absent records; use Rescan for full thumbnail repair and missing-file cleanup. Roots are managed in Libraries. Polling checks file names, size and modification time; a same-size edit with unchanged time needs a manual rescan. Generated caches are ignored.</p>
         </details>
       </section>
 

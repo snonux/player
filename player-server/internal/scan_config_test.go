@@ -23,3 +23,20 @@ func TestScanAutomationConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestScanAutomationDefaults(t *testing.T) {
+	t.Setenv("SCAN_WATCH_SECONDS", "")
+	t.Setenv("SCAN_INTERVAL_MINUTES", "")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ScanWatchSeconds != 30 || cfg.ScanIntervalMinutes != 0 {
+		t.Fatalf("scan defaults: watch=%d schedule=%d", cfg.ScanWatchSeconds, cfg.ScanIntervalMinutes)
+	}
+	t.Setenv("SCAN_WATCH_SECONDS", "0")
+	cfg, err = LoadConfig()
+	if err != nil || cfg.ScanWatchSeconds != 0 {
+		t.Fatalf("explicit disable: %+v %v", cfg, err)
+	}
+}

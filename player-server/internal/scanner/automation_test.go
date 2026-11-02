@@ -186,3 +186,31 @@ func TestSourceSignatureIgnoresGeneratedAndDetectsSources(t *testing.T) {
 		t.Fatal("unreadable root accepted as complete observation")
 	}
 }
+
+func TestInventoryDefersExistingThumbnailRepair(t *testing.T) {
+	f := newMigrationFixture(t, []seededMedia{
+		{rel: "legacy.mp4", thumb: ".thumbnails/legacy.jpg"},
+		{rel: "missing.mp4", thumb: ".thumbnails/missing.mp4.jpg"},
+		{rel: "without.mp4"},
+	})
+	if err := os.Remove(f.abs(".thumbnails/missing.mp4.jpg")); err != nil {
+		t.Fatal(err)
+	}
+	f.write(f.abs("new.mp4"), "new source")
+	s := f.scanner()
+	if err := s.ScanInventory(context.Background(), f.root, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.generated) != 1 || f.generated[0] != f.abs("new.mp4") {
+		t.Fatalf("inventory generated existing thumbnails: %v", f.generated)
+	}
+	if f.row("legacy.mp4").ThumbnailPath != f.abs(".thumbnails/legacy.jpg") || f.row("without.mp4").ThumbnailPath != "" {
+		t.Fatal("inventory changed existing thumbnails")
+	}
+	if err := s.Scan(context.Background(), f.root, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.generated) != 4 {
+		t.Fatalf("manual rescan did not repair three thumbnails: %v", f.generated)
+	}
+}

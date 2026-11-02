@@ -10,6 +10,8 @@ All settings are environment variables. Unset variables use defaults.
 | `DB_PATH` | `data.db` | — | SQLite database file path |
 | `MAX_UPLOAD_SIZE_MB` | `100` | ≥ 1 | Max upload size per file (MB) |
 | `SESSION_TIMEOUT_HOURS` | `24` | ≥ 1 | Cookie / session expiry |
+| `SCAN_WATCH_SECONDS` | `30` | 0 or 10–86400 | Poll source names, sizes and modification times; 0 disables polling. Quick inventory also runs once at startup |
+| `SCAN_INTERVAL_MINUTES` | `0` | 0–10080 | Additional scheduled quick inventory interval; 0 disables scheduling |
 | `GC_INTERVAL_MINUTES` | `30` | ≥ 1 | Garbage collector tick interval |
 | `SHARE_DEFAULT_EXPIRY_DAYS` | `7` | ≥ 1 | Default share link lifetime |
 | `PODCAST_CHECK_INTERVAL_MINUTES` | `60` | ≥ 1 | Podcast feed refresh interval |
