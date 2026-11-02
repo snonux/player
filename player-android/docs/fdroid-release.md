@@ -27,13 +27,18 @@ four secrets and checks the APK signatures before upload.
 
 ## Cut a release
 
-1. Increment `version: X.Y.Z+N` in `pubspec.yaml`. The version name must match
-   the tag `vX.Y.Z`, and the build number `N` must exceed prior releases.
+1. From the monorepo root, run
+   `python3 player-server/scripts/release-version.py X.Y.Z` to update both
+   components and increment Android's build number. Both version names must
+   match the shared tag `vX.Y.Z`.
 2. Update the F-Droid changelog in
    `fastlane/metadata/android/en-US/changelogs/default.txt`.
-3. Commit and push the changes, then tag that commit `vX.Y.Z` and push the tag.
-4. The [Android release workflow](../../.github/workflows/release.yml) builds
-   three signed APKs with `--split-per-abi` and attaches them to the release.
+3. Commit and push the changes to `main`, then run
+   `gh workflow run release.yml --ref main -f tag=vX.Y.Z`.
+   The workflow creates the shared tag; do not create or push the tag yourself.
+4. The [release workflow](../../.github/workflows/release.yml) builds the server
+   bundle and three signed APKs with `--split-per-abi`, attaching all four to
+   the same release.
    Their names are `player-vX.Y.Z-<abi>.apk` for `armeabi-v7a`, `arm64-v8a`,
    and `x86_64`.
 5. The F-Droid repo imports the release on its next six-hour run. To refresh it

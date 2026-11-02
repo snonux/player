@@ -1,3 +1,2 @@
-Podcasts opens all episodes, newest first, with an Episodes/Podcasts toggle. Android refreshes the full account subscription list.
-Web: Enter plays the selected episode; o opens episodes, v toggles listened, Delete confirms deletion. Shift+O opens player controls.
-Sort expands horizontally; sync no longer shifts content. Underlined shortcuts show no duplicate badges.
+Videos continue to the next clip and keep fullscreen. Folder playback supports shuffle without restarting the current track.
+The library checks for new files at startup and every 30 seconds by default. Quick scans defer existing thumbnail repairs to manual Rescan.
