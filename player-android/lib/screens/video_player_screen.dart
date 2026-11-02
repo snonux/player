@@ -1,5 +1,6 @@
 import '../providers/server_endpoint_provider.dart';
 import 'dart:async';
+import 'dart:math';
 import 'dart:io';
 
 import 'package:chewie/chewie.dart';
@@ -12,6 +13,8 @@ import 'package:video_player_platform_interface/video_player_platform_interface.
     as platform;
 
 import '../api/player_api_client.dart';
+import '../models/media.dart';
+import '../services/music_sequence.dart';
 import '../api/dio_client.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/cast_provider.dart';
@@ -71,6 +74,9 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     this.isPublicShare = false,
     this.request,
     this.serverUserId = 0,
+    this.sequence = const [],
+    this.traverseFolders = false,
+    this.shuffleRandom,
   });
 
   /// The media item identifier extracted from the '/video/:mediaId' route path.
@@ -93,6 +99,11 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   final bool isPublicShare;
   final PlaybackRequest? request;
   final int serverUserId;
+  final List<Media> sequence;
+  final bool traverseFolders;
+
+  /// Optional random source for reproducible sequence tests.
+  final Random? shuffleRandom;
 
   @override
   ConsumerState<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
@@ -146,6 +157,101 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   PlaybackSessionLease? _sessionLease;
   StreamSubscription<platform.VideoEvent>? _completionSubscription;
   bool _nativeCompleted = false;
+  Media? _sequenceMedia;
+  List<Media>? _videoSequence;
+  bool _shuffle = false;
+  bool _advancing = false;
+  bool _resumeFullscreen = false;
+  bool _expandedSequence = false;
+  List<Media>? _canonicalVideos;
+
+  Future<void> _expandVideos() async {
+    if (_expandedSequence || !widget.traverseFolders || _videos.isEmpty) return;
+    final generation = _initGeneration;
+    final media =
+        await browseMusicSet(ref.read(apiClientProvider), _videos.first.setId);
+    if (!mounted || generation != _initGeneration) return;
+    _videoSequence = media.where((media) => media.type == 'video').toList();
+    _canonicalVideos = List.of(_videos);
+    _expandedSequence = true;
+  }
+
+  List<Media> get _videos => _videoSequence ??=
+      widget.sequence.where((media) => media.type == 'video').toList();
+
+  Future<void> _toggleShuffle() async {
+    final generation = _initGeneration;
+    try {
+      await _expandVideos();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Could not load videos. Check your connection and retry.')));
+      }
+      return;
+    }
+    if (!mounted || generation != _initGeneration) return;
+    setState(() {
+      _shuffle = !_shuffle;
+      final current = _sequenceMedia?.id ?? int.tryParse(widget.mediaId);
+      final index = _videos.indexWhere((media) => media.id == current);
+      if (index < 0) return;
+      final prefix = _videos.take(index + 1).toList();
+      final remaining = _videos.skip(index + 1).toList();
+      if (_shuffle) {
+        remaining.shuffle(widget.shuffleRandom);
+      } else {
+        final order = {
+          for (var i = 0; i < (_canonicalVideos ?? widget.sequence).length; i++)
+            (_canonicalVideos ?? widget.sequence)[i].id: i
+        };
+        remaining.sort((a, b) => order[a.id]!.compareTo(order[b.id]!));
+      }
+      _videoSequence = [...prefix, ...remaining];
+    });
+  }
+
+  Future<void> _advanceVideo(_PlaybackAttempt attempt) async {
+    if (_advancing || !_isCurrent(attempt) || isCastingRequest) return;
+    if (_videos.length < 2 && !widget.traverseFolders) return;
+    _advancing = true;
+    try {
+      final currentID = _sequenceMedia?.id ?? int.tryParse(widget.mediaId);
+      var index = _videos.indexWhere((media) => media.id == currentID);
+      if (!_shuffle && index + 1 >= _videos.length) {
+        try {
+          await _expandVideos();
+        } catch (_) {
+          // The loaded sequence stays playable when optional folder discovery fails.
+        }
+        if (!_isCurrent(attempt)) return;
+        index = _videos.indexWhere((media) => media.id == currentID);
+      }
+      if (_shuffle && index == _videos.length - 1 && _videos.length > 1) {
+        final current = _videos[index];
+        final remaining = _videos.take(index).toList()
+          ..shuffle(widget.shuffleRandom);
+        _videoSequence = [...remaining, current];
+      }
+      if (index < 0 || _videos.length < 2) return;
+      await _recordProgress(attempt.request, lease: attempt.lease, force: true);
+      if (!_isCurrent(attempt)) return;
+      _resumeFullscreen = _chewieController?.isFullScreen == true;
+      _sequenceMedia = _videos[(index + 1) % _videos.length];
+      _lastKnownPosition = null;
+      await _retry();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Could not load the next video. Check your connection and retry.')));
+      }
+    } finally {
+      _advancing = false;
+    }
+  }
+
   int? _nativePlayerId;
   Future<void> _progressWrite = Future<void>.value();
 
@@ -177,6 +283,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         oldWidget.startPosition != widget.startPosition ||
         oldWidget.mediaUrl != widget.mediaUrl ||
         oldWidget.isPublicShare != widget.isPublicShare) {
+      _sequenceMedia = null;
+      _videoSequence = null;
+      _expandedSequence = false;
+      _canonicalVideos = null;
+      _shuffle = false;
       _initGeneration++;
       // A changed widget may be a different item: its position is unknown.
       _lastKnownPosition = null;
@@ -515,6 +626,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         final controller = _videoController;
         _completedAt =
             controller == null ? null : _playbackPosition(controller);
+        unawaited(_advanceVideo(attempt));
         unawaited(_recordProgress(
           attempt.request,
           lease: attempt.lease,
@@ -546,6 +658,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _startProgressTicker(request, attempt.lease);
     }
     _watchPlayback(attempt, controller);
+    if (_resumeFullscreen) {
+      _resumeFullscreen = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_isCurrent(attempt) &&
+            identical(_chewieController, chewieController)) {
+          chewieController.enterFullScreen();
+        }
+      });
+    }
   }
 
   ChewieController _createChewieController(
@@ -775,6 +896,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   PlaybackRequest _effectiveRequest() {
+    final next = _sequenceMedia;
+    if (next != null) {
+      final client = ref.read(apiClientProvider);
+      final progress = ref.read(progressQueueProvider);
+      return ServerPlaybackRequest(
+          mediaId: next.id,
+          serverOrigin: ref.read(playerBaseUrlProvider).origin,
+          userId: widget.serverUserId,
+          sourceUri: Uri.parse(client.playbackUrl(next)),
+          title: next.displayTitle,
+          startPosition: 0,
+          savePosition: (seconds) => progress.enqueue(next.id, seconds),
+          markFinished: () => progress.enqueueFinished(next.id));
+    }
     final request = widget.request;
     if (request != null) return request;
     final title = widget.mediaTitle ??
@@ -1054,6 +1189,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         !widget.isPublicShare;
     final store = personal ? _personalBinding.storeFor(ref, request) : null;
     return [
+      if (!widget.isPublicShare &&
+          widget.request == null &&
+          (_videos.length > 1 || widget.traverseFolders) &&
+          !_isLoading &&
+          _error == null &&
+          !casting)
+        OverflowMenuItem(
+            key: const Key('video_sequence_shuffle'),
+            icon: Icons.shuffle,
+            label: 'Shuffle: ${_shuffle ? 'On' : 'Off'}',
+            onSelected: _toggleShuffle),
       if (casting)
         OverflowMenuItem(
             key: const Key('cast_stop'),

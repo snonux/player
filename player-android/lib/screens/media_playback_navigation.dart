@@ -33,8 +33,12 @@ Future<void> openMediaPlayback(
         'sequence': sequence.isEmpty ? [media] : List<Media>.of(sequence)
       });
     case 'video':
-      await context.push(AppRoutes.videoPlayerPath(id),
-          extra: {...extra, 'mediaUrl': client.playbackUrl(media)});
+      await context.push(AppRoutes.videoPlayerPath(id), extra: {
+        ...extra,
+        'mediaUrl': client.playbackUrl(media),
+        'traverseFolders': traverseFolders,
+        'sequence': sequence.isEmpty ? [media] : List<Media>.of(sequence)
+      });
     case 'audio':
       await context.push(AppRoutes.audioPlayerPath(id), extra: {
         ...extra,

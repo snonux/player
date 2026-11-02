@@ -379,6 +379,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                   ?.id ??
               0;
           return VideoPlayerScreen(
+            traverseFolders: state.extra is Map &&
+                (state.extra as Map)['traverseFolders'] == true,
+            sequence: state.extra is Map
+                ? ((state.extra as Map)['sequence'] as List<Media>? ?? const [])
+                : const [],
             mediaId: mediaId,
             mediaUrl: mediaUrl,
             mediaTitle: title,

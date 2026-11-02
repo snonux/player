@@ -516,6 +516,28 @@ artist playback includes that person's credited songs in album order, and
 playlists retain saved order and repeated songs. Back cancels selection before
 leaving the catalog.
 
+## Continuous folder playback
+
+Music audio and videos continue to the next playable item, skipping artwork.
+Sequences wrap to the beginning; a single video stays at its end. In a folder
+player's **More options** menu, **Shuffle: On/Off** changes upcoming tracks
+without restarting the current item. Turning shuffle off restores their
+original relative order. Video sequences contain videos; music audio sequences
+contain music audio. Public shares and standalone local videos play individually.
+
+The native acceptance test uses a disposable music fixture augmented with
+`integration_test/support/continuous_video_fixture.py`. Pass its URL and admin
+credentials through a private JSON file, then run:
+
+```sh
+flutter test integration_test/continuous_playback_test.dart -d emulator-5554 \
+  --dart-define-from-file=/path/to/private-defines.json
+```
+
+The JSON keys are `VIDEO_E2E_ORIGIN`, `username`, and `password`. The test uses
+real native decoders, checks fullscreen continuation, and operates the audio
+folder shuffle menu while playback continues.
+
 ## Recover a music queue
 
 Music queues save their order, current song occurrence and position on this

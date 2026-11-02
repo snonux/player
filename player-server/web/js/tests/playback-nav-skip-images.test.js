@@ -223,7 +223,7 @@ async function testCrossFolderNextSkipsCoverAndStopsWithoutImage() {
   }
 }
 
-async function testVideoSequenceStillReachesImages() {
+async function testVideoSequenceSkipsImages() {
   const clip = { id: 21, type: 'video', file_name: 'clip.mp4', duration: 12, browse_path: 'Album' };
   const cover = { id: 22, type: 'image', file_name: 'cover.jpg', browse_path: 'Album' };
   const cards = setupAlbumGrid([clip, cover]);
@@ -234,8 +234,8 @@ async function testVideoSequenceStillReachesImages() {
     await nav.playMediaById(21);
     assertEqual(player.currentMediaInfo()?.type, 'video', 'start on video');
     await nav.navigatePlayable(1, { forcePlay: true });
-    assertEqual(player.currentMediaId(), 22, 'video-started sequence still advances to images');
-    assertEqual(player.currentMediaInfo()?.type, 'image', 'image remains reachable from video');
+    assertEqual(player.currentMediaId(), 21, 'video sequence wraps past artwork');
+    assertEqual(player.currentMediaInfo()?.type, 'video', 'video completion keeps transport playback');
   } finally {
     API.mediaDetail = originalDetail;
   }
@@ -268,7 +268,7 @@ for (const test of [
   testExplicitPlayRestoresAfterBrowsingAway,
   testNextAfterLastAudioSkipsCoverAndWrapsAmongAudio,
   testCrossFolderNextSkipsCoverAndStopsWithoutImage,
-  testVideoSequenceStillReachesImages,
+  testVideoSequenceSkipsImages,
   testSignedInSavedProductionLyricsCaller,
 ]) {
   try {

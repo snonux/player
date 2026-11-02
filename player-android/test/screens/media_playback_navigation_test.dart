@@ -116,8 +116,12 @@ void main() {
         tester,
         _Client(),
         (context, ref) => openMediaPlayback(
-            context, ref, _media(4, 'video', transcoded: true)));
+            context, ref, _media(4, 'video', transcoded: true),
+            sequence: [_media(4, 'video'), _media(5, 'video')],
+            traverseFolders: true));
     expect(_location, '/video/4');
+    expect((_extra!['sequence'] as List<Media>).map((m) => m.id), [4, 5]);
+    expect(_extra!['traverseFolders'], isTrue);
     expect(_extra!['mediaUrl'], 'https://player.example/api/v1/media/4/compat');
   });
 
@@ -150,8 +154,8 @@ void main() {
 
   testWidgets('details button opens details marked as from playback',
       (tester) async {
-    await open(tester, _Client(),
-        (context, ref) => openPlaybackDetails(context, 9));
+    await open(
+        tester, _Client(), (context, ref) => openPlaybackDetails(context, 9));
     expect(_location, '/media/9');
     expect(_extra!['fromPlayback'], isTrue);
   });

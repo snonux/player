@@ -87,8 +87,10 @@ test('M12 three natural completions, real track controls, images skipped and pro
     await expect(page.locator('#player')).not.toHaveClass(/minimized/);
     for (const [theme,width] of [['dark',1366],['light',390]] as const) {
       await page.setViewportSize({width,height:844});
-      if (await page.locator('html').getAttribute('data-theme') !== theme)
+      if (await page.locator('html').getAttribute('data-theme') !== theme) {
+        await page.locator('#header-menu-toggle').click();
         await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+      }
       const shot=evidence.path(`m12-${theme}-${width}.png`);
       await page.screenshot({path:shot,fullPage:true});artifacts.push(shot);
     }

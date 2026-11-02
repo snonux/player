@@ -26,6 +26,7 @@
 // Run with: flutter test test/screens/video_player_screen_test.dart
 
 import 'dart:async';
+import 'dart:math';
 
 import 'package:chewie/chewie.dart';
 import 'package:dio/dio.dart';
@@ -90,6 +91,12 @@ class _FakeApiClient extends PlayerApiClient {
   /// Otherwise the lookup fails and the screen keeps the original stream.
   Completer<Media>? pendingMedia;
   int getMediaCalls = 0;
+  int browseCalls = 0;
+  @override
+  Future<Map<String, dynamic>> browseSet(int setId, {String? parent}) async {
+    browseCalls++;
+    throw StateError('Folder discovery offline');
+  }
 
   @override
   Future<Media> getMedia(int mediaId, {CancelToken? cancelToken}) {
@@ -212,6 +219,7 @@ class _PlayableVideoPlatform extends VideoPlayerPlatform {
   /// player that is still connecting.
   bool withholdInitialize = false;
   int createCalls = 0;
+  bool resetPositionOnCreate = false;
   Object? createError;
   Duration duration = const Duration(seconds: 100);
 
@@ -225,6 +233,7 @@ class _PlayableVideoPlatform extends VideoPlayerPlatform {
     if (_created) events = StreamController<VideoEvent>();
     _created = true;
     createCalls++;
+    if (resetPositionOnCreate) position = Duration.zero;
     if (withholdInitialize) return 1;
     Timer.run(() {
       if (failInitialize) {
@@ -299,6 +308,9 @@ Future<void> _pumpScreen(
   String mediaId = '42',
   String? mediaUrl,
   String? mediaTitle,
+  List<Media> sequence = const [],
+  bool traverseFolders = false,
+  Random? shuffleRandom,
   _FakeProgressQueue? progressQueue,
   PlaybackRequest? request,
   bool forbidServerDependencies = false,
@@ -312,6 +324,9 @@ Future<void> _pumpScreen(
         path: '/video/:mediaId',
         builder: (context, state) => VideoPlayerScreen(
           mediaId: state.pathParameters['mediaId']!,
+          sequence: sequence,
+          traverseFolders: traverseFolders,
+          shuffleRandom: shuffleRandom,
           mediaUrl: mediaUrl,
           mediaTitle: mediaTitle,
           request: request,
@@ -520,6 +535,93 @@ void main() {
     );
     expect(next?.isCurrent, isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets(
+      'native video completion advances past artwork and wraps from zero',
+      (tester) async {
+    final platform = _usePlayablePlatform()..resetPositionOnCreate = true;
+    final queue = _FakeProgressQueue();
+    Media item(int id, String type) => Media.fromJson({
+          'id': id,
+          'set_id': 1,
+          'type': type,
+          'file_name': 'item$id.mp4',
+          'rel_path': 'videos/item$id.mp4',
+        });
+    final client = _FakeApiClient();
+    await _pumpScreen(tester, client,
+        mediaId: '42',
+        traverseFolders: true,
+        mediaUrl: 'http://localhost:8080/api/v1/media/42/download',
+        progressQueue: queue,
+        sequence: [item(42, 'video'), item(44, 'image'), item(43, 'video')]);
+    await tester.pumpAndSettle();
+    await _enterFullScreen(tester);
+    platform.position = const Duration(seconds: 100);
+    platform.events.add(VideoEvent(eventType: VideoEventType.completed));
+    platform.events.add(VideoEvent(eventType: VideoEventType.completed));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    }
+    expect(platform.lastSource?.uri, contains('/43/download'));
+    expect(client.browseCalls, 0,
+        reason: 'known next source works without discovery');
+    expect(
+        tester
+            .widget<Chewie>(find.byType(Chewie, skipOffstage: false))
+            .controller
+            .isFullScreen,
+        isTrue);
+    expect(platform.position, Duration.zero);
+    expect(platform.playCalls, greaterThan(1));
+    expect(queue.finishedItems, contains(42));
+    platform.position = const Duration(seconds: 100);
+    platform.events.add(VideoEvent(eventType: VideoEventType.completed));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
+    }
+    expect(platform.lastSource?.uri, contains('/42/download'));
+    expect(client.browseCalls, 1,
+        reason: 'failed boundary discovery falls back to loaded sequence');
+    expect(
+        tester
+            .widget<Chewie>(find.byType(Chewie, skipOffstage: false))
+            .controller
+            .isFullScreen,
+        isTrue);
+    expect(platform.position, Duration.zero);
+    expect(queue.finishedItems, contains(43));
+    await _leavePlayingScreen(tester);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets(
+      'video shuffle enabled at last source randomizes the next full cycle',
+      (tester) async {
+    final platform = _usePlayablePlatform()..resetPositionOnCreate = true;
+    Media item(int id) => Media.fromJson(
+        {'id': id, 'set_id': 1, 'type': 'video', 'file_name': '$id.mp4'});
+    await _pumpScreen(tester, _FakeApiClient(),
+        mediaId: '44',
+        mediaUrl: 'http://localhost:8080/api/v1/media/44/download',
+        shuffleRandom: Random(7),
+        sequence: [item(42), item(43), item(44)]);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Shuffle: Off'));
+    await tester.pumpAndSettle();
+    expect(platform.createCalls, 1, reason: 'shuffle keeps current source');
+    for (final id in [43, 42, 44]) {
+      platform.position = const Duration(seconds: 100);
+      platform.events.add(VideoEvent(eventType: VideoEventType.completed));
+      await _pumpPluginWork(tester);
+      expect(platform.lastSource?.uri, contains('/$id/download'));
+      expect(platform.position, Duration.zero);
+    }
+    await _leavePlayingScreen(tester);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
   testWidgets('zero-duration video waits for actual completion',

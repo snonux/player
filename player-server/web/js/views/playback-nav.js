@@ -30,7 +30,7 @@ export function initPlaybackNav({ isShuffle } = {}) {
 
 // Sets browse: when the sequence started from audio, skip images (B3 / §15).
 function skipsImagesFrom(media) {
-  return media?.type === 'audio';
+  return media?.type === 'audio' || media?.type === 'video';
 }
 
 function cardMedia(card) {

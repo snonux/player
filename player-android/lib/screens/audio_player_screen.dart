@@ -1137,6 +1137,15 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     final store = personal ? _personalBinding.storeFor(ref, request) : null;
     final music = handler.musicState != null;
     return [
+      if (music && ready && !casting && !handler.musicQueue.active)
+        OverflowMenuItem(
+            key: const Key('audio_folder_shuffle'),
+            icon: Icons.shuffle,
+            label: 'Shuffle: ${handler.folderShuffle ? 'On' : 'Off'}',
+            onSelected: () async {
+              await handler.toggleFolderShuffle();
+              if (mounted) setState(() {});
+            }),
       if (casting)
         OverflowMenuItem(
             key: const Key('cast_stop'),

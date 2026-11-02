@@ -1390,3 +1390,17 @@ unchanged.
 Also smoke-test a live directory search/chart (the deterministic test does not
 verify Apple's availability), and native Android Explore/search/chart/
 subscription on a device or emulator before release.
+
+For continuous video playback and shuffle, add synthetic clips to a disposable
+music fixture, then run the focused suite in the installed browsers:
+
+```sh
+python3 player-android/integration_test/support/continuous_video_fixture.py /tmp/player-music-fixture
+# From player-server/test/e2e-web:
+PLAYER_MUSIC_FIXTURE=/tmp/player-music-fixture npx playwright test \
+  --config=playwright.music.config.ts music-continuous-video.test.ts \
+  --project=chrome --project=firefox --workers=1
+```
+
+The clips have distinct colors and tones. The test waits for real completion,
+checks the next playing source, artwork exclusion, wrapping and shuffle.

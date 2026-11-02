@@ -54,8 +54,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// platform channels (Dependency Inversion Principle).
   PlayerAudioHandler(AudioPlayer player,
       {LoudnessEffect? loudnessEnhancer,
-      HeadsetPreferences? headsetPreferences})
-      : headsetPreferences = headsetPreferences ?? HeadsetPreferences(),
+      HeadsetPreferences? headsetPreferences,
+      Random? folderShuffleRandom})
+      : _folderShuffleRandom = folderShuffleRandom,
+        headsetPreferences = headsetPreferences ?? HeadsetPreferences(),
         _player = player,
         loudness = ReplayGainController(player, loudnessEnhancer),
         equalizer = EqualizerController(player) {
@@ -298,6 +300,38 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   int _musicIndex = -1;
   bool _movingTrack = false;
   bool _musicWrap = true;
+  final Random? _folderShuffleRandom;
+  bool _folderShuffle = false;
+  bool get folderShuffle => _folderShuffle;
+  List<PlaybackRequest> _folderCanonical = const [];
+
+  Future<void> toggleFolderShuffle() async {
+    if (!_musicWrap || _musicIndex < 0 || _movingTrack) return;
+    final generation = _sourceGeneration;
+    final current = _musicEntries[_musicIndex];
+    try {
+      final canonical = _folderCanonical.isNotEmpty
+          ? _folderCanonical
+          : await _expandMusic!();
+      if (generation != _sourceGeneration || _musicIndex < 0) return;
+      _folderCanonical = List.of(canonical);
+      final prefix = _musicEntries.take(_musicIndex + 1).toList();
+      final consumed = prefix.map((request) => request.identity).toSet();
+      final remaining = canonical
+          .where((request) => !consumed.contains(request.identity))
+          .toList();
+      _folderShuffle = !_folderShuffle;
+      if (_folderShuffle) remaining.shuffle(_folderShuffleRandom);
+      _musicEntries = [...prefix, ...remaining];
+      _musicIndex = _musicEntries.indexOf(current);
+      _publishMusic();
+    } catch (_) {
+      _musicNavigationStatus =
+          'Could not load tracks. Check your connection and retry.';
+      _notifyQueue();
+    }
+  }
+
   bool _collectionEnded = false;
   AudioProgressSession? _completingProgress;
   int _completionCycle = 0;
@@ -978,6 +1012,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _watchMusicPositions();
     _collectionEnded = false;
     _musicWrap = wrap;
+    _folderShuffle = false;
+    _folderCanonical = const [];
     _musicEntries = List.unmodifiable(entries);
     _musicIndex = index;
     _musicLoader = load;
@@ -1191,7 +1227,21 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       }
       if (target < 0 || target >= _musicEntries.length) {
         final old = _musicEntries[_musicIndex].identity;
-        final expanded = await _expandMusic!();
+        final List<PlaybackRequest> expanded;
+        if (_folderShuffle) {
+          if (delta > 0) {
+            final current = _musicEntries[_musicIndex];
+            final remaining = _musicEntries
+                .where((entry) => !identical(entry, current))
+                .toList()
+              ..shuffle(_folderShuffleRandom);
+            expanded = [...remaining, current];
+          } else {
+            expanded = _musicEntries;
+          }
+        } else {
+          expanded = await _expandMusic!();
+        }
         if (!current()) return;
         final base = expanded.indexWhere((request) => request.identity == old);
         if (expanded.isNotEmpty && base >= 0) {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:player_android/api/player_api_client.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,6 +114,90 @@ void main() {
     expect(h.mediaItem.value?.artUri, Uri.file('/new.png'));
     await h.stop();
     expect(h.mediaItem.value, isNull);
+  });
+
+  test(
+      'folder shuffle expands remaining tracks, keeps current source and restores order',
+      () async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    PlaybackRequest song(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Song $id',
+        sourceUri: Uri.parse('http://local/$id'),
+        startPosition: 0,
+        savePosition: (_) async {},
+        markFinished: () async {});
+    final songs = List.generate(5, (i) => song(i + 1));
+    handler.activateSourceSession(handler.beginSourceSession());
+    handler.startMusicSequence(
+        entries: songs.take(2).toList(),
+        index: 0,
+        load: (request, current) async => AudioSource.uri(request.sourceUri),
+        changed: (_) {},
+        expand: () async => songs);
+    await handler.toggleFolderShuffle();
+    expect(handler.folderShuffle, isTrue);
+    expect(handler.musicState?.request, songs.first);
+    expect(handler.musicState?.length, 5);
+    expect(player.elapsed, const Duration(seconds: 7));
+    expect(player.loads, 0);
+    await handler.toggleFolderShuffle();
+    expect(handler.folderShuffle, isFalse);
+    await handler.skipToNext();
+    expect(handler.musicState?.request, songs[1]);
+    await handler.skipToNext();
+    expect(handler.musicState?.request, songs[2]);
+    await handler.stop();
+  });
+
+  test(
+      'folder shuffle enabled at last track starts complete new cycles without repeating boundary source',
+      () async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player, folderShuffleRandom: Random(7));
+    PlaybackRequest song(int id) => ServerPlaybackRequest(
+        mediaId: id,
+        serverOrigin: 'http://local',
+        userId: 1,
+        title: 'Song $id',
+        sourceUri: Uri.parse('http://local/$id'),
+        startPosition: 0,
+        savePosition: (_) async {},
+        markFinished: () async {});
+    final songs = List.generate(5, (i) => song(i + 1));
+    handler.activateSourceSession(handler.beginSourceSession());
+    handler.startMusicSequence(
+        entries: songs,
+        index: 4,
+        load: (request, current) async => AudioSource.uri(request.sourceUri),
+        changed: (_) {},
+        expand: () async => songs);
+    await handler.toggleFolderShuffle();
+    for (var cycle = 0; cycle < 3; cycle++) {
+      final last = handler.musicState!.request.identity;
+      final seen = <String>{};
+      final order = <String>[];
+      for (var index = 0; index < 5; index++) {
+        await handler.skipToNext();
+        final identity = handler.musicState!.request.identity;
+        if (index == 0) expect(identity, isNot(last));
+        expect(seen.add(identity), isTrue);
+        order.add(identity);
+      }
+      if (cycle == 0) {
+        expect(
+            order,
+            [songs[1], songs[3], songs[2], songs[0], songs[4]]
+                .map((song) => song.identity)
+                .toList());
+      }
+      expect(seen, songs.map((song) => song.identity).toSet());
+      expect(player.running, isTrue);
+    }
+    await handler.stop();
   });
 
   for (final fails in [false, true]) {
