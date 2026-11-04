@@ -1,3 +1,4 @@
+import { showNotesHTML } from './podcast-metadata.js';
 import { deviceLibraryMode } from './offline-context.js';
 import { libraryPresenceSnapshot } from './playback-presence.js';
 import { musicStreamingBlocked, MusicNetworkRestricted, networkPolicyMessage } from './network-policy.js';
@@ -1299,6 +1300,16 @@ function updateMusicIdentity(media, thumbnailUrl) {
   const title = mediaTitle(media), subtitle = musicSubtitle(media) || 'Unknown artist';
   for (const [text, className] of [[title, 'player-song-title'], [subtitle, 'player-song-subtitle']]) {
     const line = document.createElement('div'); line.className = className; line.textContent = text; line.title = text; identity.appendChild(line);
+  }
+  const notesHTML = showNotesHTML(media.podcast?.description);
+  if (notesHTML) {
+    const notes = document.createElement('section');
+    notes.className = 'player-show-notes';
+    notes.setAttribute('aria-label', 'Episode show notes');
+    notes.innerHTML = notesHTML;
+    const details = notes.querySelector('details');
+    if (details) details.open = true;
+    identity.appendChild(notes);
   }
   if (e.restoreTitle) { e.restoreTitle.textContent = `Restore: ${title} · ${subtitle}`; e.restoreTitle.title = `${title} · ${subtitle}`; }
   if (e.btnRestore) {

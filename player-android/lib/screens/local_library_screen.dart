@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../app_routes.dart';
-import 'standalone_podcasts_screen.dart';
+import 'podcast_list_screen.dart';
 import '../models/local_media.dart';
 import '../providers/local_library_provider.dart';
 import '../providers/personal_media_provider.dart';
@@ -47,7 +47,7 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
                   label: 'Podcasts on this device',
                   onSelected: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => const StandalonePodcastsScreen(),
+                      builder: (_) => const PodcastListScreen(),
                     ),
                   ),
                 ),

@@ -621,3 +621,9 @@
 .lyric-voice { display: block; font-size: 0.8rem; color: var(--text-secondary); }
 .lyric-word-current { font-weight: bold; text-decoration: underline; text-underline-offset: 0.2em; }
 .lyric-language-fallback { font-size: 0.8rem; color: var(--text-secondary); }
+
+/* Publisher notes scroll independently while playback controls stay reachable. */
+.player-show-notes { text-align: left; max-height: min(30vh, 24rem); overflow: auto; }
+.player-show-notes .subtitle { color: var(--text-secondary); }
+.player:has(.player-show-notes) .player-music-identity { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.player:has(.player-show-notes) .stage { flex: 0 1 100px; min-height: 48px; }

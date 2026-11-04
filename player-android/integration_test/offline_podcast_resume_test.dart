@@ -9,9 +9,12 @@ import 'package:integration_test/integration_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:player_android/providers/api_client_provider.dart';
+import 'package:player_android/providers/audio_handler_provider.dart';
+import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/first_run_provider.dart';
 import 'package:player_android/providers/offline_downloads_provider.dart';
+import 'package:player_android/providers/local_library_provider.dart';
 import 'package:player_android/providers/podcast_library_provider.dart';
 import 'package:player_android/providers/settings_provider.dart';
 import 'package:player_android/models/user.dart';
@@ -33,6 +36,17 @@ class _Settings extends SettingsNotifier {
   @override
   Future<AppSettings> build() async =>
       const AppSettings(serverBaseUrl: _origin);
+}
+
+class _SignedOut extends AuthStateNotifier {
+  @override
+  Future<AuthState> build() async => const AuthState.unauthenticated();
+}
+
+class _DeviceSettings extends SettingsNotifier {
+  @override
+  Future<AppSettings> build() async => const AppSettings(
+      serverBaseUrl: _origin, destination: LibraryDestination.local);
 }
 
 Uint8List _audio() {
@@ -73,7 +87,7 @@ void main() {
     publisher.listen((request) async {
       if (request.uri.path == '/feed') {
         request.response.write(
-            '<rss><channel><title>Saved podcast</title><item><title>Saved episode</title><guid>one</guid><enclosure url="$publisherOrigin/audio.wav"/><duration>60</duration></item></channel></rss>');
+            '<rss><channel><title>Saved podcast</title><item><title>Saved episode</title><guid>one</guid><description>Cached episode show notes.</description><enclosure url="$publisherOrigin/audio.wav"/><duration>60</duration></item></channel></rss>');
       } else {
         request.response.headers.contentType = ContentType('audio', 'wav');
         request.response.add(_audio());
@@ -152,6 +166,76 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Offline downloads'), findsOneWidget);
       expect(tester.takeException(), isNull);
+
+      // Reopen through "Use files on this device", with no unlocked account.
+      final handler = PlayerAudioHandler(player);
+      final deviceDownloads = PodcastDownloads(
+          repository, PlaybackSessionCoordinator(),
+          directory: Directory('${folder.path}/audio'));
+      final device = ProviderContainer(overrides: [
+        audioHandlerProvider.overrideWithValue(handler),
+        authStateProvider.overrideWith(_SignedOut.new),
+        settingsProvider.overrideWith(_DeviceSettings.new),
+        localMediaListProvider.overrideWith((ref) async => []),
+        podcastRepositoryProvider.overrideWithValue(repository),
+        podcastDownloadsProvider.overrideWith((ref) => deviceDownloads),
+        apiClientProvider.overrideWith(
+            (ref) => throw StateError('Signed-out podcasts used server API')),
+      ]);
+      try {
+        await device.read(settingsProvider.future);
+        await device.read(authStateProvider.future);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(UncontrolledProviderScope(
+            container: device,
+            child:
+                MaterialApp.router(routerConfig: device.read(routerProvider))));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('More options'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Podcasts on this device'));
+        await tester.pumpAndSettle();
+        expect(find.text('Saved episode'), findsOneWidget);
+        expect(find.text('Resume'), findsOneWidget);
+        expect(await device.read(podcastScopeProvider.future), scope);
+        expect(device.read(authStateProvider).requireValue.isUnauthenticated,
+            isTrue);
+        await tester.tap(find.byTooltip('Choose podcast library'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(
+            CheckedPopupMenuItem<String>, 'Device-only podcasts'));
+        await tester.pumpAndSettle();
+        expect(find.text('Saved episode'), findsNothing);
+        expect(await device.read(podcastScopeProvider.future), 'local');
+        await tester.tap(find.byTooltip('Choose podcast library'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(CheckedPopupMenuItem<String>,
+            'listener · offline-podcast.invalid'));
+        await tester.pumpAndSettle();
+        expect(find.text('Resume'), findsOneWidget);
+        final localRequest = await deviceDownloads.playbackRequest(
+            await device.read(podcastScopeProvider.future), feed, episode);
+        final position = await localRequest.readPosition!();
+        expect(position, greaterThanOrEqualTo(13));
+        await tester.tap(find.text('Resume'));
+        await tester.pumpAndSettle();
+        expect(find.text('Show notes'), findsOneWidget);
+        expect(find.text('Cached episode show notes.'), findsOneWidget);
+        final resumedDeadline = DateTime.now().add(const Duration(seconds: 10));
+        while (
+            player.position.inMilliseconds < (position! * 1000).round() + 500 &&
+                DateTime.now().isBefore(resumedDeadline)) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        await player.pause();
+        expect(player.position.inMilliseconds,
+            greaterThan((position * 1000).round()));
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox());
+        await handler.stop();
+        device.dispose();
+      }
     } finally {
       await player.dispose();
       await tester.pumpWidget(const SizedBox());

@@ -8,6 +8,7 @@ import '../providers/api_client_provider.dart';
 import '../services/podcast_identity.dart';
 import '../widgets/podcast_download_controls.dart';
 import '../widgets/podcast_artwork.dart';
+import '../widgets/podcast_library_switcher.dart';
 import '../widgets/podcast_show_notes.dart';
 import '../widgets/podcast_publication_date.dart';
 import '../services/podcast_metadata.dart';
@@ -150,6 +151,7 @@ class _StandalonePodcastsScreenState
                       ])
             ]),
         body: Column(children: [
+          const PodcastLibrarySwitcher(),
           if (widget.syncMessage != null)
             Padding(
                 padding: const EdgeInsets.all(8),
@@ -511,6 +513,7 @@ class _LocalPodcastEpisodesScreenState
                 icon: const Icon(Icons.refresh))
           ]),
       body: Column(children: [
+        const PodcastLibrarySwitcher(),
         if (widget.syncMessage != null)
           Padding(
               padding: const EdgeInsets.all(8),

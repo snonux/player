@@ -97,3 +97,9 @@ web and Android players, including public shares. The first play prepares the
 copy; subsequent plays use the cache. Seeking works after preparation.
 Original files and downloads retain their bytes and `video/mpeg` MIME type.
 Run an admin rescan after upgrading to index files previously skipped.
+
+Podcast players display publisher show notes below the episode title, expanded
+by default. Long notes scroll separately from playback controls; collapse them
+with Show notes. Device podcast playback uses its cached episode description.
+Verify Chrome and Firefox with `npx playwright test -c playwright.podcast-notes.config.ts`
+from `test/e2e-web/`; this runs against a disposable local static server.

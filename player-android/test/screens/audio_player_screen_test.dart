@@ -1633,6 +1633,39 @@ void main() {
     expect(queue.finishedItems, isEmpty);
   });
 
+  testWidgets('podcast show notes are displayed safely in the offline player',
+      (tester) async {
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    final request = PodcastPlaybackRequest(
+      identity: 'podcast:local:notes',
+      title: 'Episode with notes',
+      sourceUri: Uri.parse('file:///offline/episode.mp3'),
+      podcast: const MediaPodcastMetadata(
+          title: 'Episode with notes',
+          feedTitle: 'Podcast',
+          description:
+              '<p>Episode summary.</p><script>unsafe()</script><p>More details.</p>'),
+      readPosition: () async => 10,
+      savePosition: (_) async {},
+      markFinished: () async {},
+    );
+    await _pumpScreen(tester, _FakeApiClient(),
+        handlerOverride: handler,
+        request: request,
+        forbidServerDependencies: true,
+        textScale: 1.5);
+    expect(find.text('Show notes'), findsOneWidget);
+    final notes = tester.widget<SelectableText>(find.byType(SelectableText));
+    expect(notes.data, contains('Episode summary.'));
+    expect(notes.data, contains('More details.'));
+    expect(notes.data, isNot(contains('unsafe')));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await handler.endProgress();
+    await player.playingChanges.close();
+  });
+
   testWidgets('loaded title identifies the player and audio notification',
       (tester) async {
     _setupAudioSessionMock();

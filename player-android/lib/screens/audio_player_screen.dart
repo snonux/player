@@ -42,6 +42,7 @@ import '../widgets/audio_format_line.dart';
 import '../widgets/turbonotes_button.dart';
 import '../widgets/lyrics_panel.dart';
 import '../widgets/audio_cover_art.dart';
+import '../widgets/podcast_show_notes.dart';
 import '../widgets/audio_visuals.dart';
 import '../widgets/cast_controls.dart';
 import '../widgets/sleep_timer_control.dart';
@@ -1428,6 +1429,12 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                     ])),
                 const SizedBox(height: 16),
                 _buildSeekBar(handler),
+                if (_activeRequest?.podcast != null)
+                  PodcastShowNotes(
+                    key: ValueKey('player-notes:${_activeRequest!.identity}'),
+                    description: _activeRequest!.podcast!.description,
+                    initiallyExpanded: true,
+                  ),
                 if (_activeRequest?.kind != PlaybackSourceKind.local)
                   _buildAudioFormat(),
                 StreamBuilder<void>(

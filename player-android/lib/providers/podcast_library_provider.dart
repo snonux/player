@@ -25,21 +25,59 @@ final podcastDownloadsProvider =
       captureSyncAccount: () => captureSyncAccount(ref)?.podcast);
 });
 
-/// Remember only the last account identity, never credentials. Signed-out
-/// edits remain in that account; browsing device files selects local scope.
+/// Device browsing chooses a cached library, never a server credential.
+final podcastDeviceScopeSelectionProvider =
+    StateProvider<String?>((ref) => null);
+
 final podcastScopeProvider = FutureProvider<String>((ref) async {
+  final selection = ref.watch(podcastDeviceScopeSelectionProvider);
   final settings = ref.watch(settingsProvider).valueOrNull;
   final auth = ref.watch(authStateProvider).valueOrNull;
-  if (settings?.destination != LibraryDestination.server) return 'local';
-  final origin = ref.watch(playerBaseUrlProvider).origin;
+  if (settings == null || auth == null) return 'local';
   final prefs = await SharedPreferences.getInstance();
-  final userId = auth?.user?.id;
-  if (auth?.isAuthenticated == true && userId != null) {
-    await prefs.setInt('podcast_account:$origin', userId);
-    return podcastAccountScope(origin, userId);
+  final origin = settings.serverBaseUrl == null
+      ? null
+      : Uri.parse(settings.serverBaseUrl!).origin;
+  if (settings.destination == LibraryDestination.server && origin != null) {
+    final userId = auth.user?.id;
+    if (auth.isAuthenticated && userId != null) {
+      final scope = podcastAccountScope(origin, userId);
+      await prefs.setInt('podcast_account:$origin', userId);
+      await prefs.setString('podcast_device_scope', scope);
+      await prefs.setString('podcast_library_label:$scope',
+          '${auth.user!.username} · ${Uri.parse(origin).host}');
+      return scope;
+    }
+    final remembered = prefs.getInt('podcast_account:$origin');
+    return remembered == null
+        ? 'local'
+        : podcastAccountScope(origin, remembered);
   }
-  final remembered = prefs.getInt('podcast_account:$origin');
-  return remembered == null ? 'local' : podcastAccountScope(origin, remembered);
+  final cached =
+      await ref.watch(podcastRepositoryProvider).cachedAccountScopes();
+  final chosen = prefs.getString('podcast_device_scope') ?? selection;
+  if (chosen == 'local' || cached.contains(chosen)) return chosen!;
+  // Migrate existing installs which only remembered an identity per server.
+  final remembered =
+      origin == null ? null : prefs.getInt('podcast_account:$origin');
+  final previous =
+      remembered == null ? null : podcastAccountScope(origin!, remembered);
+  if (cached.contains(previous)) return previous!;
+  return cached.length == 1 ? cached.single : 'local';
+});
+
+final podcastDeviceLibrariesProvider =
+    FutureProvider<Map<String, String>>((ref) async {
+  await ref.watch(podcastSubscriptionsProvider.future);
+  final cached =
+      await ref.watch(podcastRepositoryProvider).cachedAccountScopes();
+  final prefs = await SharedPreferences.getInstance();
+  return {
+    'local': 'Device-only podcasts',
+    for (final scope in cached)
+      scope: prefs.getString('podcast_library_label:$scope') ??
+          scope.replaceFirst('account:', 'Saved podcasts · '),
+  };
 });
 final podcastSubscriptionsProvider =
     FutureProvider<List<Map<String, Object?>>>((ref) async {

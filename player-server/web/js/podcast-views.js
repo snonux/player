@@ -17,7 +17,12 @@ import { dismissSidebarAfterNav } from './views/help.js';
 // playSelected. Subscription views clear the browse list, so Play must put
 // downloaded copies (or a fresh download) into state.media by card index.
 export function episodePlayableMedia(ep, downloaded = null) {
-  if (downloaded?.id) return { ...downloaded, podcast_episode: episodeSnapshot(ep) };
+  const podcast = { ...downloaded?.podcast, title: ep.title,
+    feed_title: ep.podcast_title || ep.feed_title || downloaded?.podcast?.feed_title || '',
+    description: ep.description || downloaded?.podcast?.description || '',
+    image_url: ep.image_url || downloaded?.podcast?.image_url || '',
+    feed_image_url: ep.feed_image_url || downloaded?.podcast?.feed_image_url || '' };
+  if (downloaded?.id) return { ...downloaded, podcast, podcast_episode: episodeSnapshot(ep) };
   const id = ep?.server_copy?.media_id;
   if (!id) return null;
   return {
@@ -25,6 +30,7 @@ export function episodePlayableMedia(ep, downloaded = null) {
     type: 'audio',
     title: ep.title || '',
     is_podcast: true,
+    podcast,
     podcast_episode: episodeSnapshot(ep),
   };
 }

@@ -97,6 +97,13 @@ class PodcastRepository {
     _opening = null;
   }
 
+  /// Account libraries remain browsable from device storage without credentials.
+  Future<List<String>> cachedAccountScopes() async =>
+      (await (await database).rawQuery(
+              "SELECT DISTINCT scope FROM podcast_subscriptions WHERE scope != 'local' ORDER BY scope"))
+          .map((row) => row['scope'] as String)
+          .toList();
+
   Future<List<Map<String, Object?>>> subscriptions(String scope) async =>
       (await database).rawQuery(
           'SELECT s.*, f.description,f.image_url,f.last_error,f.last_checked_ms FROM podcast_subscriptions s LEFT JOIN podcast_feeds f USING(feed_key) WHERE s.scope=? AND s.subscribed=1 ORDER BY s.title COLLATE NOCASE',

@@ -1,1 +1,1 @@
-Resume downloaded podcasts after restarting while your Player server is offline. Unlock your saved account, then open Offline downloads > menu > Podcasts. Listening progress stays on your device and syncs after reconnecting.
+Podcast show notes now appear in the player, including cached notes while offline. Device mode reopens your cached podcast subscriptions without signing in. Use the Library selector to switch between saved accounts and device-only podcasts.

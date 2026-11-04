@@ -11,6 +11,8 @@ import 'package:player_android/services/podcast_downloads.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 
 class BrowsingRepository extends PodcastRepository {
+  @override
+  Future<List<String>> cachedAccountScopes() async => [];
   bool completed = false, failSave = false, deleted = false;
   List<String> missingFeeds = [];
   final refreshed = <String>[];

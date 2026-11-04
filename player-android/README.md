@@ -272,6 +272,18 @@ in Android's secure storage; account passwords are never saved. Switching server
 login and preserves each server's saved credential. Logout removes the selected
 server's credential. Expired/revoked tokens require password sign-in.
 
+For podcasts, **Use files on this device → menu → Podcasts on this device**
+reopens the last cached podcast library without signing in or unlocking an
+account. The **Library** selector switches between cached accounts and
+**Device-only podcasts** without combining their subscriptions or listening
+history. Existing installs recover their remembered server library automatically.
+The player displays the current episode’s show notes below the seek bar, expanded
+by default. Cached notes remain readable offline and can be collapsed.
+Subscriptions and episode details are cached by sync; audio is separate and
+must show **Available on this device** before it can play without internet.
+Offline listening changes stay with that cached account and sync when you later
+sign in to the same account.
+
 If the server is unreachable (including a gateway outage), fingerprint unlock
 opens **Offline downloads** for that saved server/account. Open its menu →
 **Podcasts** to resume downloaded episodes from the same account’s saved position.

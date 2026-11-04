@@ -24,6 +24,7 @@ const downloaded = {
   feed_key: 'feed:a/',
   episode_key: 'guid:2',
   title: 'Saved',
+  description: 'Cached publisher show notes',
   server_copy: { media_id: 99 },
 };
 
@@ -32,6 +33,7 @@ const stub = episodePlayableMedia(downloaded);
 assert(stub && stub.id === 99 && stub.type === 'audio' && stub.is_podcast === true,
   'downloaded episode becomes an audio media stub for playMediaById');
 assert(stub.title === 'Saved', 'stub keeps the episode title');
+assert(stub.podcast.description === 'Cached publisher show notes', 'player receives cached publisher notes');
 
 const fromDownload = episodePlayableMedia(undownloaded, { id: 42, type: 'audio', file_name: 'ep.mp3' });
 assert(fromDownload.id === 42 && fromDownload.file_name === 'ep.mp3',

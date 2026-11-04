@@ -58,6 +58,8 @@ export function initLocalPodcastsApp() {
         duration: 0,
         offlinePinURL: episode.enclosure_url,
         localPodcast: true,
+        podcast: { title: episode.title, description: episode.description,
+          image_url: episode.image_url, feed_image_url: episode.feed_image_url },
       };
       const added = await insertQueue([media], 'now', { replace: true, source: t('Podcasts on this device') });
       message(added ? 'Playing.' : 'Playback is busy. Retry.');
