@@ -1,1 +1,1 @@
-Podcast lists show cached episodes first and keep them visible during background updates. Cached undated or previously unavailable feeds no longer reload on every open. HTTP and HTTPS links in show notes open your browser. Back from podcast playback returns to the episode list.
+Maintenance release with a new build number. Includes cached podcast browsing, browser links in show notes, and Back navigation that returns to the episode list.
