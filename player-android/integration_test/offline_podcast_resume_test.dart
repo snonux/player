@@ -137,9 +137,15 @@ void main() {
           child: MaterialApp.router(routerConfig: router)));
       await tester.pumpAndSettle();
       expect(find.text('Offline downloads'), findsOneWidget);
-      await tester.tap(find.byTooltip('Offline account'));
+      await tester.tap(find.byTooltip('Open navigation menu'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Podcasts'));
+      final podcastMenuPosition = tester.getTopLeft(
+          find.byKey(const ValueKey('library_navigation_podcasts')));
+      expect(find.text('Reconnect to server'), findsOneWidget);
+      expect(find.text('Change server'), findsOneWidget);
+      expect(find.text('Sign out'), findsOneWidget);
+      await tester
+          .tap(find.byKey(const ValueKey('library_navigation_podcasts')));
       await tester.pumpAndSettle();
       expect(find.text('Saved episode'), findsOneWidget);
       expect(find.text('Resume'), findsOneWidget);
@@ -191,9 +197,15 @@ void main() {
             child:
                 MaterialApp.router(routerConfig: device.read(routerProvider))));
         await tester.pumpAndSettle();
-        await tester.tap(find.byTooltip('More options'));
+        await tester.tap(find.byTooltip('Open navigation menu'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Podcasts on this device'));
+        expect(
+            tester.getTopLeft(
+                find.byKey(const ValueKey('library_navigation_podcasts'))),
+            podcastMenuPosition);
+        expect(find.text('Settings'), findsOneWidget);
+        await tester
+            .tap(find.byKey(const ValueKey('library_navigation_podcasts')));
         await tester.pumpAndSettle();
         expect(find.text('Saved episode'), findsOneWidget);
         expect(find.text('Resume'), findsOneWidget);

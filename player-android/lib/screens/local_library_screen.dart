@@ -3,11 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../app_routes.dart';
-import 'podcast_list_screen.dart';
+import '../widgets/library_navigation_drawer.dart';
 import '../models/local_media.dart';
 import '../providers/local_library_provider.dart';
 import '../providers/personal_media_provider.dart';
-import '../widgets/overflow_menu.dart';
 import '../widgets/personal_media_actions.dart';
 import '../widgets/server_switch_button.dart';
 import '../providers/settings_provider.dart';
@@ -40,38 +39,28 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
             icon: const Icon(Icons.add),
           ),
           const ServerSwitchButton(),
-          OverflowMenuButton(items: (_) => [
-                OverflowMenuItem(
-                  key: const Key('local_podcasts'),
-                  icon: Icons.podcasts,
-                  label: 'Podcasts on this device',
-                  onSelected: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const PodcastListScreen(),
-                    ),
-                  ),
-                ),
-                OverflowMenuItem(
-                  key: const Key('local_downloads'),
-                  icon: Icons.download_outlined,
-                  label: 'Downloads',
-                  onSelected: () => context.push(AppRoutes.offlineDownloads),
-                ),
-                OverflowMenuItem(
-                  key: const Key('local_connect_server_menu'),
-                  icon: Icons.cloud_outlined,
-                  label: 'Connect to server',
-                  onSelected: () => context.push(AppRoutes.server),
-                ),
-                OverflowMenuItem(
-                  key: const Key('local_settings_button'),
-                  icon: Icons.settings_outlined,
-                  label: 'Settings',
-                  onSelected: () => context.push(AppRoutes.settings),
-                ),
-              ]),
         ],
       ),
+      drawer: LibraryNavigationDrawer(children: [
+        ListTile(
+          key: const Key('local_connect_server_menu'),
+          leading: const Icon(Icons.cloud_outlined),
+          title: const Text('Connect to server'),
+          onTap: () {
+            Navigator.of(context).pop();
+            context.push(AppRoutes.server);
+          },
+        ),
+        ListTile(
+          key: const Key('local_settings_button'),
+          leading: const Icon(Icons.settings_outlined),
+          title: const Text('Settings'),
+          onTap: () {
+            Navigator.of(context).pop();
+            context.push(AppRoutes.settings);
+          },
+        ),
+      ]),
       body: library.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _LibraryError(

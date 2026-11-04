@@ -375,6 +375,15 @@ void main() {
     for (final entry in destinations.entries) {
       await tester.tap(find.byTooltip('Open navigation menu'));
       await tester.pumpAndSettle();
+      expect(
+          tester
+              .getTopLeft(
+                  find.byKey(const ValueKey('library_navigation_podcasts')))
+              .dy,
+          lessThan(tester
+              .getTopLeft(
+                  find.byKey(const ValueKey('library_navigation_downloads')))
+              .dy));
       await tester.scrollUntilVisible(find.text(entry.key), 200,
           scrollable: find.descendant(
               of: find.byType(Drawer), matching: find.byType(Scrollable)));

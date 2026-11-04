@@ -140,9 +140,9 @@ void main() {
           AppRoutes.offlineDownloads);
       expect(find.text('Offline downloads'), findsOneWidget);
     }
-    await tester.tap(find.byTooltip('Offline account'));
+    await tester.tap(find.byTooltip('Open navigation menu'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Podcasts'));
+    await tester.tap(find.byKey(const ValueKey('library_navigation_podcasts')));
     await tester.pumpAndSettle();
     expect(find.text('All podcast episodes'), findsOneWidget);
     expect(await container.read(podcastScopeProvider.future),

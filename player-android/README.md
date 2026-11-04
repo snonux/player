@@ -126,8 +126,9 @@ from the publisher are labeled unavailable. **Refresh feeds** repairs older
 cached summaries and fetches newly supported episode covers; existing episode
 identities, progress and downloads are retained.
 
-Open **Podcasts** from the server menu or **Podcasts on this device** from
-the local library. Subscribe using a publisher feed URL and use **Refresh feeds**
+Open **Podcasts** from the left navigation menu in connected, device, or
+unlocked offline-account mode. **Podcasts** and **Downloads** keep the same
+labels and positions in each menu. Subscribe using a publisher feed URL and use **Refresh feeds**
 or a podcast's **Refresh feed** menu to fetch metadata directly. Subscription
 folders and **All podcast episodes** work without login or a reachable server.
 Episode lists show newest publication first, with Previous/Next page controls.
@@ -272,7 +273,7 @@ in Android's secure storage; account passwords are never saved. Switching server
 login and preserves each server's saved credential. Logout removes the selected
 server's credential. Expired/revoked tokens require password sign-in.
 
-For podcasts, **Use files on this device → menu → Podcasts on this device**
+For podcasts, **Use files on this device → left navigation menu → Podcasts**
 reopens the last cached podcast library without signing in or unlocking an
 account. The **Library** selector switches between cached accounts and
 **Device-only podcasts** without combining their subscriptions or listening
@@ -285,7 +286,7 @@ Offline listening changes stay with that cached account and sync when you later
 sign in to the same account.
 
 If the server is unreachable (including a gateway outage), fingerprint unlock
-opens **Offline downloads** for that saved server/account. Open its menu →
+opens **Offline downloads** for that saved server/account. Open the left navigation menu →
 **Podcasts** to resume downloaded episodes from the same account’s saved position.
 Podcast audio and progress remain on the device through app restarts; server
 sync resumes after reconnecting. Only complete matching

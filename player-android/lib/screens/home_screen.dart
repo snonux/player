@@ -16,6 +16,7 @@ import '../providers/api_client_provider.dart';
 import '../library_navigation.dart';
 import '../widgets/authenticated_network_image.dart';
 import '../widgets/global_sync_status.dart';
+import '../widgets/library_navigation_drawer.dart';
 import '../widgets/network_svg_image.dart';
 import '../widgets/server_switch_button.dart';
 import '../widgets/thumbnail_zoom.dart';
@@ -184,75 +185,60 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
     return Scaffold(
       bottomNavigationBar: const MusicMiniPlayer(),
       appBar: _buildAppBar(context),
-      drawer: Drawer(
-        child: SafeArea(
-          child: ListView(
-            children: [
-              ListTile(title: Text(context.tr('Library'))),
-              ListTile(
-                key: const Key('server_switch_to_local'),
-                leading: const Icon(Icons.phone_android),
-                title: const Text('On this device'),
-                onTap: () async {
-                  Navigator.of(context).pop();
-                  await switchToLocalLibrary(ref, context);
-                },
-              ),
-              const AllMusicViews(closeDrawer: true),
-              for (final destination in [
-                (
-                  Icons.download_outlined,
-                  'Downloads',
-                  AppRoutes.offlineDownloads
-                ),
-                (
-                  Icons.history,
-                  'Continue Watching',
-                  AppRoutes.continueWatching
-                ),
-                (Icons.radio, 'Web radio', AppRoutes.radio),
-                (
-                  Icons.album_outlined,
-                  context.tr('Music · Albums'),
-                  AppRoutes.musicAlbums
-                ),
-                (
-                  Icons.library_music,
-                  context.tr('Music · Playlists'),
-                  AppRoutes.musicPlaylists
-                ),
-                (
-                  Icons.people_outline,
-                  context.tr('Music · Artists'),
-                  AppRoutes.musicArtists
-                ),
-                (Icons.podcasts, 'Podcasts', AppRoutes.podcasts),
-                (Icons.share_outlined, 'My Shares', AppRoutes.shares),
-                (
-                  Icons.settings_outlined,
-                  context.tr('Settings'),
-                  AppRoutes.settings
-                ),
-              ].where((destination) => !MusicCollection.values.any((section) =>
-                  section.route == destination.$3 &&
-                  hiddenMusicSections.contains(section))))
-                ListTile(
-                  key: destination.$3 == AppRoutes.settings
-                      ? const Key('home_settings_button')
-                      : null,
-                  leading: Icon(destination.$1),
-                  title: Text(destination.$2),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    context.push(destination.$3);
-                  },
-                ),
-              const Divider(),
-              const GlobalSyncMenuTile(),
-              const PreviewSizeMenuItems(),
-            ],
+      drawer: LibraryNavigationDrawer(
+        children: [
+          ListTile(
+            key: const Key('server_switch_to_local'),
+            leading: const Icon(Icons.phone_android),
+            title: const Text('On this device'),
+            onTap: () async {
+              Navigator.of(context).pop();
+              await switchToLocalLibrary(ref, context);
+            },
           ),
-        ),
+          const AllMusicViews(closeDrawer: true),
+          for (final destination in [
+            (Icons.history, 'Continue Watching', AppRoutes.continueWatching),
+            (Icons.radio, 'Web radio', AppRoutes.radio),
+            (
+              Icons.album_outlined,
+              context.tr('Music · Albums'),
+              AppRoutes.musicAlbums
+            ),
+            (
+              Icons.library_music,
+              context.tr('Music · Playlists'),
+              AppRoutes.musicPlaylists
+            ),
+            (
+              Icons.people_outline,
+              context.tr('Music · Artists'),
+              AppRoutes.musicArtists
+            ),
+            (Icons.share_outlined, 'My Shares', AppRoutes.shares),
+            (
+              Icons.settings_outlined,
+              context.tr('Settings'),
+              AppRoutes.settings
+            ),
+          ].where((destination) => !MusicCollection.values.any((section) =>
+              section.route == destination.$3 &&
+              hiddenMusicSections.contains(section))))
+            ListTile(
+              key: destination.$3 == AppRoutes.settings
+                  ? const Key('home_settings_button')
+                  : null,
+              leading: Icon(destination.$1),
+              title: Text(destination.$2),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.push(destination.$3);
+              },
+            ),
+          const Divider(),
+          const GlobalSyncMenuTile(),
+          const PreviewSizeMenuItems(),
+        ],
       ),
       body: Column(children: [
         ConstrainedBox(

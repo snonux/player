@@ -1,1 +1,1 @@
-Podcast show notes now appear in the player, including cached notes while offline. Device mode reopens your cached podcast subscriptions without signing in. Use the Library selector to switch between saved accounts and device-only podcasts.
+Podcasts and Downloads now appear in the same left navigation menu, with the same labels and positions, whether connected to a server, using an offline account, or browsing device files. Reconnect and account actions remain available below.

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../app_routes.dart';
+import '../widgets/library_navigation_drawer.dart';
 import '../models/offline_media.dart';
 import '../providers/offline_downloads_provider.dart';
 import '../providers/personal_media_provider.dart';
@@ -39,46 +40,51 @@ class _OfflineDownloadsScreenState
       appBar: AppBar(
           title: Text(offline ? 'Offline downloads' : 'Downloads'),
           actions: [
-            if (offline)
-              PopupMenuButton<String>(
-                tooltip: 'Offline account',
-                icon: const Icon(Icons.menu),
-                onSelected: (action) async {
-                  if (action == 'podcasts') {
-                    await context.push(AppRoutes.podcasts);
-                    return;
-                  }
-                  final auth = ref.read(authStateProvider.notifier);
-                  if (action == 'retry') {
-                    final connected = await auth.reconnectSavedAccount();
-                    if (context.mounted && !connected) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          content: Text(
-                              'Could not reconnect. Retry or sign in again.')));
-                    }
-                  } else if (action == 'switch') {
-                    await auth
-                        .switchServer(ref.read(playerBaseUrlProvider).origin);
-                    if (context.mounted) context.go(AppRoutes.server);
-                  } else {
-                    await auth.logout();
-                    if (context.mounted) context.go(AppRoutes.login);
-                  }
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'podcasts', child: Text('Podcasts')),
-                  PopupMenuItem(
-                      value: 'retry', child: Text('Reconnect to server')),
-                  PopupMenuItem(value: 'switch', child: Text('Change server')),
-                  PopupMenuItem(value: 'logout', child: Text('Sign out')),
-                ],
-              ),
             if (!offline)
               IconButton(
                   tooltip: 'On this device',
                   icon: const Icon(Icons.phone_android),
                   onPressed: () => context.go(AppRoutes.localLibrary)),
           ]),
+      drawer: LibraryNavigationDrawer(children: [
+        if (offline) ...[
+          ListTile(
+            leading: const Icon(Icons.refresh),
+            title: const Text('Reconnect to server'),
+            onTap: () async {
+              Navigator.of(context).pop();
+              final connected = await ref
+                  .read(authStateProvider.notifier)
+                  .reconnectSavedAccount();
+              if (context.mounted && !connected) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content:
+                        Text('Could not reconnect. Retry or sign in again.')));
+              }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.dns_outlined),
+            title: const Text('Change server'),
+            onTap: () async {
+              Navigator.of(context).pop();
+              await ref
+                  .read(authStateProvider.notifier)
+                  .switchServer(ref.read(playerBaseUrlProvider).origin);
+              if (context.mounted) context.go(AppRoutes.server);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('Sign out'),
+            onTap: () async {
+              Navigator.of(context).pop();
+              await ref.read(authStateProvider.notifier).logout();
+              if (context.mounted) context.go(AppRoutes.login);
+            },
+          ),
+        ],
+      ]),
       body: Column(children: [
         Padding(
             padding: const EdgeInsets.all(16),
