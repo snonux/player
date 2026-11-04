@@ -184,11 +184,17 @@ class _StandalonePodcastsScreenState
                           : ListView(children: [
                               for (final feed in items)
                                 ListTile(
-                                    leading: PodcastArtwork(
-                                        imageUrl: feed['image_url'] as String? ??
-                                            '',
-                                        title: feed['title'] as String),
-                                    title: Text(feed['title'] as String),
+                                    title: Row(children: [
+                                      PodcastArtwork(
+                                          imageUrl:
+                                              feed['image_url'] as String? ??
+                                                  '',
+                                          title: feed['title'] as String,
+                                          size: 88),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                          child: Text(feed['title'] as String)),
+                                    ]),
                                     subtitle: Text(
                                         feed['last_error'] as String? ??
                                             feed['fetch_url'] as String),
@@ -549,28 +555,33 @@ class _LocalPodcastEpisodesScreenState
                   for (final e in rows.take(40))
                     ListTile(
                       key: ValueKey((e['feed_key'], e['episode_key'])),
-                      leading: ColorFiltered(
-                          colorFilter: ColorFilter.mode(
-                              e['completed'] == 1
-                                  ? Colors.grey
-                                  : Colors.transparent,
-                              e['completed'] == 1
-                                  ? BlendMode.saturation
-                                  : BlendMode.dst),
-                          child: Opacity(
-                              opacity: e['completed'] == 1 ? 0.5 : 1,
-                              child: PodcastArtwork(
-                                  imageUrl: e['image_url'] as String? ?? '',
-                                  fallbackUrl:
-                                      e['feed_image_url'] as String? ?? '',
-                                  title: e['title'] as String))),
-                      title: Text(e['title'] as String,
-                          style: e['completed'] == 1
-                              ? TextStyle(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant)
-                              : null),
+                      title: Row(children: [
+                        ColorFiltered(
+                            colorFilter: ColorFilter.mode(
+                                e['completed'] == 1
+                                    ? Colors.grey
+                                    : Colors.transparent,
+                                e['completed'] == 1
+                                    ? BlendMode.saturation
+                                    : BlendMode.dst),
+                            child: Opacity(
+                                opacity: e['completed'] == 1 ? 0.5 : 1,
+                                child: PodcastArtwork(
+                                    imageUrl: e['image_url'] as String? ?? '',
+                                    fallbackUrl:
+                                        e['feed_image_url'] as String? ?? '',
+                                    title: e['title'] as String,
+                                    size: 88))),
+                        const SizedBox(width: 16),
+                        Expanded(
+                            child: Text(e['title'] as String,
+                                style: e['completed'] == 1
+                                    ? TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant)
+                                    : null)),
+                      ]),
                       subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [

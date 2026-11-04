@@ -1,2 +1,1 @@
-Videos continue to the next clip and keep fullscreen. Folder playback supports shuffle without restarting the current track.
-The library checks for new files at startup and every 30 seconds by default. Quick scans defer existing thumbnail repairs to manual Rescan.
+Larger podcast covers in the podcast and episode lists make artwork easier to see. Listened episodes keep their greyed-out covers.
