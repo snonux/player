@@ -15,7 +15,7 @@ jobs:
         shell: bash
         working-directory: player-android
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Read pinned Flutter version
         id: version
