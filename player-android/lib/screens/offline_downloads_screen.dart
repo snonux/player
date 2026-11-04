@@ -44,6 +44,10 @@ class _OfflineDownloadsScreenState
                 tooltip: 'Offline account',
                 icon: const Icon(Icons.menu),
                 onSelected: (action) async {
+                  if (action == 'podcasts') {
+                    await context.push(AppRoutes.podcasts);
+                    return;
+                  }
                   final auth = ref.read(authStateProvider.notifier);
                   if (action == 'retry') {
                     final connected = await auth.reconnectSavedAccount();
@@ -62,6 +66,7 @@ class _OfflineDownloadsScreenState
                   }
                 },
                 itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'podcasts', child: Text('Podcasts')),
                   PopupMenuItem(
                       value: 'retry', child: Text('Reconnect to server')),
                   PopupMenuItem(value: 'switch', child: Text('Change server')),
@@ -78,7 +83,7 @@ class _OfflineDownloadsScreenState
         Padding(
             padding: const EdgeInsets.all(16),
             child: Text(offline
-                ? 'Server unavailable. Only this account’s saved files are shown. Playback progress syncs after reconnecting.'
+                ? 'Server unavailable. This account’s saved files and podcasts are available. Playback progress syncs after reconnecting.'
                 : 'Play saved files without signing in or connecting. Removing a download keeps the server file.')),
         TextButton.icon(
             icon: const Icon(Icons.library_music),

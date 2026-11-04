@@ -106,9 +106,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (offlineAuth?.isOffline == true) {
         coldEntry = false;
         // Evaluate before the public/local bypass: an unlocked saved account
-        // exposes only its saved files, never admin or remote player routes.
+        // exposes its saved files and cached podcasts. Podcast playback uses
+        // device downloads and scoped local progress; remote routes stay gated.
         final allowed = location == AppRoutes.offlineDownloads ||
-            state.fullPath == AppRoutes.offlinePlayer;
+            state.fullPath == AppRoutes.offlinePlayer ||
+            location == AppRoutes.podcasts ||
+            state.fullPath == AppRoutes.podcastEpisodes;
         return allowed ? null : AppRoutes.offlineDownloads;
       }
       if (isShareViewerRoute || isPublicSetupRoute || isLocalRoute) {

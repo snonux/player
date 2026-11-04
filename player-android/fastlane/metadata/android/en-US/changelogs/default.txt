@@ -1,1 +1,1 @@
-Larger podcast covers in the podcast and episode lists make artwork easier to see. Listened episodes keep their greyed-out covers.
+Resume downloaded podcasts after restarting while your Player server is offline. Unlock your saved account, then open Offline downloads > menu > Podcasts. Listening progress stays on your device and syncs after reconnecting.

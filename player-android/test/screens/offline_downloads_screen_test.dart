@@ -1,3 +1,6 @@
+import 'package:player_android/providers/podcast_library_provider.dart';
+import 'package:player_android/services/podcast_repository.dart';
+import 'podcast_browsing_fakes.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:player_android/providers/first_run_provider.dart';
 import 'package:player_android/providers/settings_provider.dart';
@@ -95,10 +98,14 @@ void main() {
   });
 
   testWidgets(
-      'offline unlocked router confines remote, setup and public routes to saved files',
+      'offline unlocked router allows cached podcasts while confining remote routes',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
+    final podcasts = BrowsingRepository();
     final container = ProviderContainer(overrides: [
+      podcastRepositoryProvider.overrideWithValue(podcasts),
+      podcastDownloadsProvider
+          .overrideWith((ref) => BrowsingDownloads(podcasts)),
       authStateProvider.overrideWith(_OfflineAccount.new),
       settingsProvider.overrideWith(_OfflineSettings.new),
       firstRunProvider.overrideWith((ref) async => false),
@@ -133,6 +140,19 @@ void main() {
           AppRoutes.offlineDownloads);
       expect(find.text('Offline downloads'), findsOneWidget);
     }
+    await tester.tap(find.byTooltip('Offline account'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Podcasts'));
+    await tester.pumpAndSettle();
+    expect(find.text('All podcast episodes'), findsOneWidget);
+    expect(await container.read(podcastScopeProvider.future),
+        podcastAccountScope('https://saved.example:8443', 7));
+    expect(container.read(podcastServerMetadataProvider), isNull);
+    expect(await container.read(podcastServerSubscriptionsProvider.future),
+        isNull);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Offline downloads'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

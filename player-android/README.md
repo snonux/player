@@ -273,12 +273,20 @@ login and preserves each server's saved credential. Logout removes the selected
 server's credential. Expired/revoked tokens require password sign-in.
 
 If the server is unreachable (including a gateway outage), fingerprint unlock
-opens **Offline downloads** for that saved server/account. Only complete matching
+opens **Offline downloads** for that saved server/account. Open its menu →
+**Podcasts** to resume downloaded episodes from the same account’s saved position.
+Podcast audio and progress remain on the device through app restarts; server
+sync resumes after reconnecting. Only complete matching
 downloads and cached music appear, and playback uses local files. The account
 menu offers reconnect, server selection and sign-out. Progress stays on the
 device through restarts and syncs after the same saved account is accepted by
 the server again; network availability alone does not unlock server requests.
 A server rejection never grants offline access through the fingerprint fallback.
+
+Run `flutter test integration_test/offline_podcast_resume_test.dart -d emulator-5554`
+to check offline menu navigation, reopened podcast storage, native audio resume,
+and separate account progress with an unavailable publisher and server. This
+uses an already-unlocked test identity; it does not exercise biometric hardware.
 
 Credential gating and background audio integration are covered by automated
 client checks. Biometric hardware behavior has not been verified on a physical
