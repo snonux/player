@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:go_router/go_router.dart';
+import '../app_routes.dart';
 import 'podcast_discovery_screen.dart';
 import 'media_grid_screen.dart';
 import 'package:flutter/material.dart';
@@ -163,10 +165,10 @@ class _StandalonePodcastsScreenState
             ListTile(
                 leading: const Icon(Icons.folder_copy_outlined),
                 title: const Text('All podcast episodes'),
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => const LocalPodcastEpisodesScreen()))),
+                onTap: () => context.push(AppRoutes.podcasts)),
           Expanded(
               child: feeds.when(
+                  skipLoadingOnReload: true,
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
                   error: (_, __) => Center(
@@ -200,14 +202,13 @@ class _StandalonePodcastsScreenState
                                     subtitle: Text(
                                         feed['last_error'] as String? ??
                                             feed['fetch_url'] as String),
-                                    onTap: () => Navigator.of(context).push(
-                                        MaterialPageRoute<void>(
-                                            builder: (_) =>
-                                                LocalPodcastEpisodesScreen(
-                                                    feedKey: feed['feed_key']
-                                                        as String,
-                                                    title: feed['title']
-                                                        as String))),
+                                    onTap: () => context.push(Uri(
+                                            path: AppRoutes.podcastFeed,
+                                            queryParameters: {
+                                              'feed':
+                                                  feed['feed_key'] as String,
+                                              'title': feed['title'] as String
+                                            }).toString()),
                                     trailing: PopupMenuButton<String>(
                                         tooltip: 'Manage podcast',
                                         onSelected: (action) => run(() async {
@@ -269,6 +270,7 @@ class _LocalPodcastEpisodesScreenState
   final scroll = ScrollController();
   final pending = <String>{};
   bool refreshing = false;
+  bool checkingMissing = false;
   int refreshDone = 0, refreshTotal = 0, refreshGeneration = 0;
 
   @override
@@ -292,13 +294,27 @@ class _LocalPodcastEpisodesScreenState
   void reload() => ref.invalidate(podcastEpisodePageProvider);
 
   Future<void> refreshFeeds({bool missingOnly = false}) async {
+    if (missingOnly && (checkingMissing || refreshing)) return;
+    if (missingOnly) checkingMissing = true;
+    if (!missingOnly) {
+      setState(() {
+        refreshing = true;
+        refreshDone = 0;
+        refreshTotal = 0;
+        error = null;
+      });
+    }
     final generation = ++refreshGeneration;
     try {
       final repository = ref.read(podcastRepositoryProvider);
       final scope = await ref.read(podcastScopeProvider.future);
       if (!mounted || generation != refreshGeneration) return;
-      if (!missingOnly) ref.invalidate(podcastServerSubscriptionsProvider);
-      await ref.read(podcastServerSubscriptionsProvider.future);
+      if (!missingOnly) {
+        ref.invalidate(podcastServerSubscriptionsProvider);
+        unawaited(ref
+            .read(podcastServerSubscriptionsProvider.future)
+            .then<void>((_) {}, onError: (Object _, StackTrace __) {}));
+      }
       final currentScope = await ref.read(podcastScopeProvider.future);
       if (!mounted ||
           generation != refreshGeneration ||
@@ -308,13 +324,13 @@ class _LocalPodcastEpisodesScreenState
       final keys = widget.feedKey != null
           ? [widget.feedKey!]
           : missingOnly
-              ? await repository.uncachedSubscriptions(scope)
+              ? await repository.missingSubscriptions(scope)
               : (await repository.subscriptions(scope))
                   .map((s) => s['feed_key'] as String)
                   .toList();
-      if (!mounted || generation != refreshGeneration) return;
+      if (!mounted || generation != refreshGeneration || keys.isEmpty) return;
       setState(() {
-        refreshing = keys.isNotEmpty;
+        refreshing = true;
         refreshDone = 0;
         refreshTotal = keys.length;
         error = null;
@@ -375,6 +391,11 @@ class _LocalPodcastEpisodesScreenState
           error =
               'Could not refresh feeds. Cached episodes remain available. Retry refresh.';
         });
+      }
+    } finally {
+      if (missingOnly) checkingMissing = false;
+      if (mounted && generation == refreshGeneration && refreshing) {
+        setState(() => refreshing = false);
       }
     }
   }
@@ -474,6 +495,11 @@ class _LocalPodcastEpisodesScreenState
         }
       }
     });
+    ref.listen(podcastSubscriptionsProvider, (_, next) {
+      if (widget.feedKey == null && next.hasValue && !next.isLoading) {
+        unawaited(refreshFeeds(missingOnly: true));
+      }
+    });
     final episodes =
         ref.watch(podcastEpisodePageProvider((widget.feedKey, filter, offset)));
     return Scaffold(
@@ -519,7 +545,10 @@ class _LocalPodcastEpisodesScreenState
               padding: const EdgeInsets.all(8),
               child: Text(widget.syncMessage!)),
         if (refreshing) const LinearProgressIndicator(),
-        if (refreshing) Text('Refreshing feeds $refreshDone of $refreshTotal'),
+        if (refreshing)
+          Text(refreshTotal == 0
+              ? 'Updating podcasts…'
+              : 'Refreshing feeds $refreshDone of $refreshTotal'),
         if (widget.feedKey == null)
           const Padding(
               padding: EdgeInsets.all(8),

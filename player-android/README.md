@@ -121,7 +121,8 @@ fallback), the publication date, and expandable **Show notes**. Artwork uses a
 public disk cache without Player credentials; downloaded server copies retain
 existing embedded/server thumbnails if publisher images are missing or fail.
 Artwork never blocks browsing or playback. Notes are selectable text with readable paragraphs and
-copyable publisher URLs, rather than executable publisher HTML. Dates absent
+underlined HTTP(S) publisher links that open the browser, rather than executable
+publisher HTML. Links have comfortable touch targets and keyboard focus. Dates absent
 from the publisher are labeled unavailable. **Refresh feeds** repairs older
 cached summaries and fetches newly supported episode covers; existing episode
 identities, progress and downloads are retained.
@@ -132,6 +133,15 @@ labels and positions in each menu. Subscribe using a publisher feed URL and use 
 or a podcast's **Refresh feed** menu to fetch metadata directly. Subscription
 folders and **All podcast episodes** work without login or a reachable server.
 Episode lists show newest publication first, with Previous/Next page controls.
+Opening a list reads the device cache first. Already cached feeds, including
+feeds without publication dates, previously failed feeds, and checked empty
+feeds are not fetched again just because the screen opens. New subscriptions
+can hydrate missing metadata in the background; signed-in subscription sync
+also runs separately. **Reload episodes** or **Refresh feeds** explicitly
+updates publisher data without waiting for server sync. Cached rows remain
+visible throughout. Podcast feed pages and playback share the app navigation
+stack: Back returns to the episode list, retaining its filter, page, and scroll.
+
 Individual podcasts retain **Uncompleted** (including started episodes),
 **Completed**, and **All** filters. **All podcast episodes** always includes
 listened episodes, with muted titles/artwork and a **Listened** label. It names
@@ -296,10 +306,12 @@ device through restarts and syncs after the same saved account is accepted by
 the server again; network availability alone does not unlock server requests.
 A server rejection never grants offline access through the fingerprint fallback.
 
-Run `flutter test integration_test/offline_podcast_resume_test.dart -d emulator-5554`
-to check offline menu navigation, reopened podcast storage, native audio resume,
-and separate account progress with an unavailable publisher and server. This
-uses an already-unlocked test identity; it does not exercise biometric hardware.
+Run `python3 integration_test/support/run_offline_podcast_resume.py --device emulator-5554`
+on a disposable Google APIs emulator with Chrome to check offline menu navigation,
+reopened storage, native audio resume, browser launch for both HTTP and HTTPS
+notes links, and Back from the player and a feed. The host runner verifies browser
+intents and returns from Chrome, including its first-run screen. This uses test
+identities; it does not exercise biometric hardware.
 
 Credential gating and background audio integration are covered by automated
 client checks. Biometric hardware behavior has not been verified on a physical

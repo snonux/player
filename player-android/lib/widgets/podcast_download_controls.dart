@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/podcast_library_provider.dart';
-import '../screens/audio_player_screen.dart';
+import 'package:go_router/go_router.dart';
+import '../app_routes.dart';
 import '../services/podcast_downloads.dart';
 import 'overflow_menu.dart';
 
@@ -83,11 +84,7 @@ class PodcastDownloadControlsState
             .playbackRequest(scope, widget.feed, widget.episode,
                 fromBeginning: fromBeginning);
         if (!mounted) return;
-        await Navigator.of(context).push(MaterialPageRoute<void>(
-            builder: (_) => AudioPlayerScreen(
-                mediaId: request.identity,
-                mediaTitle: request.title,
-                request: request)));
+        await context.push<void>(AppRoutes.podcastPlayer, extra: request);
         if (mounted) widget.onPlaybackReturn?.call();
       });
 

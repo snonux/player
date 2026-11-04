@@ -1,1 +1,1 @@
-Podcasts and Downloads now appear in the same left navigation menu, with the same labels and positions, whether connected to a server, using an offline account, or browsing device files. Reconnect and account actions remain available below.
+Podcast lists show cached episodes first and keep them visible during background updates. Cached undated or previously unavailable feeds no longer reload on every open. HTTP and HTTPS links in show notes open your browser. Back from podcast playback returns to the episode list.

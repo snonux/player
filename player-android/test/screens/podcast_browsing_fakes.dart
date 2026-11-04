@@ -1,3 +1,7 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:player_android/podcast_routes.dart';
+import 'package:player_android/services/podcast_sync.dart';
 import 'package:player_android/services/podcast_server_metadata.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -17,6 +21,9 @@ class BrowsingRepository extends PodcastRepository {
   List<String> missingFeeds = [];
   final refreshed = <String>[];
   final failedFeeds = <String>{};
+  @override
+  Future<List<String>> missingSubscriptions(String scope) async =>
+      missingFeeds.where((key) => !refreshed.contains(key)).toList();
   @override
   Future<List<String>> uncachedSubscriptions(String scope) async =>
       missingFeeds;
@@ -107,8 +114,11 @@ class BrowsingDownloads extends PodcastDownloads {
 Widget browsingApp(Widget screen, BrowsingRepository repository,
         {BrowsingStore? store,
         Future<String> Function(Ref)? scope,
-        PodcastServerMetadata? serverMetadata}) =>
+        PodcastServerMetadata? serverMetadata,
+        Future<PodcastSyncResult?>? serverSync}) =>
     ProviderScope(overrides: [
+      if (serverSync != null)
+        podcastServerSubscriptionsProvider.overrideWith((ref) => serverSync),
       podcastRepositoryProvider.overrideWithValue(repository),
       podcastServerMetadataProvider.overrideWithValue(serverMetadata),
       podcastScopeProvider
@@ -120,4 +130,13 @@ Widget browsingApp(Widget screen, BrowsingRepository repository,
       // Any legacy server browse/download/login dependency fails this test.
       apiClientProvider.overrideWith(
           (ref) => throw StateError('Server API must not be used')),
-    ], child: MaterialApp(home: screen));
+    ], child: podcastRoutingApp(screen));
+
+Widget podcastRoutingApp(Widget screen) {
+  final router = GoRouter(initialLocation: '/test', routes: [
+    GoRoute(path: '/test', builder: (_, __) => screen),
+    ...podcastRoutes(),
+  ]);
+  addTearDown(router.dispose);
+  return MaterialApp.router(routerConfig: router);
+}

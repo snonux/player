@@ -84,3 +84,39 @@ String podcastShowNotesText(String source) {
       .replaceAll(RegExp(r'\n{3,}'), '\n\n')
       .trim();
 }
+
+/// Split already-sanitized notes into prose and safe HTTP(S) destinations.
+List<({String text, String? url})> podcastShowNotesSegments(String text) {
+  final parts = <({String text, String? url})>[];
+  var offset = 0;
+  for (final match
+      in RegExp(r'''https?://[^\s<>"\x00-\x1f]+''', caseSensitive: false)
+          .allMatches(text)) {
+    var end = match.end;
+    while (end > match.start && '.,;:!?'.contains(text[end - 1])) {
+      end--;
+    }
+    for (final pair in const [('(', ')'), ('[', ']'), ('{', '}')]) {
+      while (end > match.start && text[end - 1] == pair.$2) {
+        final candidate = text.substring(match.start, end);
+        if (pair.$2.allMatches(candidate).length <=
+            pair.$1.allMatches(candidate).length) {
+          break;
+        }
+        end--;
+      }
+    }
+    final candidate = text.substring(match.start, end);
+    final url = podcastArtworkUrl(candidate);
+    if (url.isEmpty) continue;
+    if (match.start > offset) {
+      parts.add((text: text.substring(offset, match.start), url: null));
+    }
+    parts.add((text: candidate, url: url));
+    offset = end;
+  }
+  if (offset < text.length) {
+    parts.add((text: text.substring(offset), url: null));
+  }
+  return parts;
+}

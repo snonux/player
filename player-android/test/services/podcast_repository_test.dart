@@ -26,6 +26,28 @@ void main() {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
   test(
+      'undated, errored and checked-empty feeds are cached for opening the library',
+      () async {
+    final repo = PodcastRepository(
+        databasePath: inMemoryDatabasePath, fetcher: FixtureFetcher());
+    try {
+      final feed = await repo.subscribe('local', 'https://example.com/feed');
+      expect(await repo.uncachedSubscriptions('local'), [feed]);
+      expect(await repo.missingSubscriptions('local'), isEmpty);
+      final db = await repo.database;
+      await db.update('podcast_feeds', {'last_error': 'Offline'},
+          where: 'feed_key=?', whereArgs: [feed]);
+      expect(await repo.missingSubscriptions('local'), isEmpty);
+      await db.delete('podcast_episodes');
+      expect(await repo.missingSubscriptions('local'), isEmpty);
+      await db.update(
+          'podcast_feeds', {'last_checked_ms': null, 'last_error': null});
+      expect(await repo.missingSubscriptions('local'), [feed]);
+    } finally {
+      await repo.close();
+    }
+  });
+  test(
       'existing zero-date cache refreshes without validators and retains history and copies',
       () async {
     final directory =

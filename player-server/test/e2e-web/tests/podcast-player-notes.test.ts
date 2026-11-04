@@ -7,7 +7,7 @@ test('podcast player displays safe notes and clears them on track change', async
   wav.writeUInt16LE(2,32); wav.writeUInt16LE(16,34); wav.write('data',36); wav.writeUInt32LE(wav.length-44,40);
   await page.route(audio,r=>r.fulfill({contentType:'audio/wav',headers:{'Access-Control-Allow-Origin':'*'},body:wav}));
   await page.route(feed,r=>r.fulfill({contentType:'application/rss+xml',headers:{'Access-Control-Allow-Origin':'*'},body:
-    `<rss><channel><title>Notes podcast</title><item><guid>one</guid><title>Notes episode</title><description><![CDATA[<p>Episode summary.</p><script>window.notesUnsafe=true</script><p><a href="https://publisher.example/notes">Publisher link</a></p>${'<p>Long episode notes.</p>'.repeat(40)}]]></description><enclosure url="${audio}"/></item></channel></rss>`}));
+    `<rss><channel><title>Notes podcast</title><item><guid>one</guid><title>Notes episode</title><description><![CDATA[<p>Episode summary.</p><script>window.notesUnsafe=true</script><p><a href="https://publisher.example/notes">Publisher link</a></p><p><a href="http://publisher.example/http-notes">HTTP link</a></p>${'<p>Long episode notes.</p>'.repeat(40)}]]></description><enclosure url="${audio}"/></item></channel></rss>`}));
   await page.goto('/index.html?local=podcasts');
   page.once('dialog',d=>d.accept(feed));
   await page.getByRole('button',{name:'Add feed URL',exact:true}).click();
@@ -17,6 +17,14 @@ test('podcast player displays safe notes and clears them on track change', async
   await expect(notes).toContainText('Episode summary.');
   await expect(notes.locator('details')).toHaveAttribute('open','');
   await expect(notes.getByRole('link',{name:'https://publisher.example/notes'})).toHaveAttribute('href','https://publisher.example/notes');
+  for (const url of ['https://publisher.example/notes', 'http://publisher.example/http-notes']) {
+    await page.context().route(url, route => route.fulfill({contentType:'text/html',body:'Publisher page'}));
+    const popupPromise = page.waitForEvent('popup');
+    await notes.getByRole('link',{name:url,exact:true}).click();
+    const popup = await popupPromise;
+    await expect(popup).toHaveURL(url);
+    await popup.close();
+  }
   expect(await page.evaluate(()=>(window as any).notesUnsafe)).toBeUndefined();
   await expect(notes.locator('script')).toHaveCount(0);
   for(const viewport of [{width:390,height:844},{width:844,height:390}]) {

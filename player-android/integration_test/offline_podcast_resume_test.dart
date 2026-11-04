@@ -75,6 +75,14 @@ Uint8List _audio() {
   return wav.buffer.asUint8List();
 }
 
+Future<void> waitForWidget(WidgetTester tester, Finder finder) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 10));
+  while (finder.evaluate().isEmpty && DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  expect(finder, findsOneWidget);
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
@@ -87,7 +95,7 @@ void main() {
     publisher.listen((request) async {
       if (request.uri.path == '/feed') {
         request.response.write(
-            '<rss><channel><title>Saved podcast</title><item><title>Saved episode</title><guid>one</guid><description>Cached episode show notes.</description><enclosure url="$publisherOrigin/audio.wav"/><duration>60</duration></item></channel></rss>');
+            '<rss><channel><title>Saved podcast</title><item><title>Saved episode</title><guid>one</guid><description><![CDATA[<p>Cached episode show notes.</p><p>http://127.0.0.1:9/episode-notes</p><p>https://offline-podcast.invalid/episode-notes</p>]]></description><enclosure url="$publisherOrigin/audio.wav"/><duration>60</duration></item></channel></rss>');
       } else {
         request.response.headers.contentType = ContentType('audio', 'wav');
         request.response.add(_audio());
@@ -208,7 +216,7 @@ void main() {
             .tap(find.byKey(const ValueKey('library_navigation_podcasts')));
         await tester.pumpAndSettle();
         expect(find.text('Saved episode'), findsOneWidget);
-        expect(find.text('Resume'), findsOneWidget);
+        await waitForWidget(tester, find.text('Resume'));
         expect(await device.read(podcastScopeProvider.future), scope);
         expect(device.read(authStateProvider).requireValue.isUnauthenticated,
             isTrue);
@@ -224,7 +232,7 @@ void main() {
         await tester.tap(find.widgetWithText(CheckedPopupMenuItem<String>,
             'listener · offline-podcast.invalid'));
         await tester.pumpAndSettle();
-        expect(find.text('Resume'), findsOneWidget);
+        await waitForWidget(tester, find.text('Resume'));
         final localRequest = await deviceDownloads.playbackRequest(
             await device.read(podcastScopeProvider.future), feed, episode);
         final position = await localRequest.readPosition!();
@@ -232,7 +240,8 @@ void main() {
         await tester.tap(find.text('Resume'));
         await tester.pumpAndSettle();
         expect(find.text('Show notes'), findsOneWidget);
-        expect(find.text('Cached episode show notes.'), findsOneWidget);
+        expect(
+            find.textContaining('Cached episode show notes.'), findsOneWidget);
         final resumedDeadline = DateTime.now().add(const Duration(seconds: 10));
         while (
             player.position.inMilliseconds < (position! * 1000).round() + 500 &&
@@ -242,6 +251,40 @@ void main() {
         await player.pause();
         expect(player.position.inMilliseconds,
             greaterThan((position * 1000).round()));
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.text('All podcast episodes'), findsOneWidget);
+        await waitForWidget(tester, find.text('Resume'));
+        await tester.tap(find.text('Podcasts'));
+        await tester.pumpAndSettle();
+        await waitForWidget(tester, find.text('Saved podcast'));
+        await tester.tap(find.text('Saved podcast'));
+        await tester.pumpAndSettle();
+        await waitForWidget(tester, find.text('Resume'));
+        await tester.tap(find.text('Resume'));
+        await tester.pumpAndSettle();
+        await player.pause();
+        for (final url in [
+          'http://127.0.0.1:9/episode-notes',
+          'https://offline-podcast.invalid/episode-notes'
+        ]) {
+          final link = find.widgetWithText(TextButton, url);
+          await tester.ensureVisible(link);
+          await tester.pumpAndSettle();
+          debugPrint('PODCAST_BROWSER_CHECK $url');
+          await tester.tap(link);
+          // Host verifies ACTION_VIEW reached the browser and returns with Back.
+          await tester
+              .runAsync(() => Future<void>.delayed(const Duration(seconds: 3)));
+          await tester.pumpAndSettle();
+        }
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.widgetWithText(AppBar, 'Saved podcast'), findsOneWidget);
+        await waitForWidget(tester, find.text('Resume'));
+        await tester.tap(find.byTooltip('Back'));
+        await tester.pumpAndSettle();
+        expect(find.text('Saved podcast'), findsOneWidget);
         expect(tester.takeException(), isNull);
       } finally {
         await tester.pumpWidget(const SizedBox());

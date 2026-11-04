@@ -32,10 +32,15 @@ void main() {
     expect(find.byType(SelectableText), findsNothing);
     await tester.tap(find.text('Show notes'));
     await tester.pumpAndSettle();
-    final text =
-        tester.widget<SelectableText>(find.byType(SelectableText)).data!;
+    final text = tester
+        .widgetList<RichText>(find.descendant(
+            of: find.byType(SelectionArea), matching: find.byType(RichText)))
+        .map((widget) => widget.text.toPlainText())
+        .join();
     expect(text, contains('First & second paragraph.'));
-    expect(text, contains('Publisher notes (https://example.com)'));
+    expect(text, contains('Publisher notes'));
+    expect(
+        find.widgetWithText(TextButton, 'https://example.com'), findsOneWidget);
     expect(text, isNot(contains('bad()')));
     expect(text, isNot(contains('<p>')));
     expect(tester.takeException(), isNull);

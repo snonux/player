@@ -375,6 +375,26 @@ class PodcastRepository {
     });
   }
 
+  /// Hydrate only feeds never checked on this device. An undated episode,
+  /// failed refresh, or successfully checked empty feed is still a local cache.
+  Future<List<String>> missingSubscriptions(String scope) async {
+    final db = await database;
+    final cached = <String>{};
+    for (final row in await db.rawQuery(
+        'SELECT f.feed_key,f.aliases FROM podcast_feeds f WHERE f.last_checked_ms IS NOT NULL OR EXISTS (SELECT 1 FROM podcast_episodes e WHERE e.feed_key=f.feed_key)')) {
+      for (final key in [
+        row['feed_key'] as String,
+        ...(jsonDecode(row['aliases'] as String) as List).cast<String>()
+      ]) {
+        cached.add(await resolveAccountKey(db, scope, 'feed', '', key));
+      }
+    }
+    return (await subscriptions(scope))
+        .map((s) => s['feed_key'] as String)
+        .where((key) => !cached.contains(key))
+        .toList();
+  }
+
   Future<List<String>> uncachedSubscriptions(String scope) async {
     final db = await database;
     final cached = <String>{};

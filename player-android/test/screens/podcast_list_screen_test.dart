@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:player_android/services/podcast_sync.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/screens/podcast_list_screen.dart';
@@ -5,6 +7,25 @@ import 'package:player_android/screens/podcast_episodes_screen.dart';
 import 'podcast_browsing_fakes.dart';
 
 void main() {
+  testWidgets(
+      'cached episodes stay usable while subscription synchronization is stalled',
+      (tester) async {
+    final gate = Completer<PodcastSyncResult?>();
+    final repository = BrowsingRepository();
+    await tester.pumpWidget(browsingApp(const PodcastListScreen(), repository,
+        serverSync: gate.future));
+    await tester.pumpAndSettle();
+    expect(find.text('Episode 0'), findsOneWidget);
+    expect(repository.refreshed, isEmpty);
+    await tester.tap(find.byTooltip('Reload episodes'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Episode 0'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(repository.refreshed, ['feed:example/feed']);
+    gate.complete(null);
+    await tester.pumpAndSettle();
+    expect(repository.refreshed, ['feed:example/feed']);
+  });
   testWidgets(
       'native Podcasts defaults to all episodes and keeps feeds available without a server API',
       (tester) async {

@@ -1,3 +1,4 @@
+import 'podcast_browsing_fakes.dart' show podcastRoutingApp;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -91,7 +92,7 @@ void main() {
       podcastRepositoryProvider.overrideWithValue(repository),
       podcastScopeProvider.overrideWith((ref) async => 'local'),
       podcastDownloadsProvider.overrideWith((ref) => downloads),
-    ], child: const MaterialApp(home: StandalonePodcastsScreen())));
+    ], child: podcastRoutingApp(const StandalonePodcastsScreen())));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Podcast'));
     await tester.pumpAndSettle();
@@ -135,7 +136,7 @@ void main() {
       podcastRepositoryProvider.overrideWithValue(repository),
       podcastScopeProvider.overrideWith((ref) async => 'local'),
       podcastDownloadsProvider.overrideWith((ref) => downloads),
-    ], child: const MaterialApp(home: StandalonePodcastsScreen())));
+    ], child: podcastRoutingApp(const StandalonePodcastsScreen())));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Podcast'));
     await tester.pumpAndSettle();

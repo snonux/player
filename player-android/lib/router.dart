@@ -27,8 +27,7 @@ import 'screens/image_viewer_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/media_detail_screen.dart';
 import 'screens/media_grid_screen.dart';
-import 'screens/podcast_episodes_screen.dart';
-import 'screens/podcast_list_screen.dart';
+import 'podcast_routes.dart';
 import 'screens/radio_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/share_screen.dart';
@@ -94,6 +93,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           location == AppRoutes.server || location == AppRoutes.settings;
       final isLocalRoute = location == AppRoutes.localLibrary ||
           location == AppRoutes.podcasts ||
+          location == AppRoutes.podcastFeed ||
+          location == AppRoutes.podcastPlayer ||
           state.fullPath == AppRoutes.podcastEpisodes ||
           state.fullPath == AppRoutes.localPlayer ||
           location == AppRoutes.offlineDownloads ||
@@ -111,6 +112,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         final allowed = location == AppRoutes.offlineDownloads ||
             state.fullPath == AppRoutes.offlinePlayer ||
             location == AppRoutes.podcasts ||
+            location == AppRoutes.podcastFeed ||
+            location == AppRoutes.podcastPlayer ||
             state.fullPath == AppRoutes.podcastEpisodes;
         return allowed ? null : AppRoutes.offlineDownloads;
       }
@@ -349,25 +352,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.radio,
         builder: (context, state) => const RadioScreen(),
       ),
-      GoRoute(
-        // Device subscriptions are available without server authentication.
-        // Podcast list screen — shows all sets with isPodcast == true.
-        path: AppRoutes.podcasts,
-        builder: (context, state) => PodcastListScreen(
-          serverSetId: int.tryParse(state.uri.queryParameters['setId'] ?? ''),
-          serverSetName: state.uri.queryParameters['name'],
-        ),
-      ),
-      GoRoute(
-        // Old numeric links open the standalone subscription picker.
-        path: AppRoutes.podcastEpisodes,
-        builder: (context, state) {
-          final raw = state.pathParameters['setId']!;
-          final setId = int.tryParse(raw) ?? 0;
-          final setName = state.uri.queryParameters['name'];
-          return PodcastEpisodesScreen(setId: setId, setName: setName);
-        },
-      ),
+      ...podcastRoutes(),
       GoRoute(
         path: AppRoutes.videoPlayer,
         builder: (context, state) {
