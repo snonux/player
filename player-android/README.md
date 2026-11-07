@@ -169,6 +169,15 @@ feed can use the selected server’s saved episode details. This imports metadat
 only; listening state, deletions and device downloads remain separate.
 Standalone browsing keeps using the publisher and the device cache.
 
+Choose **Select episodes** in the episode screen's menu, or hold an episode, to
+select several episodes in any list or grid. The selected-actions menu can mark
+them completed/uncompleted, delete episodes, or delete downloaded files from this
+device. Failed items stay selected so you can retry the action. Changing library,
+feed, filter or page clears selection; switching list/grid keeps it. Cancel or
+Back returns to browsing. Deleting episodes removes them from your podcast lists
+and removes their device downloads, retaining listening history; deleting only
+downloaded files keeps the episodes in your lists and never deletes server files.
+
 **Mark completed / Mark uncompleted** saves locally and queues synchronization
 for the selected account, retaining the saved position. Playing to the natural
 end marks an episode completed automatically; completed episodes leave the

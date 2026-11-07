@@ -156,9 +156,18 @@ void main() {
         const LocalPodcastEpisodesScreen(feedKey: 'feed:example/feed'),
         repository));
     await tester.pumpAndSettle();
+    final nextPage = find.widgetWithText(TextButton, 'Next page');
     await tester.dragUntilVisible(
-        find.text('Next page'), find.byType(ListView), const Offset(0, -500));
-    await tester.tap(find.text('Next page'));
+        nextPage, find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(nextPage);
+    await tester.pumpAndSettle();
+    final viewport = tester.getRect(find.byType(ListView));
+    final button = tester.getRect(nextPage);
+    expect(button.top, greaterThanOrEqualTo(viewport.top));
+    expect(button.bottom, lessThanOrEqualTo(viewport.bottom));
+    expect(nextPage.hitTestable(), findsOneWidget);
+    await tester.tap(nextPage);
     await tester.pumpAndSettle();
     expect(repository.queries.last.$3, 40);
     expect(find.text('Episode 40'), findsOneWidget);

@@ -289,6 +289,148 @@ class _LocalPodcastEpisodesScreenState
   String? error;
   final scroll = ScrollController();
   final pending = <String>{};
+  bool selecting = false, bulkBusy = false;
+  int selectionEpoch = 0;
+  final selected = <(String, String, String)>{};
+  List<Map<String, Object?>> visibleRows = [], selectionRows = [];
+  (String, String, String) episodeIdentity(Map<String, Object?> e) => (
+        e['browse_scope'] as String,
+        e['scope_feed_key'] as String,
+        e['scope_episode_key'] as String
+      );
+
+  void cancelSelection() {
+    if (bulkBusy) return;
+    setState(() {
+      selectionEpoch++;
+      selecting = false;
+      selected.clear();
+      selectionRows = [];
+    });
+    reload();
+  }
+
+  void selectEpisode(Map<String, Object?>? e) {
+    if (bulkBusy) return;
+    setState(() {
+      if (!selecting) {
+        selectionRows =
+            visibleRows.map((e) => Map<String, Object?>.of(e)).toList();
+      }
+      selecting = true;
+      if (e != null) {
+        final key = episodeIdentity(e);
+        if (!selected.add(key)) selected.remove(key);
+      }
+    });
+  }
+
+  Future<void> bulkAction(String action) async {
+    if (bulkBusy || selected.isEmpty) return;
+    final scope = ref.read(podcastScopeProvider).valueOrNull;
+    if (scope == null) return;
+    final credentials = ref.read(credentialMutationQueueProvider);
+    final generation = credentials.generation;
+    final epoch = selectionEpoch;
+    bool current() =>
+        mounted &&
+        selectionEpoch == epoch &&
+        credentials.generation == generation &&
+        ref.read(podcastScopeProvider).valueOrNull == scope;
+    final batch = selectionRows
+        .where((e) => selected.contains(episodeIdentity(e)))
+        .toList();
+    setState(() {
+      bulkBusy = true;
+      error = null;
+    });
+    if (action == 'delete' || action == 'remove-download') {
+      final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialog) => AlertDialog(
+                title: Text(action == 'delete'
+                    ? 'Delete ${batch.length} episodes?'
+                    : 'Delete ${batch.length} downloaded files?'),
+                content: Text(action == 'delete'
+                    ? 'Remove the selected episodes from your podcast lists and delete their downloads on this device. Listening history is kept.'
+                    : 'Delete the selected downloads from this device. Episodes and listening history stay in your library.'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialog, false),
+                      child: const Text('Cancel')),
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialog, true),
+                      child: const Text('Delete'))
+                ],
+              ));
+      if (!current()) {
+        if (mounted && selectionEpoch == epoch) {
+          setState(() {
+            bulkBusy = false;
+            selecting = false;
+            selected.clear();
+            selectionRows = [];
+          });
+        }
+        return;
+      }
+      if (confirmed != true) {
+        setState(() => bulkBusy = false);
+        return;
+      }
+    }
+    var failed = 0;
+    for (final e in batch) {
+      if (!current()) break;
+      try {
+        if (action == 'delete' || action == 'remove-download') {
+          await ref.read(podcastDownloadsProvider).removeEpisodeCopy(
+              e['feed_key'] as String, e['episode_key'] as String,
+              current: current);
+        }
+        if (!current()) break;
+        if (action != 'remove-download') {
+          await ref.read(podcastSyncStoreProvider).saveEpisode(scope,
+              e['scope_feed_key'] as String, e['scope_episode_key'] as String,
+              completed: action == 'delete' ? null : action == 'completed',
+              deleted: action == 'delete' ? true : null,
+              enclosureUrl: e['enclosure_url'] as String);
+        }
+        if (!current()) break;
+        selected.remove(episodeIdentity(e));
+        if (action == 'delete') {
+          selectionRows.remove(e);
+        } else if (action != 'remove-download') {
+          e['completed'] = action == 'completed' ? 1 : 0;
+        }
+      } catch (_) {
+        failed++;
+      }
+    }
+    if (!current()) {
+      if (mounted && selectionEpoch == epoch) {
+        setState(() {
+          bulkBusy = false;
+          selecting = false;
+          selected.clear();
+          selectionRows = [];
+        });
+      }
+      return;
+    }
+    setState(() {
+      bulkBusy = false;
+      error = failed == 0
+          ? null
+          : '$failed episodes could not be updated. Still selected; retry the action.';
+      if (selected.isEmpty) {
+        selecting = false;
+        selectionRows = [];
+      }
+    });
+    reload();
+  }
+
   bool refreshing = false;
   bool checkingMissing = false;
   int refreshDone = 0, refreshTotal = 0, refreshGeneration = 0;
@@ -300,6 +442,20 @@ class _LocalPodcastEpisodesScreenState
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(refreshFeeds(missingOnly: true));
       });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant LocalPodcastEpisodesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.feedKey != widget.feedKey) {
+      selectionEpoch++;
+      selecting = false;
+      bulkBusy = false;
+      selected.clear();
+      selectionRows = [];
+      offset = 0;
+      error = null;
     }
   }
 
@@ -481,7 +637,14 @@ class _LocalPodcastEpisodesScreenState
   }
 
   void page(int next) {
-    setState(() => offset = next);
+    if (bulkBusy) return;
+    setState(() {
+      offset = next;
+      selectionEpoch++;
+      selecting = false;
+      selected.clear();
+      selectionRows = [];
+    });
     if (scroll.hasClients) scroll.jumpTo(0);
   }
 
@@ -504,6 +667,16 @@ class _LocalPodcastEpisodesScreenState
     final colors = Theme.of(context).colorScheme;
     final tile = ListTile(
       key: ValueKey((e['feed_key'], e['episode_key'])),
+      selected: selecting && selected.contains(episodeIdentity(e)),
+      onLongPress: bulkBusy ? null : () => selectEpisode(e),
+      onTap: selecting && !bulkBusy ? () => selectEpisode(e) : null,
+      leading: selecting
+          ? Checkbox(
+              value: selected.contains(episodeIdentity(e)),
+              semanticLabel: 'Select ${e['title']}',
+              onChanged: bulkBusy ? null : (_) => selectEpisode(e),
+            )
+          : null,
       title: grid
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -593,23 +766,25 @@ class _LocalPodcastEpisodesScreenState
                       (e['duration_seconds'] as num))
                   .clamp(0.0, 1.0),
             ),
-          PodcastShowNotes(description: e['description'] as String? ?? ''),
-          PodcastDownloadControls(
-            feed: e['feed_key'] as String,
-            scope: e['browse_scope'] as String,
-            episode: e,
-            onPlaybackReturn: reload,
-            onDeleteEpisode: () =>
-                deleteEpisode(e, e['browse_scope'] as String),
-            completeLabel:
-                e['completed'] == 1 ? 'Mark uncompleted' : 'Mark completed',
-            onToggleComplete: scope == null ||
-                    pending.contains(
-                      '${e['scope_feed_key']}:${e['scope_episode_key']}',
-                    )
-                ? null
-                : () => complete(e, scope),
-          ),
+          if (!selecting)
+            PodcastShowNotes(description: e['description'] as String? ?? ''),
+          if (!selecting)
+            PodcastDownloadControls(
+              feed: e['feed_key'] as String,
+              scope: e['browse_scope'] as String,
+              episode: e,
+              onPlaybackReturn: reload,
+              onDeleteEpisode: () =>
+                  deleteEpisode(e, e['browse_scope'] as String),
+              completeLabel:
+                  e['completed'] == 1 ? 'Mark uncompleted' : 'Mark completed',
+              onToggleComplete: scope == null ||
+                      pending.contains(
+                        '${e['scope_feed_key']}:${e['scope_episode_key']}',
+                      )
+                  ? null
+                  : () => complete(e, scope),
+            ),
         ],
       ),
     );
@@ -644,6 +819,11 @@ class _LocalPodcastEpisodesScreenState
         setState(() {
           offset = 0;
           error = null;
+          selectionEpoch++;
+          selecting = false;
+          bulkBusy = false;
+          selected.clear();
+          selectionRows = [];
         });
         if (scroll.hasClients) scroll.jumpTo(0);
         if (widget.feedKey == null && previous?.valueOrNull != null) {
@@ -659,139 +839,202 @@ class _LocalPodcastEpisodesScreenState
     final grid = ref.watch(podcastEpisodeGridProvider);
     final episodes =
         ref.watch(podcastEpisodePageProvider((widget.feedKey, filter, offset)));
-    return Scaffold(
-      appBar: AppBar(
-          bottom: widget.viewSwitcher == null
-              ? null
-              : PreferredSize(
-                  preferredSize: const Size.fromHeight(56),
-                  child: widget.viewSwitcher!),
-          title: Text(widget.title),
-          actions: [
-            if (widget.feedKey == null &&
-                (widget.viewSwitcher == null || widget.serverSetId != null))
-              PopupMenuButton<String>(
-                tooltip: 'Podcast views',
-                icon: const Icon(Icons.menu),
-                onSelected: (view) =>
-                    Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => view == 'files'
-                      ? MediaGridScreen(
-                          setId: widget.serverSetId!,
-                          setName: widget.serverSetName)
-                      : const StandalonePodcastsScreen(),
-                )),
-                itemBuilder: (_) => [
-                  if (widget.viewSwitcher == null)
-                    const PopupMenuItem(
-                        value: 'feeds', child: Text('Subscriptions and feeds')),
-                  if (widget.serverSetId != null)
-                    const PopupMenuItem(
-                        value: 'files', child: Text('Downloaded server files')),
-                ],
-              ),
-            IconButton(
-                tooltip: 'Reload episodes',
-                onPressed: refreshing ? null : () => refreshFeeds(),
-                icon: const Icon(Icons.refresh))
-          ]),
-      body: Column(children: [
-        const PodcastLibrarySwitcher(),
-        if (widget.syncMessage != null)
-          Padding(
+    return PopScope(
+        canPop: !selecting && !bulkBusy,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && !bulkBusy) cancelSelection();
+        },
+        child: Scaffold(
+          appBar: AppBar(
+              leading: selecting
+                  ? IconButton(
+                      tooltip: 'Cancel selection',
+                      icon: const Icon(Icons.close),
+                      onPressed: bulkBusy ? null : cancelSelection)
+                  : null,
+              bottom: selecting || widget.viewSwitcher == null
+                  ? null
+                  : PreferredSize(
+                      preferredSize: const Size.fromHeight(56),
+                      child: widget.viewSwitcher!),
+              title: Text(
+                  selecting ? '${selected.length} selected' : widget.title),
+              actions: [
+                if (selecting) ...[
+                  IconButton(
+                      tooltip: 'Select all visible episodes',
+                      icon: const Icon(Icons.select_all),
+                      onPressed: bulkBusy
+                          ? null
+                          : () => setState(() {
+                                selected
+                                    .addAll(selectionRows.map(episodeIdentity));
+                              })),
+                  PopupMenuButton<String>(
+                      tooltip: 'Selected episode actions',
+                      enabled: !bulkBusy && selected.isNotEmpty,
+                      onSelected: bulkAction,
+                      itemBuilder: (_) => const [
+                            PopupMenuItem(
+                                value: 'completed',
+                                child: Text('Mark completed')),
+                            PopupMenuItem(
+                                value: 'uncompleted',
+                                child: Text('Mark uncompleted')),
+                            PopupMenuItem(
+                                value: 'remove-download',
+                                child: Text('Delete downloaded files')),
+                            PopupMenuItem(
+                                value: 'delete',
+                                child: Text('Delete episodes')),
+                          ]),
+                ] else ...[
+                  PopupMenuButton<String>(
+                    tooltip: 'Podcast views',
+                    icon: const Icon(Icons.menu),
+                    onSelected: (view) {
+                      if (view == 'select') {
+                        selectEpisode(null);
+                        return;
+                      }
+                      Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => view == 'files'
+                            ? MediaGridScreen(
+                                setId: widget.serverSetId!,
+                                setName: widget.serverSetName)
+                            : const StandalonePodcastsScreen(),
+                      ));
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                          value: 'select', child: Text('Select episodes')),
+                      if (widget.feedKey == null && widget.viewSwitcher == null)
+                        const PopupMenuItem(
+                            value: 'feeds',
+                            child: Text('Subscriptions and feeds')),
+                      if (widget.feedKey == null && widget.serverSetId != null)
+                        const PopupMenuItem(
+                            value: 'files',
+                            child: Text('Downloaded server files')),
+                    ],
+                  ),
+                  IconButton(
+                      tooltip: 'Reload episodes',
+                      onPressed: refreshing ? null : () => refreshFeeds(),
+                      icon: const Icon(Icons.refresh))
+                ]
+              ]),
+          body: Column(children: [
+            if (bulkBusy)
+              const LinearProgressIndicator(
+                  semanticsLabel: 'Updating selected episodes'),
+            if (!bulkBusy) const PodcastLibrarySwitcher(),
+            if (widget.syncMessage != null)
+              Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(widget.syncMessage!)),
+            if (refreshing) const LinearProgressIndicator(),
+            if (refreshing)
+              Text(refreshTotal == 0
+                  ? 'Updating podcasts…'
+                  : 'Refreshing feeds $refreshDone of $refreshTotal'),
+            if (widget.feedKey == null)
+              const Padding(
+                  padding: EdgeInsets.all(8), child: Text('Newest first')),
+            Padding(
+                padding: const EdgeInsets.all(8),
+                child: Wrap(spacing: 8, children: [
+                  for (final option in ['uncompleted', 'completed', 'all'])
+                    ChoiceChip(
+                        label: Text(
+                            '${option[0].toUpperCase()}${option.substring(1)}'),
+                        selected: filter == option,
+                        onSelected: bulkBusy
+                            ? null
+                            : (_) {
+                                setState(() => filter = option);
+                                page(0);
+                              })
+                ])),
+            Padding(
               padding: const EdgeInsets.all(8),
-              child: Text(widget.syncMessage!)),
-        if (refreshing) const LinearProgressIndicator(),
-        if (refreshing)
-          Text(refreshTotal == 0
-              ? 'Updating podcasts…'
-              : 'Refreshing feeds $refreshDone of $refreshTotal'),
-        if (widget.feedKey == null)
-          const Padding(
-              padding: EdgeInsets.all(8), child: Text('Newest first')),
-        Padding(
-            padding: const EdgeInsets.all(8),
-            child: Wrap(spacing: 8, children: [
-              for (final option in ['uncompleted', 'completed', 'all'])
-                ChoiceChip(
-                    label: Text(
-                        '${option[0].toUpperCase()}${option.substring(1)}'),
-                    selected: filter == option,
-                    onSelected: (_) {
-                      setState(() => filter = option);
-                      page(0);
-                    })
-            ])),
-        Padding(
-          padding: const EdgeInsets.all(8),
-          child: SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(
-                  value: false,
-                  icon: Icon(Icons.view_list),
-                  label: Text('List')),
-              ButtonSegment(
-                  value: true,
-                  icon: Icon(Icons.grid_view),
-                  label: Text('Grid')),
-            ],
-            selected: {grid},
-            onSelectionChanged: (values) => ref
-                .read(podcastEpisodeGridProvider.notifier)
-                .state = values.single,
-          ),
-        ),
-        if (error != null) Text(error!),
-        Expanded(
-            child: episodes.when(
-          skipLoadingOnReload: true,
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (_, __) => Center(
-              child: TextButton(
-                  onPressed: reload,
-                  child: const Text('Retry opening episodes'))),
-          data: (rows) => rows.any((row) => row['browse_scope'] != scope)
-              ? const Center(child: CircularProgressIndicator())
-              : ListView(controller: scroll, children: [
-                  if (rows.isEmpty)
-                    const Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                            'No episodes in this filter. Refresh the feed to fetch episodes.')),
-                  if (grid)
-                    LayoutBuilder(builder: (context, constraints) {
-                      // Flowing cards grow with text and expanded notes.
-                      final columns =
-                          (constraints.maxWidth / 300).floor().clamp(1, 6);
-                      final width =
-                          (constraints.maxWidth - (columns - 1) * 8) / columns;
-                      return Wrap(spacing: 8, runSpacing: 8, children: [
-                        for (final e in rows.take(40))
-                          SizedBox(
-                              width: width, child: episodeTile(e, scope, true)),
+              child: SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                      value: false,
+                      icon: Icon(Icons.view_list),
+                      label: Text('List')),
+                  ButtonSegment(
+                      value: true,
+                      icon: Icon(Icons.grid_view),
+                      label: Text('Grid')),
+                ],
+                selected: {grid},
+                onSelectionChanged: (values) => ref
+                    .read(podcastEpisodeGridProvider.notifier)
+                    .state = values.single,
+              ),
+            ),
+            if (error != null) Text(error!),
+            Expanded(
+                child: episodes.when(
+              skipLoadingOnReload: true,
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (_, __) => Center(
+                  child: TextButton(
+                      onPressed: reload,
+                      child: const Text('Retry opening episodes'))),
+              data: (loadedRows) {
+                visibleRows = loadedRows.take(40).toList();
+                final rows = selecting ? selectionRows : loadedRows;
+                return rows.any((row) => row['browse_scope'] != scope)
+                    ? const Center(child: CircularProgressIndicator())
+                    : ListView(controller: scroll, children: [
+                        if (rows.isEmpty)
+                          const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text(
+                                  'No episodes in this filter. Refresh the feed to fetch episodes.')),
+                        if (grid)
+                          LayoutBuilder(builder: (context, constraints) {
+                            // Flowing cards grow with text and expanded notes.
+                            final columns = (constraints.maxWidth / 300)
+                                .floor()
+                                .clamp(1, 6);
+                            final width =
+                                (constraints.maxWidth - (columns - 1) * 8) /
+                                    columns;
+                            return Wrap(spacing: 8, runSpacing: 8, children: [
+                              for (final e in rows.take(40))
+                                SizedBox(
+                                    width: width,
+                                    child: episodeTile(e, scope, true)),
+                            ]);
+                          })
+                        else
+                          for (final e in rows.take(40))
+                            episodeTile(e, scope, false),
+                        Wrap(
+                            alignment: WrapAlignment.center,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            children: [
+                              TextButton(
+                                  onPressed: offset == 0
+                                      ? null
+                                      : () => page(offset - 40),
+                                  child: const Text('Previous page')),
+                              Text('Page ${offset ~/ 40 + 1}'),
+                              TextButton(
+                                  onPressed: loadedRows.length <= 40
+                                      ? null
+                                      : () => page(offset + 40),
+                                  child: const Text('Next page')),
+                            ]),
                       ]);
-                    })
-                  else
-                    for (final e in rows.take(40)) episodeTile(e, scope, false),
-                  Wrap(
-                      alignment: WrapAlignment.center,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 8,
-                      children: [
-                        TextButton(
-                            onPressed:
-                                offset == 0 ? null : () => page(offset - 40),
-                            child: const Text('Previous page')),
-                        Text('Page ${offset ~/ 40 + 1}'),
-                        TextButton(
-                            onPressed: rows.length <= 40
-                                ? null
-                                : () => page(offset + 40),
-                            child: const Text('Next page')),
-                      ]),
-                ]),
-        )),
-      ]),
-    );
+              },
+            )),
+          ]),
+        ));
   }
 }

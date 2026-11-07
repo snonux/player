@@ -1,3 +1,4 @@
+import { preservePodcastSelection } from '../podcast-multiselect.js';
 import { bindSetSort, readSetSort } from '../set-sort.js';
 import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from '../podcast-metadata.js';
 import { bindMediaMultiselect } from './media-multiselect.js';
@@ -79,6 +80,7 @@ export function initMediaGrid(options = {}) {
 }
 
 export async function loadMedia(options = {}) {
+  if (preservePodcastSelection()) return;
   const revision = ++loadRevision;
   document.dispatchEvent?.(new CustomEvent('library:navigating', { detail: options }));
   const grid = document.getElementById('media-grid');

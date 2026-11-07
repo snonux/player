@@ -491,3 +491,15 @@ label {
 
 .podcast-feed-open { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: start; }
 .podcast-feed-open .meta { min-height: 44px; }
+
+.podcast-selection [data-mode] { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-width: 0; }
+.podcast-selection [data-mode][hidden], .podcast-selection [data-select][hidden] { display: none; }
+.podcast-selection label { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.podcast-selection select { max-width: 100%; }
+.local-episode-list .local-files-row { position: relative; }
+.local-episode-list .local-files-row.bulk-selected { outline: 3px solid var(--accent); }
+
+.media-card.episode-card.podcast-selecting .card-actions, .local-episode-list .podcast-selecting details { display: none; }
+.local-episode-list .podcast-selecting { padding-inline-end: 52px; }
+
+.podcast-selecting input.media-selection-check { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }

@@ -1,3 +1,4 @@
+import { bindPodcastMultiselect } from './podcast-multiselect.js';
 import { localPodcastSnapshot, editLocalPodcast } from './local-podcast-state.js';
 import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from './podcast-metadata.js';
 import { openPodcastDiscovery } from './podcast-discovery.js';
@@ -48,10 +49,12 @@ export function initLocalPodcastsApp() {
   let detailKey = null;
   let episodeLayout = 'list';
   let completionFilter = 'uncompleted';
-  const retentionTimer = setInterval(() => { if (detailKey) void render(); }, 60 * 1000);
+  let episodeSelection;
+  const refreshEpisodes = () => { if (detailKey && !episodeSelection?.active) void render(); };
+  const retentionTimer = setInterval(refreshEpisodes, 60 * 1000);
   retentionTimer.unref?.();
-  document.addEventListener('local-podcast:state-changed', () => { if (detailKey) void render(); });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && detailKey) void render(); });
+  document.addEventListener('local-podcast:state-changed', refreshEpisodes);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshEpisodes(); });
 
   function message(text) { status.textContent = t(text); }
 
@@ -83,6 +86,8 @@ export function initLocalPodcastsApp() {
   }
 
   async function render() {
+    episodeSelection?.dispose();
+    episodeSelection = undefined;
     const hadFocus = results.contains(document.activeElement);
     results.replaceChildren();
     try {
@@ -130,6 +135,7 @@ export function initLocalPodcastsApp() {
           layouts.append(button);
         }
         results.append(layouts);
+        const selectionEntries = [];
         for (const episode of episodes) {
           const li = document.createElement('li');
           const completed = Boolean(localPodcastSnapshot(episode).completion?.completed);
@@ -168,8 +174,15 @@ export function initLocalPodcastsApp() {
           li.append(artwork, copy);
           bindPodcastMetadata(li);
           list.append(li);
+          selectionEntries.push({card: li, ep: episode});
         }
         results.append(list);
+        const selectionFeed = detailKey, selectionFilter = completionFilter;
+        episodeSelection = bindPodcastMultiselect(results, selectionEntries, {
+          current: () => detailKey === selectionFeed && completionFilter === selectionFilter,
+          apply: async (ep, action) => { editLocalPodcast(ep, action === 'delete' ? 'deletion' : 'completion', action !== 'uncompleted'); },
+          refresh: () => render(), notify: message,
+        });
         if (hadFocus) list.querySelector('button')?.focus();
         return;
       }

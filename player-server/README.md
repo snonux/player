@@ -111,6 +111,16 @@ metadata, expandable show notes and playback and episode actions. The choice las
 subscriptions. Grid cards adapt to narrow screens and grow with enlarged text.
 Browser device podcasts have the same layout choice inside a subscription.
 
+Choose **Select episodes** above an episode list to select several episodes in
+List or Grid, then apply Mark completed/uncompleted or Delete episodes. Failed
+items stay selected for retry. Navigation, filters and page changes clear the
+selection; changing layout keeps it. Cancel selection or Escape returns to
+browsing. **Delete episodes** changes your personal podcast lists and keeps
+shared server files. The separate **Delete downloaded files** action removes
+shared server copies, subject to permissions and confirmation explaining other
+listeners and seven-day Trash. Browser device podcast deletions affect only that
+browser's lists.
+
 Focused layout verification:
 
 ```sh

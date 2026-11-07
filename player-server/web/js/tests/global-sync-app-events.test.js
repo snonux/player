@@ -20,11 +20,11 @@ class Node {
   set innerHTML(value) {
     if (this.contains(document.activeElement)) document.activeElement = null;
     this.html = value; this.children = []; this.replacements++;
-    for (const match of value.matchAll(/<button\b([^>]+)>/g)) {
-      const button = new Node('button');
-      for (const [attribute, name] of [['data-action', 'action'], ['data-feed-key', 'feedKey']]) {
-        const captured = new RegExp(`${attribute}="([^"]+)"`).exec(match[1]);
-        if (captured) button.dataset[name] = captured[1];
+    for (const match of value.matchAll(/<(button|span|select)\b([^>]*)>/g)) {
+      const button = new Node(match[1]);
+      for (const attribute of match[2].matchAll(/data-([a-z-]+)(?:="([^"]*)")?/g)) {
+        const name = attribute[1].replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+        button.dataset[name] = attribute[2] || '';
       }
       this.children.push(button);
     }
@@ -35,14 +35,19 @@ class Node {
   remove() { this.isConnected = false; grid.children = grid.children.filter(child => child !== this); }
   scrollIntoView() {}
   addEventListener() {}
+  removeEventListener() {}
   appendChild(child) { this.children.push(child); }
+  prepend(child) { this.children.unshift(child); }
+  setAttribute(name, value) { this[name] = value; }
   querySelectorAll(selector) {
     if (selector === '[data-feed-key]') return this.children.filter(child => child.dataset.feedKey);
     return [];
   }
   querySelector(selector) {
-    const action = /\[data-action="([^"]+)"\]/.exec(selector)?.[1];
-    return action ? this.children.find(child => child.dataset.action === action) : null;
+    const match = /\[data-([a-z-]+)(?:="([^"]*)")?\]/.exec(selector);
+    if (!match) return null;
+    const name = match[1].replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+    return this.children.find(child => name in child.dataset && (match[2] === undefined || child.dataset[name] === match[2])) || null;
   }
 }
 const grid = new Node(), sidebar = new Node(), all = new Node();

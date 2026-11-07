@@ -1,3 +1,4 @@
+import { bindPodcastMultiselect } from './podcast-multiselect.js';
 import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from './podcast-metadata.js';
 import { openPodcastDiscovery } from './podcast-discovery.js';
 import { setSubscribed, listAccountPodcastSubscriptions } from './podcast-subscriptions.js';
@@ -60,6 +61,7 @@ let playMediaById = async () => false;
 let pageSize = 100;
 let sidebarFeeds = [];
 let visibleEpisodes = [];
+let episodeSelection;
 let episodeLayout = 'grid';
 let stateUpdateTimer;
 let sidebarRefreshRevision = 0;
@@ -326,6 +328,37 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
       button.disabled = false;
     }
   });
+  episodeSelection = bindPodcastMultiselect(grid, visibleEpisodes, {
+    current: () => isPodcastVirtualView() && !state.podcastOverview && !state.music && podcastSyncStatus().generation === generation &&
+      state.podcastFeedKey === feedKey && state.podcastFilter === filter && state.mediaPage === page,
+    downloads: true,
+    deleteMessage: (action, count) => action === 'delete'
+      ? `Delete ${count} episodes from your podcast lists on all your devices? They stay deleted after feed refresh and sync. Listening history and downloaded files stay saved. Removing downloaded files is a separate action.`
+      : `Delete ${count} selected downloaded files from the shared server? Other server listeners lose access to these copies. They move to Trash for seven days, then their files and everyone's media-scoped notes, bookmarks, favorites and shares are removed. Episode history and subscriptions stay, as do copies on Android devices. Owners and admins can restore them from Trash before expiry.`,
+    apply: async (ep, action, current) => {
+      if (!current()) throw new Error('Account or view changed');
+      if (action === 'remove-download') {
+        if (ep.server_copy?.media_id) { await API.deleteMedia(ep.server_copy.media_id); if (current()) ep.server_copy = null; }
+      } else if (action === 'delete') {
+        await setEpisodeDeleted(ep);
+        if (current()) {
+          const card = visibleEpisodes.find(entry => entry.ep === ep)?.card;
+          if (card) { clearEpisodeSlot(card); card.remove(); }
+        }
+      } else {
+        const desired = action === 'completed';
+        const result = await setEpisodeCompleted(ep, desired);
+        if (result?.completion?.completed !== desired) throw new Error('A newer completion change was kept');
+        ep.completed = desired;
+      }
+      if (current() && action !== 'delete') {
+        const card = visibleEpisodes.find(entry => entry.ep === ep)?.card;
+        if (card) renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
+      }
+    },
+    notify: toast,
+    refresh: () => loadMediaCallback(),
+  });
   bindFilterBar(grid);
   bindPager(grid, pageInfo);
   clearSelection();
@@ -392,6 +425,7 @@ function bindPager(grid, pageInfo) {
 const downloadControllers = new WeakMap();
 
 function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
+  const selectionFocused = card.querySelector('.media-selection-check') === document.activeElement;
   const focusedAction = card.contains(document.activeElement) ? document.activeElement?.dataset.action : null;
   const downloading = Boolean(downloadControllers.get(card));
   card.classList.toggle('listened', Boolean(ep.completed));
@@ -438,6 +472,8 @@ function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
     e.stopPropagation();
     document.dispatchEvent(new CustomEvent('media:actions', { detail: card }));
   });
+  episodeSelection?.refresh();
+  if (selectionFocused) card.querySelector('.media-selection-check')?.focus();
   if (focusedAction) {
     (card.querySelector(`[data-action="${focusedAction}"]`) || cancelBtn || playBtn || downloadBtn)?.focus();
   }
@@ -628,6 +664,10 @@ async function deleteEpisodeDownload(card, ep, button) {
 
 function updateVisibleEpisodeState() {
   if (!isPodcastVirtualView()) return;
+  if (episodeSelection?.active) {
+    if (visibleEpisodes.some(({ep}) => ep.podcast_generation !== podcastSyncStatus().generation)) { loadMediaCallback(); return; }
+    updatePendingHint(); return;
+  }
   for (const { card, ep } of visibleEpisodes) {
     if (!card.isConnected) continue;
     if (ep.podcast_generation !== podcastSyncStatus().generation) { card.remove(); continue; }
