@@ -1,3 +1,4 @@
+import { editLocalPodcast } from './local-podcast-state.js';
 import { showNotesHTML } from './podcast-metadata.js';
 import { deviceLibraryMode } from './offline-context.js';
 import { libraryPresenceSnapshot } from './playback-presence.js';
@@ -45,7 +46,7 @@ import {
   toggleDetach as toggleDetachedWindow,
   stopDetached,
 } from './detach.js';
-import { mediaErrorReason, mediaPlaybackUrl, waitForCompatStream } from './streamSource.js';
+import { mediaErrorReason, mediaPlaybackUrl, localPodcastSourceURL, waitForCompatStream } from './streamSource.js';
 import { toast } from './utils.js';
 import { initSeekPreview } from './seekPreview.js';
 import { initAudioVisuals } from './audioVisuals.js';
@@ -879,6 +880,8 @@ function startSource(m, media, url, resumeFrom) {
       (media.podcast_lease != null && media.podcast_lease !== podcastSyncStatus().generation)) {
     failPlayback(media, 'Account changed. Select the episode again.'); return;
   }
+  const enclosure = localPodcastSourceURL(media);
+  if (enclosure) { attachSource(m, enclosure, resumeFrom); return; }
   if (deviceLibraryMode() && !media.offlinePinURL) {
     failPlayback(media, 'Saved download unavailable. Reconnect to download it again.');
     return;
@@ -1373,6 +1376,10 @@ function highlightPlayingCard() {
 // final seconds of short songs and manual track skips.
 function saveCurrentProgress({ finished = false } = {}) {
   const element = currentMediaElement();
+  if (currentMedia?.localPodcastEpisode && element?.currentTime > 0 && (finished || !element.ended)) {
+    try { editLocalPodcast(currentMedia.localPodcastEpisode, finished ? 'completion' : 'position', true); } catch { /* Storage failure must not interrupt local playback. */ }
+    return progressWrites;
+  }
   if ((!reportProgress && !(currentSource?.authenticated && currentMedia?.podcast_episode)) || isCasting() || isDetached() || !currentMedia || !element ||
       (!finished && element.ended) || !(element.currentTime > 0)) {
     return progressWrites;

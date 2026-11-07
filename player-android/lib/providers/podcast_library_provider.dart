@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/podcast_repository.dart';
+import '../services/podcast_retention.dart';
+import '../services/podcast_sync_store.dart';
 import '../services/podcast_sync.dart';
 import '../services/podcast_server_metadata.dart';
 import '../api/dio_player_api_client.dart';
@@ -24,6 +26,23 @@ final podcastDownloadsProvider =
       ref.watch(playbackSessionCoordinatorProvider),
       captureSyncAccount: () => captureSyncAccount(ref)?.podcast);
 });
+
+final podcastRetentionProvider = Provider<PodcastRetention>((ref) =>
+    PodcastRetention(PodcastSyncStore(ref.watch(podcastRepositoryProvider)),
+        ref.watch(podcastDownloadsProvider)));
+
+Future<void> retainSelectedPodcasts(Ref ref, String scope) async {
+  var alive = true;
+  ref.onDispose(() => alive = false);
+  final credentials = ref.read(credentialMutationQueueProvider);
+  final generation = credentials.generation;
+  final retention = ref.read(podcastRetentionProvider);
+  bool current() =>
+      alive &&
+      credentials.generation == generation &&
+      ref.read(podcastScopeProvider).valueOrNull == scope;
+  await retention.sweep(scope, current: current);
+}
 
 /// Device browsing chooses a cached library, never a server credential.
 final podcastDeviceScopeSelectionProvider =
@@ -93,10 +112,15 @@ final podcastEpisodePageProvider =
   final scope = await ref.watch(podcastScopeProvider.future);
   // Sync and feed refresh invalidate subscriptions; refresh listening rows too.
   await ref.watch(podcastSubscriptionsProvider.future);
-  return (await ref.watch(podcastRepositoryProvider).browseEpisodes(scope,
+  final rows = (await ref.watch(podcastRepositoryProvider).browseEpisodes(scope,
           feed: query.$1, filter: query.$2, offset: query.$3, limit: 41))
       .map((row) => {...row, 'browse_scope': scope})
       .toList();
+  // Cached rows already derive expiry from durable observation metadata.
+  // Observing new completions and unlinking files must never delay browsing.
+  // Maintenance does not invalidate this page or restart an observed clock.
+  unawaited(retainSelectedPodcasts(ref, scope).catchError((Object _) {}));
+  return rows;
 });
 
 /// A generation-bound client is used only after direct publisher refresh fails.

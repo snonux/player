@@ -71,6 +71,9 @@ LIMIT ?4 OFFSET ?5`
 // ListSubscribedEpisodes implements PodcastEpisodeViewRepo. A feed key that
 // denotes no catalog feed lists nothing.
 func (s *SQLite) ListSubscribedEpisodes(ctx context.Context, userID int64, q PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error) {
+	if err := s.retainPodcastEpisodes(ctx, userID); err != nil {
+		return nil, err
+	}
 	feedKey := ""
 	if q.FeedKey != "" {
 		canonical, err := canonicalFeedKey(ctx, s.db, q.FeedKey)

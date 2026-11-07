@@ -376,6 +376,9 @@ func initializeSchema(db *sql.DB) error {
 	if err := migratePodcastEpisodeDeletion(db); err != nil {
 		return fmt.Errorf("migrate podcast deletion: %w", err)
 	}
+	if err := migratePodcastRetention(db); err != nil {
+		return fmt.Errorf("migrate podcast retention: %w", err)
+	}
 	if err := migratePodcastEpisodeArtwork(db); err != nil {
 		return fmt.Errorf("migrate podcast artwork: %w", err)
 	}

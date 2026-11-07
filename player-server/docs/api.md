@@ -2292,3 +2292,27 @@ Deleted episodes stay absent from the caller's episode lists through feed
 refresh and sync. History and other accounts are preserved. This action
 is distinct from removing downloaded bytes. Older clients can continue to
 synchronize position and completion without sending deletion.
+
+Completed podcast entries automatically leave personal lists after seven days
+from the server's first observation of their current completion edit. Existing
+completed entries receive the same grace on upgrade; delayed offline reports
+receive a full grace after arriving. Receiving the same completion again does
+not restart the clock. Uncompleting and completing again starts a fresh grace.
+Playback newer than completion and an explicit restore newer than completion
+prevent automatic deletion until a new completion edit.
+
+Server retention writes the normal per-account deletion register and change sequence,
+so every client receives the tombstone through ordinary podcast sync. Maintenance
+runs at startup and on GC ticks, and lists/sync also apply expiry. Catalog rows,
+shared server files and listening history are preserved. Clients may separately
+clean up their own expired downloaded copies, while preserving active playback
+and copies needed by another account.
+
+Devices independently observe completion and retain their own seven-day grace
+for downloaded-copy cleanup, including while offline. Device timer expiry is
+only a derived local list hide, never an outgoing deletion edit. Newer remote
+playback, completion or restore immediately invalidates that local hide when
+received. This avoids an offline timer overwriting another device's replay or
+restore. Only explicit manual deletion and the server's transactional retention
+sweep create synchronized tombstones. Browser device-only feeds keep local
+completion and deletion on that browser; they do not modify any account's feed.

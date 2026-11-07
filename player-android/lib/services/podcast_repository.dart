@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import 'podcast_identity.dart';
 import 'podcast_feed_fetcher.dart';
 import 'podcast_metadata.dart';
+import 'podcast_retention_policy.dart';
 
 String podcastAccountScope(String origin, int userId) =>
     'account:${Uri.parse(origin).origin}#$userId';
@@ -22,7 +23,13 @@ class PodcastRepository {
   final PodcastFeedFetcher fetcher;
   Future<Database>? _opening;
   Future<Database> get database => _opening ??=
-          openDatabase(databasePath, version: 6, onUpgrade: (db, old, _) async {
+          openDatabase(databasePath, version: 7, onUpgrade: (db, old, _) async {
+        if (old < 7) {
+          for (final name in ['retention_completion_ms', 'retention_seen_ms']) {
+            await db.execute(
+                'ALTER TABLE podcast_episode_state ADD COLUMN $name INTEGER NOT NULL DEFAULT 0');
+          }
+        }
         if (old < 2) await createSyncSchema(db);
         if (old < 3) await createDownloadSchema(db);
         if (old < 4) {
@@ -67,7 +74,7 @@ class PodcastRepository {
         await db.execute(
             'CREATE TABLE podcast_subscriptions(scope TEXT NOT NULL, feed_key TEXT NOT NULL, subscribed INTEGER NOT NULL, subscription_ms INTEGER NOT NULL, title TEXT NOT NULL DEFAULT "", fetch_url TEXT NOT NULL DEFAULT "", urls TEXT NOT NULL DEFAULT "[]", pending_edit_id TEXT, PRIMARY KEY(scope,feed_key))');
         await db.execute(
-            'CREATE TABLE podcast_episode_state(scope TEXT NOT NULL, feed_key TEXT NOT NULL, episode_key TEXT NOT NULL, position_seconds REAL NOT NULL DEFAULT 0, position_ms INTEGER NOT NULL DEFAULT 0, position_pending_edit_id TEXT, completed INTEGER NOT NULL DEFAULT 0, completion_source TEXT NOT NULL DEFAULT "", completion_ms INTEGER NOT NULL DEFAULT 0, completion_pending_edit_id TEXT, enclosure_url TEXT NOT NULL DEFAULT "", deleted INTEGER NOT NULL DEFAULT 0, deletion_ms INTEGER NOT NULL DEFAULT 0, deletion_pending_edit_id TEXT, PRIMARY KEY(scope,feed_key,episode_key))');
+            'CREATE TABLE podcast_episode_state(scope TEXT NOT NULL, feed_key TEXT NOT NULL, episode_key TEXT NOT NULL, position_seconds REAL NOT NULL DEFAULT 0, position_ms INTEGER NOT NULL DEFAULT 0, position_pending_edit_id TEXT, completed INTEGER NOT NULL DEFAULT 0, completion_source TEXT NOT NULL DEFAULT "", completion_ms INTEGER NOT NULL DEFAULT 0, completion_pending_edit_id TEXT, enclosure_url TEXT NOT NULL DEFAULT "", deleted INTEGER NOT NULL DEFAULT 0, deletion_ms INTEGER NOT NULL DEFAULT 0, deletion_pending_edit_id TEXT, retention_completion_ms INTEGER NOT NULL DEFAULT 0, retention_seen_ms INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(scope,feed_key,episode_key))');
         await db.execute(
             'CREATE TABLE podcast_feeds(feed_key TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT "", description TEXT NOT NULL DEFAULT "", image_url TEXT NOT NULL DEFAULT "", fetch_url TEXT NOT NULL, etag TEXT NOT NULL DEFAULT "", last_modified TEXT NOT NULL DEFAULT "", last_checked_ms INTEGER, last_error TEXT, aliases TEXT NOT NULL DEFAULT "[]")');
         await db.execute(
@@ -255,7 +262,11 @@ class PodcastRepository {
             mapped.where((key) => !episodeKeys.contains(key)).firstOrNull ??
             mapped.first;
         final state = states[(scopedFeed, key)] ?? const <String, Object?>{};
-        if (state['deleted'] == 1) continue;
+        if (state['deleted'] == 1 ||
+            podcastRetentionExpired(
+                state, DateTime.now().millisecondsSinceEpoch)) {
+          continue;
+        }
         final completed = state['completed'] == 1;
         if (filter == 'completed' && !completed ||
             filter == 'uncompleted' && completed ||

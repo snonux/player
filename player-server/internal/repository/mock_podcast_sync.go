@@ -128,3 +128,6 @@ func (m *MockStore) GetSubscribedPodcastFeed(ctx context.Context, userID int64, 
 	}
 	return nil, nil
 }
+
+// RetainPodcastEpisodes is a no-op unless a real SQLite store is used.
+func (m *MockStore) RetainPodcastEpisodes(context.Context) error { return nil }

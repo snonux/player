@@ -48,6 +48,7 @@ type GCWorker struct {
 	thumbRm     thumbnailRemover
 	thumbLayout thumb.Layout
 	// renditions is optional; nil disables transcode cache maintenance.
+	retention  func(context.Context) error
 	renditions RenditionGC
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -102,6 +103,12 @@ func (w *GCWorker) WithInterval(interval time.Duration) *GCWorker {
 // and renditions of purged media are removed with their source.
 func (w *GCWorker) WithRenditionCache(renditions RenditionGC) *GCWorker {
 	w.renditions = renditions
+	return w
+}
+
+// WithPodcastRetention attaches account-list cleanup to startup and each tick.
+func (w *GCWorker) WithPodcastRetention(sweep func(context.Context) error) *GCWorker {
+	w.retention = sweep
 	return w
 }
 
@@ -174,6 +181,11 @@ func (w *GCWorker) runSafely(ctx context.Context) {
 func (w *GCWorker) run(ctx context.Context) {
 	w.purgeExpired(ctx)
 	w.pruneRenditions(ctx)
+	if w.retention != nil {
+		if err := w.retention(ctx); err != nil && w.logger != nil {
+			w.logger.Error("podcast retention", "err", err)
+		}
+	}
 }
 
 // purgeExpired purges every soft-deleted media item older than the

@@ -273,6 +273,7 @@ func wireTranscoding(deps *Deps, runner transcode.Runner) {
 	// hard-deleted media.
 	deps.GCWorker = service.NewGCWorker(deps.Store, deps.Clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, deps.Logger).WithTrashLock(deps.trashLock).
 		WithRenditionCache(deps.Transcodes).
+		WithPodcastRetention(deps.Store.RetainPodcastEpisodes).
 		WithThumbnailLayout(deps.Thumbnails)
 }
 

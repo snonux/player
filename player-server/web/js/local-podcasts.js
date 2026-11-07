@@ -1,3 +1,4 @@
+import { localPodcastSnapshot, editLocalPodcast } from './local-podcast-state.js';
 import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from './podcast-metadata.js';
 import { openPodcastDiscovery } from './podcast-discovery.js';
 import { t, html } from './i18n.js';
@@ -30,6 +31,7 @@ export function initLocalPodcastsApp() {
       <button class="btn" type="button" data-refresh-all>Refresh feeds</button>
       <a class="btn" href="/index.html?local=files">On this device files</a>
     </div>
+    <details><summary>Episode retention</summary><p>Completed episodes leave this browser’s lists after seven days. Playing again or marking uncompleted keeps an episode. Server feeds and other listeners stay unchanged.</p></details>
     <p role="status" aria-live="polite" data-status></p>
     <div data-results></div>
   </section>`;
@@ -45,6 +47,11 @@ export function initLocalPodcastsApp() {
   let busy = false;
   let detailKey = null;
   let episodeLayout = 'list';
+  let completionFilter = 'uncompleted';
+  const retentionTimer = setInterval(() => { if (detailKey) void render(); }, 60 * 1000);
+  retentionTimer.unref?.();
+  document.addEventListener('local-podcast:state-changed', () => { if (detailKey) void render(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && detailKey) void render(); });
 
   function message(text) { status.textContent = t(text); }
 
@@ -57,14 +64,15 @@ export function initLocalPodcastsApp() {
         type: 'audio',
         file_name: episode.title,
         duration: 0,
-        offlinePinURL: episode.enclosure_url,
+        localPodcastURL: episode.enclosure_url,
         localPodcast: true,
+        localPodcastEpisode: { feed_key: episode.feed_key, episode_key: episode.episode_key },
         podcast: { title: episode.title, description: episode.description,
           image_url: episode.image_url, feed_image_url: episode.feed_image_url },
       });
       const episodes = await listLocalPodcastEpisodes(episode.feed_key);
       const index = episodes.findIndex(row => row.episode_key === episode.episode_key);
-      const remaining = index < 0 ? [episode] : episodes.slice(index);
+      const remaining = (index < 0 ? [episode] : episodes.slice(index)).filter(row => !localPodcastSnapshot(row).deletion?.deleted && (row.episode_key === episode.episode_key || !localPodcastSnapshot(row).completion?.completed));
       const added = await insertQueue(remaining.map(media), 'now', { replace: true, source: t('Podcasts on this device') });
       message(added ? 'Playing.' : 'Playback is busy. Retry.');
     } catch (error) {
@@ -75,6 +83,7 @@ export function initLocalPodcastsApp() {
   }
 
   async function render() {
+    const hadFocus = results.contains(document.activeElement);
     results.replaceChildren();
     try {
       if (detailKey) {
@@ -84,9 +93,22 @@ export function initLocalPodcastsApp() {
         back.textContent = '← Back';
         back.onclick = () => { detailKey = null; void render(); };
         results.append(back);
-        const episodes = await listLocalPodcastEpisodes(detailKey);
+        const allEpisodes = await listLocalPodcastEpisodes(detailKey);
+        const filters = document.createElement('div'); filters.className = 'playlist-actions';
+        filters.setAttribute('role', 'group'); filters.setAttribute('aria-label', 'Completion filter');
+        for (const [value, label] of [['uncompleted', 'Uncompleted'], ['completed', 'Completed'], ['all', 'All']]) {
+          const button = document.createElement('button'); button.type = 'button'; button.className = 'btn';
+          button.textContent = label; button.setAttribute('aria-pressed', String(completionFilter === value));
+          button.onclick = () => { completionFilter = value; void render(); }; filters.append(button);
+        }
+        results.append(filters);
+        const episodes = allEpisodes.filter(ep => {
+          const saved = localPodcastSnapshot(ep);
+          return !saved.deletion?.deleted && (completionFilter === 'all' || Boolean(saved.completion?.completed) === (completionFilter === 'completed'));
+        });
         if (!episodes.length) {
-          message('No episodes cached for this feed yet. Refresh the feed.');
+          message(allEpisodes.length ? 'No episodes match this filter.' : 'No episodes cached for this feed yet. Refresh the feed.');
+          if (hadFocus) filters.querySelector('button[aria-pressed="true"]')?.focus();
           return;
         }
         message(`${episodes.length} episode${episodes.length === 1 ? '' : 's'}`);
@@ -120,7 +142,22 @@ export function initLocalPodcastsApp() {
           copy.className = 'local-podcast-copy';
           const meta = document.createElement('p');
           meta.className = 'subtitle'; meta.textContent = publicationDate(episode.published_at);
+          if (localPodcastSnapshot(episode).completion?.completed) meta.textContent += ' · Listened';
           copy.append(play, meta);
+          const more = document.createElement('details');
+          const summary = document.createElement('summary'); summary.className = 'btn'; summary.textContent = 'More';
+          summary.setAttribute('aria-label', `More for ${episode.title}`); more.append(summary);
+          for (const [name, label, value] of [
+            ['completion', localPodcastSnapshot(episode).completion?.completed ? 'Mark uncompleted' : 'Mark completed', !localPodcastSnapshot(episode).completion?.completed],
+            ['deletion', 'Delete episode', true],
+          ]) {
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'btn'; button.textContent = label;
+            button.onclick = () => {
+              if (name === 'deletion' && !confirm(`Delete "${episode.title}" from this browser’s podcast lists?`)) return;
+              try { editLocalPodcast(episode, name, value); } catch (error) { message(error.message); }
+            }; more.append(button);
+          }
+          copy.append(more);
           const notes = document.createElement('div'); notes.innerHTML = showNotesHTML(episode.description); copy.append(notes);
           const artwork = document.createElement('span'); artwork.innerHTML = episodeArtworkHTML(episode);
           li.append(artwork, copy);
@@ -128,6 +165,7 @@ export function initLocalPodcastsApp() {
           list.append(li);
         }
         results.append(list);
+        if (hadFocus) list.querySelector('button')?.focus();
         return;
       }
       const feeds = await listLocalPodcastFeeds();

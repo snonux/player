@@ -1,12 +1,58 @@
 import 'dart:async';
 import 'package:player_android/services/podcast_sync.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:player_android/providers/api_client_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/screens/podcast_list_screen.dart';
 import 'package:player_android/screens/podcast_episodes_screen.dart';
 import 'podcast_browsing_fakes.dart';
 
 void main() {
+  testWidgets('cached maintenance stops when credential generation changes',
+      (tester) async {
+    final repository = BrowsingRepository();
+    final retention = BrowsingRetention(repository)..gate = Completer<void>();
+    await tester.pumpWidget(browsingApp(const PodcastListScreen(), repository,
+        retention: retention));
+    await tester.pumpAndSettle();
+    expect(find.text('Episode 0'), findsOneWidget);
+    final container =
+        ProviderScope.containerOf(tester.element(find.text('Episode 0')));
+    expect(retention.leases.every((current) => current()), isTrue);
+    container.read(credentialMutationQueueProvider).beginAuthChange();
+    expect(retention.leases.every((current) => !current()), isTrue);
+    retention.gate!.complete();
+    await tester.pump();
+    expect(retention.finished, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'cached episodes do not await stalled retention and dispose its lease',
+      (tester) async {
+    final repository = BrowsingRepository();
+    final retention = BrowsingRetention(repository)..gate = Completer<void>();
+    await tester.pumpWidget(browsingApp(const PodcastListScreen(), repository,
+        retention: retention));
+    await tester.pumpAndSettle();
+    expect(find.text('Episode 0'), findsOneWidget);
+    expect(retention.scopes, isNotEmpty);
+    expect(retention.finished, 0);
+    expect(retention.leases.every((current) => current()), isTrue);
+    final calls = retention.scopes.length;
+    await tester.pump(const Duration(seconds: 1));
+    expect(retention.scopes.length, calls,
+        reason: 'Maintenance must not invalidate its page');
+    await tester.pumpWidget(const SizedBox());
+    expect(retention.leases.every((current) => !current()), isTrue);
+    retention.gate!.complete();
+    await tester.pump();
+    expect(retention.finished, 0,
+        reason: 'Disposed pages must not finish account cleanup');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
       'cached episodes stay usable while subscription synchronization is stalled',
       (tester) async {

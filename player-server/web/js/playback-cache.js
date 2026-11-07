@@ -189,3 +189,40 @@ export function initPlaybackCache(nextSong) {
   window.addEventListener('pagehide',releasePlaybackCache);
   window.addEventListener('storage',event=>{ if (event.key === preferencesKey) cancelCacheTransfer(); if (event.key === preferencesKey || event.key?.startsWith(prefix)) render(); }); render();
 }
+
+// Account caches have separate byte ownership. Never touch another listener's
+// cache or a kept music collection. Active/pending cache playback is retried on
+// a later maintenance pass, even when the player is paused.
+export async function removeExpiredPodcastCache(owner, episode, current = () => true) {
+  const name = `${prefix}${owner}`;
+  if (!current() || scope() !== name || !globalThis.caches) return;
+  return exclusive(async () => {
+    if (!current() || scope() !== name || liveURL || transfer) return;
+    const cache = await caches.open(name);
+    if (!current() || scope() !== name || liveURL || transfer) return;
+    const rows = index(name);
+    for (const row of Object.values(rows)) {
+      const ep = row.media.podcast_episode;
+      if (!(ep?.feed_key === episode.feed_key && ep?.episode_key === episode.episode_key) &&
+          !(episode.media_id && row.media.is_podcast && row.media.id === episode.media_id)) continue;
+      if (!current() || scope() !== name || liveURL || transfer) return;
+      const response = await cache.match(row.url);
+      if (!current() || scope() !== name || liveURL || transfer) return;
+      const lyrics = row.lyricsKey ? await cache.match(row.lyricsKey) : null;
+      if (!current() || scope() !== name || liveURL || transfer) return;
+      const restore = async () => {
+        if (response) await cache.put(row.url, response);
+        if (lyrics) await cache.put(row.lyricsKey, lyrics);
+      };
+      await cache.delete(row.url);
+      if (!current() || scope() !== name || liveURL || transfer) { await restore(); return; }
+      if (row.lyricsKey) await cache.delete(row.lyricsKey);
+      if (!current() || scope() !== name || liveURL || transfer) { await restore(); return; }
+      delete rows[row.url];
+      saveIndex(name, rows);
+    }
+    if (!current() || scope() !== name || liveURL || transfer) return;
+    saveIndex(name, rows);
+    changed();
+  });
+}

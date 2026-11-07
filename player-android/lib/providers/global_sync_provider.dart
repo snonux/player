@@ -132,6 +132,16 @@ final globalSyncCoordinatorProvider =
     sync.trigger();
   }
 
+  // Maintenance also runs for the selected cached/device-only library.
+  final retention = Timer.periodic(const Duration(minutes: 30), (_) async {
+    final scope = ref.read(podcastScopeProvider).valueOrNull;
+    if (scope == null) return;
+    try {
+      await retainSelectedPodcasts(ref, scope);
+    } catch (_) {/* Retry on next browse/tick. */}
+  });
+  ref.onDispose(retention.cancel);
+
   final retry = Timer.periodic(const Duration(seconds: 15), (_) {
     if (ref.read(authStateProvider).valueOrNull?.isOffline == true) {
       unawaited(wake());

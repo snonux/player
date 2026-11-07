@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import '../models/media.dart' show MediaPodcastMetadata;
 import 'podcast_metadata.dart';
+import 'podcast_retention_policy.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
@@ -304,6 +305,85 @@ class PodcastDownloads extends ChangeNotifier {
       await activeFinished?.future;
     }
     await _remove(feed, episode, current: current);
+  }
+
+  /// Quiet expiry never interrupts playback/transfers or removes a shared
+  /// device copy still needed by any other subscribed account library.
+  Future<void> removeExpiredCopy(String scope, String feed, String episode,
+      {required bool Function() current, int? nowMs}) async {
+    await ready;
+    if (!current()) return;
+    await (await repository.database).transaction((tx) async {
+      final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+      final targetFeed =
+          await repository.resolveAccountKey(tx, scope, 'feed', '', feed);
+      final targetEpisode = await repository.resolveAccountKey(
+          tx, scope, 'episode', targetFeed, episode);
+      final latest = await tx.query('podcast_episode_state',
+          where: 'scope=? AND feed_key=? AND episode_key=?',
+          whereArgs: [scope, targetFeed, targetEpisode]);
+      // The due snapshot is only a hint. Replays/restores/recompletion may have
+      // arrived while preparing downloads; revalidate under the unlink lock.
+      if (latest.isEmpty || !podcastRetentionExpired(latest.single, now)) {
+        return;
+      }
+      final subscriptions = await tx.query('podcast_subscriptions',
+          where: 'scope!=? AND subscribed=1', whereArgs: [scope]);
+      // Account aliases never rewrite shared device files. Map physical keys
+      // forward into this account rather than reversing its canonical identity.
+      for (final row
+          in await tx.query('podcast_downloads', where: "state='available'")) {
+        final identity = await _identity(
+            row['feed_key'] as String, row['episode_key'] as String,
+            executor: tx);
+        final mappedFeed = await repository.resolveAccountKey(
+            tx, scope, 'feed', '', identity.$1);
+        final mappedEpisode = await repository.resolveAccountKey(
+            tx, scope, 'episode', mappedFeed, identity.$2);
+        if (mappedFeed != targetFeed || mappedEpisode != targetEpisode) {
+          continue;
+        }
+        var protected = false;
+        for (final sub in subscriptions) {
+          final other = sub['scope'] as String;
+          final otherFeed = await repository.resolveAccountKey(
+              tx, other, 'feed', '', identity.$1);
+          final otherEpisode = await repository.resolveAccountKey(
+              tx, other, 'episode', otherFeed, identity.$2);
+          final subscribed = await repository.resolveAccountKey(
+              tx, other, 'feed', '', sub['feed_key'] as String);
+          if (subscribed != otherFeed) continue;
+          final state = await tx.query('podcast_episode_state',
+              where: 'scope=? AND feed_key=? AND episode_key=?',
+              whereArgs: [other, otherFeed, otherEpisode]);
+          if (state.isEmpty ||
+              state.single['deleted'] != 1 &&
+                  !podcastRetentionExpired(state.single, now)) {
+            protected = true;
+            break;
+          }
+        }
+        if (protected) continue;
+        final id = row['id'] as String;
+        final file = _file(id);
+        if (!current() ||
+            _active == id ||
+            playback.isLocalSourceInUse(file.uri.toString())) {
+          continue;
+        }
+        final exists = await file.exists();
+        if (!current() ||
+            _active == id ||
+            playback.isLocalSourceInUse(file.uri.toString())) {
+          continue;
+        }
+        if (exists) await file.delete();
+        await tx.update('podcast_downloads',
+            {'state': 'missing', 'size_bytes': 0, 'error': null},
+            where: 'id=?', whereArgs: [id]);
+      }
+    });
+    _changed();
   }
 
   Future<void> remove(String feed, String episode) => _remove(feed, episode);

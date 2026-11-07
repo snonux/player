@@ -105,6 +105,7 @@ void main() {
     final podcasts = BrowsingRepository();
     final container = ProviderContainer(overrides: [
       podcastRepositoryProvider.overrideWithValue(podcasts),
+      podcastRetentionProvider.overrideWithValue(BrowsingRetention(podcasts)),
       podcastDownloadsProvider
           .overrideWith((ref) => BrowsingDownloads(podcasts)),
       authStateProvider.overrideWith(_OfflineAccount.new),

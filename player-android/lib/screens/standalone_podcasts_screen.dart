@@ -145,6 +145,19 @@ class _StandalonePodcastsScreenState
                   onSelected: (action) {
                     if (action == 'refresh') {
                       _refreshFeeds();
+                    } else if (action == 'retention') {
+                      showDialog<void>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                                title: const Text('Completed episode cleanup'),
+                                content: const Text(
+                                    'Completed episodes leave your lists after seven days. This device also removes their downloads when they are not playing or needed by another library. Listening history and shared server files are kept. Replaying or marking uncompleted keeps an episode. Delayed sync starts a fresh seven-day grace when received.'),
+                                actions: [
+                                  TextButton(
+                                      onPressed: () => Navigator.pop(context),
+                                      child: const Text('Close'))
+                                ],
+                              ));
                     } else {
                       subscribe();
                     }
@@ -154,6 +167,9 @@ class _StandalonePodcastsScreenState
                             value: 'refresh', child: Text('Refresh feeds')),
                         PopupMenuItem(
                             value: 'url', child: Text('Add feed URL')),
+                        PopupMenuItem(
+                            value: 'retention',
+                            child: Text('Completed episode cleanup')),
                       ])
             ]),
         body: Column(children: [

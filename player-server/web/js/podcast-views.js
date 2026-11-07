@@ -346,6 +346,7 @@ function filterBarHtml(title, filter) {
     ${!state.podcastFeedKey && state.sets.some(set => set.is_podcast) ? `<a class="btn btn-ghost" href="/?set=${state.sets.find(set => set.is_podcast).id}">Downloaded server files</a>` : ''}
     ${state.podcastOverview ? '' : `<div class="podcast-filter-bar" role="group" aria-label="Completion filter">${buttons}</div>`}
     ${state.podcastOverview ? '' : `<div class="episode-layout-controls" role="group" aria-label="Episode layout"><button type="button" class="btn" data-episode-layout="list" aria-pressed="${episodeLayout === 'list'}">List</button><button type="button" class="btn" data-episode-layout="grid" aria-pressed="${episodeLayout === 'grid'}">Grid</button></div>`}
+    <details><summary>Episode retention</summary><p>Completed episodes leave your lists after seven days. This browser and the server each start that grace when they first observe completion. Playing again or restoring an episode keeps it until you complete it again. Expired browser copies are removed when playback releases them; shared server files and listening history stay saved.</p></details>
     <p id="podcast-pending-hint" class="text-muted text-sm" role="status"></p>
   </div>`;
 }

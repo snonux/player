@@ -86,6 +86,27 @@ class PodcastSyncStore {
     repository.onSyncNeeded?.call();
   }
 
+  /// First observation uses device time; delayed sync gets a full grace.
+  /// Expiry is device-local derived state: only the server creates automatic
+  /// synced tombstones, so an offline timer cannot override an unknown remote
+  /// replay or restore. Returned rows remain retryable for device cleanup.
+  Future<List<Map<String, Object?>>> retainCompleted(String scope,
+      {int? nowMs, bool Function()? current}) async {
+    final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    return (await database).transaction((tx) async {
+      if (current?.call() == false) return <Map<String, Object?>>[];
+      await tx.rawUpdate(
+          'UPDATE podcast_episode_state SET retention_completion_ms=completion_ms, retention_seen_ms=? WHERE scope=? AND completed=1 AND completion_ms>0 AND retention_completion_ms!=completion_ms',
+          [now, scope]);
+      final rows = await tx.query('podcast_episode_state',
+          where:
+              'scope=? AND completed=1 AND completion_ms>0 AND position_ms<=completion_ms AND retention_seen_ms>0 AND retention_seen_ms<=? AND (deleted=1 OR deletion_ms<completion_ms)',
+          whereArgs: [scope, now - const Duration(days: 7).inMilliseconds]);
+      if (current?.call() == false) throw StateError('Account changed');
+      return rows;
+    });
+  }
+
   Future<Map<String, Object?>> _state(DatabaseExecutor tx, String scope,
           String feed, String episode) async =>
       (await tx.query('podcast_episode_state',

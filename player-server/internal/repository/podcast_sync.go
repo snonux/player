@@ -53,6 +53,9 @@ func (s *SQLite) SyncPodcast(ctx context.Context, userID int64, in model.Podcast
 	if err := run.applyEpisodeEdits(ctx, episodes); err != nil {
 		return nil, err
 	}
+	if err := retainPodcastEpisodes(ctx, tx, userID, s.now()); err != nil {
+		return nil, err
+	}
 	if err := run.pull(ctx, episodes); err != nil {
 		return nil, err
 	}

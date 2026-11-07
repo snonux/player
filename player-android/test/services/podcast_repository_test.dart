@@ -149,7 +149,9 @@ void main() {
       for (final column in [
         'deleted',
         'deletion_ms',
-        'deletion_pending_edit_id'
+        'deletion_pending_edit_id',
+        'retention_completion_ms',
+        'retention_seen_ms'
       ]) {
         await db
             .execute('ALTER TABLE podcast_episode_state DROP COLUMN $column');
@@ -158,7 +160,7 @@ void main() {
       await repository.close();
       repository = PodcastRepository(databasePath: path);
       db = await repository.database;
-      expect(await db.getVersion(), 6);
+      expect(await db.getVersion(), 7);
       expect(await db.query('podcast_subscriptions'), subscriptions);
       expect(await db.query('podcast_episodes'), episodes);
       expect(await db.query('podcast_downloads'), downloads);
@@ -247,6 +249,10 @@ void main() {
         // Simulate a persisted pre-fix cache, including validators which would
         // otherwise hide the original numeric dates behind a 304 response.
         await db.execute('ALTER TABLE podcast_episodes DROP COLUMN image_url');
+        await db.execute(
+            'ALTER TABLE podcast_episode_state DROP COLUMN retention_completion_ms');
+        await db.execute(
+            'ALTER TABLE podcast_episode_state DROP COLUMN retention_seen_ms');
         await db.setVersion(oldVersion);
         await repository.close();
         repository = PodcastRepository(databasePath: path);
@@ -260,7 +266,7 @@ void main() {
                     where: 'feed_key=?', whereArgs: [healthyKey]))
                 .single,
             {...healthy, 'etag': '', 'last_modified': ''});
-        expect(await db.getVersion(), 6);
+        expect(await db.getVersion(), 7);
         await repository.refresh(key);
         expect(validators.last, [null, null]);
         final episodes = await repository.episodes(key);

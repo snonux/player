@@ -3,6 +3,7 @@
 // persist for this account and server origin across reloads.
 import { API } from './api.js';
 import { readPodcastDeletions, writePodcastDeletions, podcastDeletionStorageKey, podcastDeletionAcknowledged } from './podcast-deletion-store.js';
+import { readPodcastRetention, observePodcastRetention, podcastRetentionExpired, podcastRetentionMS, remapPodcastRetention } from './podcast-retention.js';
 const REGISTERS = ['position', 'completion', 'deletion'];
 function wins(name, incoming, current) {
   if (!incoming) return false;
@@ -15,7 +16,7 @@ import { randomEditId, resetPodcastSubscriptions } from './podcast-subscriptions
 
 const rows = new Map();
 let account = null, generation = 0, lastSuccess = null, lastError = null, lastFailure = null;
-let epochRecovery = null;
+let epochRecovery = null, retentionVisibility = '[]';
 const keyOf = ep => `${ep.feed_key}\0${ep.episode_key}`;
 const changed = () => globalThis.document?.dispatchEvent(new Event('podcast:state-changed'));
 const accountChannel = globalThis.window?.BroadcastChannel ? new window.BroadcastChannel('player-podcast-account') : null;
@@ -28,6 +29,7 @@ export function setPodcastAccount(id) {
   generation++;
   rows.clear();
   epochRecovery = null;
+  retentionVisibility = '[]';
   resetPodcastSubscriptions();
   lastSuccess = lastError = lastFailure = null;
   if (account) {
@@ -40,6 +42,7 @@ export function setPodcastAccount(id) {
   }
   accountChannel?.postMessage({ account });
   globalThis.document?.dispatchEvent(new Event('podcast:account-changed'));
+  sweepPodcastRetention();
   changed();
 }
 
@@ -53,6 +56,7 @@ export function podcastSyncStatus() {
 export function applyPodcastPull(response, lease = generation, { epochChanged = false } = {}) {
   if (lease !== generation || !account) return false;
   let updated = false;
+  remapPodcastRetention(account, [...(response.resolved || []), ...(response.aliases || [])]);
   if (epochChanged && epochRecovery?.epoch !== response.epoch) {
     epochRecovery = { epoch: response.epoch, known: [...new Set(rows.values())].map(row => ({ row,
       position: row.position && { ...row.position }, completion: row.completion && { ...row.completion }, deletion: row.deletion && { ...row.deletion } })), pulled: new Map() };
@@ -87,7 +91,7 @@ export function applyPodcastPull(response, lease = generation, { epochChanged = 
     if (encoded !== JSON.stringify([after.position, after.completion, after.deletion])) updated = true;
   }
   if (epochRecovery) for (const episode of response.episodes || []) epochRecovery.pulled.set(keyOf(episode), episode);
-  if (updated) { persistDeletions(); changed(); }
+  if (updated) { persistDeletions(); sweepPodcastRetention(); changed(); }
   return true;
 }
 
@@ -121,17 +125,61 @@ function rowFor(ep) {
   const row = rows.get(key);
   for (const name of REGISTERS) {
     const value = ep[name];
+    if (name === 'deletion' && value?.device_retention) continue;
     if (value && !row.pending[name] && wins(name, value, row[name])) row[name] = { ...value };
   }
   // Listing positions have no clocks. Use only before a register is known.
   if (!row.position && ep.position_seconds > 0) row.position = { seconds: ep.position_seconds, observed_ms: 0 };
+  if (account) {
+    try { observePodcastRetention(account, { ...ep, ...row }); }
+    catch (error) { lastError = error.message; lastFailure = error; }
+  }
   return row;
 }
 
-export function episodeSnapshot(ep) {
+// Device expiry is derived from durable markers and never sent as a manual
+// deletion: a remote replay/restore may be unknown while this browser is offline.
+// The server independently publishes its guarded retention tombstone on sync.
+export function sweepPodcastRetention(now = Date.now()) {
+  if (!account) return Promise.resolve();
+  const cleanup = [];
+  try {
+    const owner = account, lease = generation, hidden = [];
+    for (const marker of readPodcastRetention(owner)) {
+      const row = rowFor(marker);
+      const current = observePodcastRetention(owner, row, now);
+      const expired = podcastRetentionExpired(current, now);
+      if (expired) hidden.push(keyOf(row));
+      if (current?.completed && now >= current.seen_ms + podcastRetentionMS && current.position_ms <= current.completion_ms && (expired || row.deletion?.deleted) && globalThis.caches) {
+        const expected = { feed_key: row.feed_key, episode_key: row.episode_key,
+          completion_ms: current.completion_ms, seen_ms: current.seen_ms };
+        const stillEligible = () => {
+          if (account !== owner || generation !== lease || row.feed_key !== expected.feed_key || row.episode_key !== expected.episode_key || rows.get(keyOf(expected)) !== row) return false;
+          const latest = observePodcastRetention(owner, row);
+          return latest?.completion_ms === expected.completion_ms && latest.seen_ms === expected.seen_ms &&
+            latest.completed && Math.max(now, Date.now()) >= latest.seen_ms + podcastRetentionMS &&
+            latest.position_ms <= latest.completion_ms &&
+            (podcastRetentionExpired(latest, Math.max(now, Date.now())) || row.deletion?.deleted === true);
+        };
+        cleanup.push(import('./playback-cache.js').then(module => module.removeExpiredPodcastCache(owner, marker,
+          stillEligible)).catch(() => {}));
+      }
+    }
+    const visibility = JSON.stringify(hidden.sort());
+    if (visibility !== retentionVisibility) { retentionVisibility = visibility; changed(); }
+  } catch (error) { lastError = error.message; lastFailure = error; }
+  return Promise.all(cleanup);
+}
+
+export function episodeSnapshot(ep, now = Date.now()) {
   const row = rowFor(ep);
+  let derivedDeletion = null;
+  try {
+    const marker = observePodcastRetention(account, row);
+    if (podcastRetentionExpired(marker, now)) derivedDeletion = { deleted: true, device_retention: true, observed_ms: marker.seen_ms + podcastRetentionMS };
+  } catch (error) { lastError = error.message; lastFailure = error; }
   return { feed_key: row.feed_key, episode_key: row.episode_key,
-    position: row.position && { ...row.position }, completion: row.completion && { ...row.completion }, deletion: row.deletion && { ...row.deletion } };
+    position: row.position && { ...row.position }, completion: row.completion && { ...row.completion }, deletion: derivedDeletion || (row.deletion && { ...row.deletion }) };
 }
 
 function pendingItem(row) {
@@ -145,6 +193,7 @@ export function completionEdit(ep, completed, now = Date.now()) {
     row.pending.completion = { edit_id: randomEditId(), completed: Boolean(completed), source: 'manual',
       observed_ms: Math.max(now, (row.completion?.observed_ms || 0) + 1) };
     row.completion = { ...row.pending.completion };
+    observePodcastRetention(account, row, now);
     changed();
   }
   return pendingItem(row);
@@ -160,6 +209,7 @@ export function saveEpisodePosition(ep, seconds, { finished = false, now = Date.
   row.position = row.pending.position = { edit_id: randomEditId(), seconds, observed_ms: ms };
   if (finished) row.completion = row.pending.completion = {
     edit_id: randomEditId(), completed: true, source: 'auto', observed_ms: ms };
+  observePodcastRetention(account, row, now);
   changed();
   void syncEpisode(ep, finished).catch(() => {});
   return ms;
@@ -273,6 +323,7 @@ export function pendingCompletionEdit(feedKey, episodeKey) {
 }
 
 export async function retryPodcastEpisodeEdits() {
+  sweepPodcastRetention();
   const owner = generation;
   const unique = [...new Set(rows.values())];
   for (const row of unique) {
@@ -314,3 +365,13 @@ globalThis.addEventListener?.('storage', event => {
     changed();
   } catch (error) { lastError = error.message; lastFailure = error; changed(); }
 });
+
+// Keep long-lived offline tabs current without putting optional maintenance on
+// the playback path. Returning to a suspended tab also checks the boundary.
+if (globalThis.window) {
+  const retentionTimer = setInterval(() => sweepPodcastRetention(), 60 * 1000);
+  retentionTimer.unref?.();
+  globalThis.document?.addEventListener?.('visibilitychange', () => {
+    if (document.visibilityState === 'visible') sweepPodcastRetention();
+  });
+}

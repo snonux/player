@@ -12,6 +12,7 @@ import 'package:player_android/providers/podcast_library_provider.dart';
 import 'package:player_android/services/podcast_repository.dart';
 import 'package:player_android/services/podcast_sync_store.dart';
 import 'package:player_android/services/podcast_downloads.dart';
+import 'package:player_android/services/podcast_retention.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
 
 class BrowsingRepository extends PodcastRepository {
@@ -111,8 +112,28 @@ class BrowsingDownloads extends PodcastDownloads {
   Future<Map<String, Object?>?> copy(String feed, String episode) async => null;
 }
 
+/// Screen fixtures have no database/filesystem. Service and native retention
+/// tests use the real policy; this fake can deliberately hold maintenance open.
+class BrowsingRetention extends PodcastRetention {
+  BrowsingRetention(BrowsingRepository repository)
+      : super(BrowsingStore(repository), BrowsingDownloads(repository));
+  Completer<void>? gate;
+  final scopes = <String>[];
+  final leases = <bool Function()>[];
+  var finished = 0;
+  @override
+  Future<void> sweep(String scope,
+      {required bool Function() current, int? nowMs}) async {
+    scopes.add(scope);
+    leases.add(current);
+    await gate?.future;
+    if (current()) finished++;
+  }
+}
+
 Widget browsingApp(Widget screen, BrowsingRepository repository,
         {BrowsingStore? store,
+        BrowsingRetention? retention,
         Future<String> Function(Ref)? scope,
         PodcastServerMetadata? serverMetadata,
         Future<PodcastSyncResult?>? serverSync}) =>
@@ -120,6 +141,8 @@ Widget browsingApp(Widget screen, BrowsingRepository repository,
       if (serverSync != null)
         podcastServerSubscriptionsProvider.overrideWith((ref) => serverSync),
       podcastRepositoryProvider.overrideWithValue(repository),
+      podcastRetentionProvider
+          .overrideWithValue(retention ?? BrowsingRetention(repository)),
       podcastServerMetadataProvider.overrideWithValue(serverMetadata),
       podcastScopeProvider
           .overrideWith((ref) => scope?.call(ref) ?? Future.value('local')),
