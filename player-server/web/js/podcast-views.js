@@ -240,7 +240,7 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
     clearSelection();
     return {page:0,total:feeds.length,hasPrev:false,hasNext:false};
   }
-  const filter = state.podcastFeedKey ? (state.podcastFilter || 'uncompleted') : 'all';
+  const filter = state.podcastFilter || 'uncompleted';
   const generation = podcastSyncStatus().generation;
   const feedKey = state.podcastFeedKey || '';
   const page = Math.max(0, state.mediaPage | 0);
@@ -344,7 +344,7 @@ function filterBarHtml(title, filter) {
     <h2 class="podcast-view-title">${escapeHtml(title)}</h2>
     <div role="group" aria-label="Podcast view"><button type="button" class="btn btn-ghost" data-podcast-view="episodes" aria-pressed="${!state.podcastOverview}">Episodes</button><button type="button" class="btn btn-ghost" data-podcast-view="podcasts" aria-pressed="${!!state.podcastOverview}">Podcasts</button></div>
     ${!state.podcastFeedKey && state.sets.some(set => set.is_podcast) ? `<a class="btn btn-ghost" href="/?set=${state.sets.find(set => set.is_podcast).id}">Downloaded server files</a>` : ''}
-    ${state.podcastFeedKey ? `<div class="podcast-filter-bar" role="group" aria-label="Completion filter">${buttons}</div>` : '<p class="text-muted text-sm">Newest first · Listened episodes stay in this list.</p>'}
+    ${state.podcastOverview ? '' : `<div class="podcast-filter-bar" role="group" aria-label="Completion filter">${buttons}</div>`}
     ${state.podcastOverview ? '' : `<div class="episode-layout-controls" role="group" aria-label="Episode layout"><button type="button" class="btn" data-episode-layout="list" aria-pressed="${episodeLayout === 'list'}">List</button><button type="button" class="btn" data-episode-layout="grid" aria-pressed="${episodeLayout === 'grid'}">Grid</button></div>`}
     <p id="podcast-pending-hint" class="text-muted text-sm" role="status"></p>
   </div>`;
@@ -560,7 +560,7 @@ async function markCompletion(card, ep, completed) {
     const result = await setEpisodeCompleted(ep, completed);
     ep.completed = result?.completion?.completed ?? ep.completed;
     toast(ep.completed === completed ? (completed ? 'Marked completed' : 'Marked uncompleted') : 'A newer completion change was kept');
-    const filter = state.podcastFeedKey ? (state.podcastFilter || 'uncompleted') : 'all';
+    const filter = state.podcastFilter || 'uncompleted';
     const leaves = (filter === 'uncompleted' && ep.completed) || (filter === 'completed' && !ep.completed);
     if (leaves) {
       focusAfterRemoval(card);
@@ -633,7 +633,7 @@ function updateVisibleEpisodeState() {
     const completed = snapshot.completion?.completed ?? ep.completed;
     ep.position_seconds = snapshot.position?.seconds ?? ep.position_seconds;
     ep.completed = completed;
-    const filter = state.podcastFeedKey ? (state.podcastFilter || 'uncompleted') : 'all';
+    const filter = state.podcastFilter || 'uncompleted';
     if (snapshot.deletion?.deleted || (filter === 'uncompleted' && completed) || (filter === 'completed' && !completed)) {
       if (card.contains(document.activeElement) || card.classList.contains('selected')) focusAfterRemoval(card);
       clearEpisodeSlot(card);

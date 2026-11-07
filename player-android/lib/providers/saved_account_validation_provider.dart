@@ -7,6 +7,21 @@ import '../services/saved_server_credentials.dart';
 import '../services/server_endpoint_router.dart';
 import 'server_endpoint_provider.dart';
 
+/// Only outages permit offline access; rejected credentials, bad certificates,
+/// redirects and invalid responses must keep the account locked.
+bool isServerUnavailable(DioException error) {
+  if ([502, 503, 504].contains(error.response?.statusCode)) return true;
+  if (error.response != null) return false;
+  return error.error is EndpointReachabilityException ||
+      {
+        DioExceptionType.connectionTimeout,
+        DioExceptionType.receiveTimeout,
+        DioExceptionType.sendTimeout
+      }.contains(error.type) ||
+      (error.type == DioExceptionType.connectionError &&
+          error.error is SocketException);
+}
+
 final savedAccountValidationTransportProvider =
     Provider<HttpClientAdapter Function()>((ref) {
   final router = ref.watch(serverEndpointRouterProvider);
@@ -40,24 +55,7 @@ final savedAccountValidationProvider =
     } on DioException catch (error) {
       // Gateway failures also describe a backend outage behind a live ingress.
       // Authentication denial, malformed responses and certificate errors fail shut.
-      if ([502, 503, 504].contains(error.response?.statusCode)) return false;
-      if (error.response == null &&
-          error.error is EndpointReachabilityException) {
-        return false;
-      }
-      if (error.response == null &&
-          {
-            DioExceptionType.connectionTimeout,
-            DioExceptionType.receiveTimeout,
-            DioExceptionType.sendTimeout
-          }.contains(error.type)) {
-        return false;
-      }
-      if (error.response == null &&
-          error.type == DioExceptionType.connectionError &&
-          error.error is SocketException) {
-        return false;
-      }
+      if (isServerUnavailable(error)) return false;
       rethrow;
     } finally {
       dio.close(force: true);

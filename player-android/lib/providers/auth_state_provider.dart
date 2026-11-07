@@ -176,7 +176,9 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
 
   /// Activate a saved token only after a successful biometric prompt.
   /// Password fallback performs a fresh server login.
-  Future<bool> unlockSavedServer() async {
+  Future<bool> unlockSavedServer({
+    Future<bool> Function(SavedServerCredential)? confirmOffline,
+  }) async {
     await future;
     final settings = await ref.read(settingsProvider.future);
     if (settings.selectionRequired ||
@@ -213,8 +215,13 @@ class AuthStateNotifier extends AsyncNotifier<AuthState> {
             LibraryDestination.server) {
       return false;
     }
+    if (!online &&
+        confirmOffline != null &&
+        !await confirmOffline(credential)) {
+      return false;
+    }
     return queue.run(() async {
-      if (queue.generation != generation) return false;
+      if (queue.generation != generation || !credential.isValid) return false;
       final prefs = await SharedPreferences.getInstance();
       try {
         await ref.read(tokenStorageProvider).writeToken(credential.token);

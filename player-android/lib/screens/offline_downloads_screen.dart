@@ -34,7 +34,8 @@ class _OfflineDownloadsScreenState
 
   @override
   Widget build(BuildContext context) {
-    final offline = ref.watch(authStateProvider).valueOrNull?.isOffline == true;
+    final auth = ref.watch(authStateProvider).valueOrNull;
+    final offline = auth?.isOffline == true;
     final downloads = ref.watch(offlineDownloadsProvider);
     final items = ref.watch(offlineMediaListProvider);
     final job = offline ? null : downloads.active;
@@ -91,7 +92,8 @@ class _OfflineDownloadsScreenState
         Padding(
             padding: const EdgeInsets.all(16),
             child: Text(offline
-                ? 'Server unavailable. This account’s saved files and podcasts are available. Playback progress syncs after reconnecting.'
+                ? 'Offline · ${auth!.user!.username}\n${ref.watch(playerBaseUrlProvider).origin}\n'
+                    'This account’s saved files and podcasts are available. Playback progress syncs after reconnecting.'
                 : 'Play saved files without signing in or connecting. Removing a download keeps the server file.')),
         TextButton.icon(
             icon: const Icon(Icons.library_music),
@@ -351,7 +353,8 @@ class _OfflineDownloadTileState extends ConsumerState<_OfflineDownloadTile> {
       }),
       title: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-          '${formatOfflineBytes(item.sizeBytes)} · ${_typeLabel(item.type)}'),
+          '${formatOfflineBytes(item.sizeBytes)} · ${_typeLabel(item.type)}\n'
+          '${item.origin} · Account ${item.userId}'),
       onTap: widget.removing ? null : widget.onOpen,
       trailing: PopupMenuButton<_OfflineDownloadAction>(
         key: Key('offline_menu_${item.key}'),

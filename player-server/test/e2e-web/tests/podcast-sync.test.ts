@@ -29,14 +29,8 @@ async function openEpisodes(p: Page, filter = 'All') {
   if (!await all.isVisible()) await toggle.click();
   await all.click();
   await expect(p.locator('.podcast-view-title')).toHaveText('All podcast episodes', { timeout: 15_000 });
-  await expect(p.locator('.podcast-filter-bar')).toHaveCount(0);
-  if (filter !== 'All') {
-    const publisher = p.getByRole('button', { name: `Podcast ${feed.title}`, exact: true });
-    if (!await publisher.isVisible()) await toggle.click();
-    await publisher.click();
-    await p.getByRole('button', { name: filter, exact: true }).click();
-    await expect(p.getByRole('button', { name: filter, exact: true })).toHaveAttribute('aria-pressed', 'true');
-  }
+  await p.getByRole('button', { name: filter, exact: true }).click();
+  await expect(p.getByRole('button', { name: filter, exact: true })).toHaveAttribute('aria-pressed', 'true');
 }
 
 async function rows(p: Page) {

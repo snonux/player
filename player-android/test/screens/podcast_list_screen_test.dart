@@ -27,14 +27,14 @@ void main() {
     expect(repository.refreshed, ['feed:example/feed']);
   });
   testWidgets(
-      'native Podcasts defaults to all episodes and keeps feeds available without a server API',
+      'native Podcasts defaults to uncompleted episodes and keeps feeds available without a server API',
       (tester) async {
     final repository = BrowsingRepository();
     await tester.pumpWidget(browsingApp(const PodcastListScreen(), repository));
     await tester.pumpAndSettle();
     expect(find.text('All podcast episodes'), findsOneWidget);
     expect(repository.queries.last.$1, isNull);
-    expect(repository.queries.last.$2, 'all');
+    expect(repository.queries.last.$2, 'uncompleted');
     await tester.tap(find.text('Podcasts'));
     await tester.pumpAndSettle();
     expect(find.text('Podcasts on this device'), findsOneWidget);
@@ -56,7 +56,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
         repository.queries
-            .any((query) => query.$1 == null && query.$2 == 'all'),
+            .any((query) => query.$1 == null && query.$2 == 'uncompleted'),
         isTrue);
     expect(find.text('My podcast'), findsOneWidget);
     expect(find.text('Download'), findsOneWidget);

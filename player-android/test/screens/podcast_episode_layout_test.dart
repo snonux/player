@@ -46,7 +46,7 @@ void episodeLayoutTests() {
     await tester.pumpAndSettle();
     expect(find.byType(Card), findsNothing);
     expect(find.text('Episode 0'), findsOneWidget);
-    expect(repository.queries.every((query) => query.$2 == 'all'), isTrue);
+    expect(repository.queries.every((query) => query.$2 == 'uncompleted'), isTrue);
     await tester.tap(find.text('Grid'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Podcasts'));
@@ -56,6 +56,45 @@ void episodeLayoutTests() {
     expect(find.byType(Card), findsNWidgets(4));
     expect(tester.takeException(), isNull);
   });
+
+  for (final grid in [false, true]) {
+    testWidgets('completion filters retain episodes and undo in ${grid ? 'grid' : 'list'}',
+        (tester) async {
+      final repository = BrowsingRepository();
+      final store = BrowsingStore(repository);
+      await tester.pumpWidget(browsingApp(
+          const LocalPodcastEpisodesScreen(), repository, store: store));
+      await tester.pumpAndSettle();
+      expect(repository.queries.last.$2, 'uncompleted');
+      if (grid) {
+        await tester.tap(find.text('Grid'));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byTooltip('More episode actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mark completed'));
+      await tester.pumpAndSettle();
+      expect(find.text('Episode 0'), findsNothing);
+      expect(store.saves.single['completed'], isTrue);
+      await tester.tap(find.text('Completed'));
+      await tester.pumpAndSettle();
+      expect(find.text('Episode 0'), findsOneWidget);
+      await tester.tap(find.text('All'));
+      await tester.pumpAndSettle();
+      expect(find.text('Episode 0'), findsOneWidget);
+      await tester.tap(find.byTooltip('More episode actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mark uncompleted'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Completed'));
+      await tester.pumpAndSettle();
+      expect(find.text('Episode 0'), findsNothing);
+      await tester.tap(find.text('Uncompleted'));
+      await tester.pumpAndSettle();
+      expect(find.text('Episode 0'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('grid grows for long titles and enlarged text', (tester) async {
     final repository = BrowsingRepository()..count = 3;

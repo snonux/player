@@ -75,3 +75,61 @@ test('device podcast grid preserves cached episodes and playback controls', asyn
   await expect(page.locator('.episode-grid')).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Device episode 0',exact:true})).toBeVisible();
 });
+
+for (const layout of ['List', 'Grid']) {
+  test(`completion overview hides finished episodes and retains recovery in ${layout}`, async ({ page }) => {
+    await page.goto('/login.html');
+    await page.evaluate(async () => {
+      document.body.innerHTML = '<main class="main-content"><div id="media-grid" class="media-grid picture-grid"></div></main>';
+      for (const name of ['theme', 'components', 'layout']) {
+        const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = `/css/${name}.css`; document.head.append(css);
+        await new Promise(resolve => { css.onload = resolve; css.onerror = resolve; });
+      }
+      const { API } = await import('/js/api.js');
+      const { state } = await import('/js/state.js');
+      const episodeState = await import('/js/podcast-episode-state.js');
+      episodeState.setPodcastAccount(42);
+      state.virtualSet = 'podcasts'; state.podcastFeedKey = ''; state.podcastOverview = false; state.podcastFilter = 'uncompleted';
+      const episodes = [0, 1].map(i => ({ id: i + 1, feed_key: 'feed:completion', episode_key: `guid:${i}`,
+        title: `Completion episode ${i}`, feed_title: 'Completion podcast', published_at: '2026-11-01', duration_seconds: 3, completed: i === 1 }));
+      API.subscribedEpisodes = async ({ filter }: { filter: string }) => episodes.filter(ep => filter === 'all' || ep.completed === (filter === 'completed')).map(ep => ({ ...ep }));
+      API.syncPodcast = async ({ episodes: edits }: any) => {
+        for (const edit of edits) {
+          const ep = episodes.find(ep => ep.episode_key === edit.episode_key)!;
+          if (edit.completion) ep.completed = edit.completion.completed;
+        }
+        return { episodes: edits, acked: edits.flatMap((edit: any) => ['position', 'completion'].map(key => edit[key]?.edit_id).filter(Boolean)) };
+      };
+      const views = await import('/js/podcast-views.js');
+      const render = () => views.renderPodcastVirtualView(document.getElementById('media-grid'));
+      views.initPodcastViews({ onLoadMedia: render });
+      await render();
+    });
+    const filters = page.getByRole('group', { name: 'Completion filter' });
+    const cards = page.locator('.episode-card');
+    await expect(filters.getByRole('button', { name: 'Uncompleted', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(cards).toHaveCount(1);
+    await page.getByRole('group', { name: 'Episode layout' }).getByRole('button', { name: layout, exact: true }).click();
+    await cards.first().getByRole('button', { name: 'More episode actions' }).click();
+    await page.getByRole('group', { name: 'Media actions', exact: true }).getByRole('button', { name: 'Mark completed', exact: true }).click();
+    await expect(cards).toHaveCount(0);
+    await filters.getByRole('button', { name: 'Completed', exact: true }).click();
+    await expect(cards).toHaveCount(2);
+    await filters.getByRole('button', { name: 'All', exact: true }).click();
+    await expect(cards).toHaveCount(2);
+    await cards.first().getByRole('button', { name: 'More episode actions' }).click();
+    await page.getByRole('group', { name: 'Media actions', exact: true }).getByRole('button', { name: 'Mark uncompleted', exact: true }).click();
+    await filters.getByRole('button', { name: 'Uncompleted', exact: true }).click();
+    await expect(cards).toHaveCount(1);
+    // The same atomic state event emitted by natural playback must remove the card.
+    await page.evaluate(async () => {
+      const { saveEpisodePosition } = await import('/js/podcast-episode-state.js');
+      saveEpisodePosition({ feed_key: 'feed:completion', episode_key: 'guid:0' }, 3, { finished: true });
+    });
+    await expect(cards).toHaveCount(0);
+    await filters.getByRole('button', { name: 'Completed', exact: true }).click();
+    await expect(cards).toHaveCount(2);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}

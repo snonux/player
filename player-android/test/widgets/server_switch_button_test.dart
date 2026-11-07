@@ -12,6 +12,7 @@ import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/first_run_provider.dart';
 import 'package:player_android/providers/settings_provider.dart';
 import 'package:player_android/widgets/server_switch_button.dart';
+import 'package:player_android/services/saved_server_credentials.dart';
 
 const _serverA = 'https://a.example';
 const _serverB = 'https://b.example';
@@ -43,7 +44,9 @@ class _FakeAuthNotifier extends AuthStateNotifier {
   }
 
   @override
-  Future<bool> unlockSavedServer() async {
+  Future<bool> unlockSavedServer({
+    Future<bool> Function(SavedServerCredential)? confirmOffline,
+  }) async {
     unlockCalls++;
     if (unlocks) {
       state = const AsyncData(AuthState.authenticated(

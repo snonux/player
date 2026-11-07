@@ -1,3 +1,4 @@
+import 'package:player_android/providers/continue_listening_provider.dart';
 import 'package:player_android/providers/podcast_library_provider.dart';
 import 'package:player_android/services/podcast_repository.dart';
 import 'podcast_browsing_fakes.dart';
@@ -186,6 +187,8 @@ void main() {
         sizeBytes: 4,
         addedAt: DateTime.now());
     final container = ProviderContainer(overrides: [
+      // Resume shortcuts have their own tests; keep their device DBs out of this fixture.
+      continueListeningProvider(false).overrideWith((ref) async => []),
       offlineDownloadRepositoryProvider.overrideWithValue(repository),
       offlineDownloadsProvider.overrideWith((ref) => downloads),
       apiClientProvider.overrideWith(
@@ -206,7 +209,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Saved audio.mp3'), findsOneWidget);
     expect(find.textContaining('0 KB · Audio'), findsOneWidget);
-    expect(find.textContaining('https://saved.example:8443'), findsNothing);
+    expect(find.textContaining('https://saved.example:8443'), findsOneWidget);
+    expect(find.textContaining('Account 7'), findsOneWidget);
     expect(find.byKey(Key('offline_menu_$key')), findsOneWidget);
     expect(find.byTooltip('Music details'), findsNothing);
     expect(find.byTooltip('Notes'), findsNothing);
@@ -314,6 +318,8 @@ void main() {
           addedAt: DateTime.now()));
     });
     final container = ProviderContainer(overrides: [
+      // Resume shortcuts have their own tests; keep their device DBs out of this fixture.
+      continueListeningProvider(false).overrideWith((ref) async => []),
       offlineDownloadRepositoryProvider.overrideWithValue(repository),
       offlineDownloadsProvider.overrideWith((ref) => downloads),
       apiClientProvider

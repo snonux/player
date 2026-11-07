@@ -75,12 +75,13 @@ void main() {
         find.byType(PodcastDownloadControls).first);
     control.onPlaybackReturn!();
     await tester.pumpAndSettle();
-    expect(repository.queries.last, (null, 'all', 40));
+    expect(repository.queries.last, (null, 'uncompleted', 40));
     expect(list.controller!.offset, before);
-    expect(find.byType(ChoiceChip), findsNothing);
+    expect(tester.widget<ChoiceChip>(
+        find.widgetWithText(ChoiceChip, 'Uncompleted')).selected, isTrue);
   });
   testWidgets(
-      'per-feed filters remain while all episodes always include listened',
+      'completed episodes leave the default overview and remain recoverable through filters',
       (tester) async {
     final repository = BrowsingRepository();
     final store = BrowsingStore(repository);
@@ -104,18 +105,27 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('All podcast episodes'));
     await tester.pumpAndSettle();
+    expect(find.text('Episode 0'), findsNothing);
+    expect(repository.queries.last, (null, 'uncompleted', 0));
+    expect(find.byType(ChoiceChip), findsNWidgets(3));
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Completed'));
+    await tester.pumpAndSettle();
     expect(find.text('Episode 0'), findsOneWidget);
     expect(find.text('Listened'), findsOneWidget);
-    expect(find.byType(ChoiceChip), findsNothing);
-    expect(
-        find.text('Newest first · Includes listened episodes'), findsOneWidget);
+    expect(find.text('Newest first'), findsOneWidget);
     final artwork = tester.widget<Opacity>(find.byType(Opacity).first);
     expect(artwork.opacity, 0.5);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'All'));
+    await tester.pumpAndSettle();
+    expect(find.text('Episode 0'), findsOneWidget);
     await openEpisodeActions(tester);
     await tester.tap(find.text('Mark uncompleted'));
     await tester.pumpAndSettle();
     expect(find.text('Episode 0'), findsOneWidget);
     expect(store.saves.last['seconds'], isNull);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Uncompleted'));
+    await tester.pumpAndSettle();
+    expect(find.text('Episode 0'), findsOneWidget);
   });
 
   testWidgets('save error retains episode with retryable manual control',
@@ -132,6 +142,10 @@ void main() {
     repository.failSave = false;
     await openEpisodeActions(tester);
     await tester.tap(find.text('Mark completed'));
+    await tester.pumpAndSettle();
+    expect(find.text('Episode 0'), findsNothing);
+    expect(repository.completed, isTrue);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Completed'));
     await tester.pumpAndSettle();
     expect(find.text('Episode 0'), findsOneWidget);
   });

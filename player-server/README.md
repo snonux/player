@@ -121,6 +121,11 @@ npx playwright test -c playwright.episode-layout.config.ts
 The Chrome/Firefox check exercises subscribed-episode rendering and device
 RSS browsing with deterministic metadata, including offline layout switching.
 
+Subscribed episode lists default to **Uncompleted**. Marking an episode
+completed or playing it to its natural end removes it from that list. Use
+**Completed** or **All** to find it again, or mark it uncompleted to restore it
+to the default list. Both list and grid layouts retain these filters.
+
 Podcast playback continues to the next uncompleted episode of the same feed
 in newest-first order and stops at the end. Server playback downloads the next
 episode when needed. Browser device podcasts queue the remaining episodes of

@@ -10,6 +10,7 @@ async function open(page: Page) {
   const all = page.getByRole('button', { name: 'All podcast episodes', exact: true });
   if (!await all.isVisible()) await page.getByRole('button', { name: 'Toggle sets sidebar', exact: true }).click();
   await all.click();
+  await page.getByRole('button', { name: 'All', exact: true }).click();
   await expect(page.locator('.episode-card').filter({ hasText: 'Beta Episode 002' })).toBeVisible();
 }
 async function fresh(page: Page, title: string) {
@@ -20,6 +21,7 @@ async function fresh(page: Page, title: string) {
   else await page.keyboard.press('Escape');
 }
 async function play(page: Page) {
+  await page.getByRole('button', { name: 'Uncompleted', exact: true }).click();
   const card = page.locator('.episode-card').filter({ hasText: 'Beta Episode 002' });
   await card.getByRole('button', { name: /^(Download and play|Play|Resume) episode$/ }).click();
   await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => !a.paused && a.currentTime > 0.2)).toBe(true);
@@ -27,6 +29,7 @@ async function play(page: Page) {
 test('natural completion starts the next episode and the feed stops without wrapping', async ({ page }) => {
   await open(page); await fresh(page, 'Beta Episode 002'); await fresh(page, 'Beta Episode 003'); await play(page);
   await expect(page.locator('#player')).toContainText('Beta Episode 003', { timeout: 30_000 });
+  await expect(page.locator('.episode-card').filter({ hasText: 'Beta Episode 002' })).toHaveCount(0);
   await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.ended), { timeout: 25_000 }).toBe(true);
   await page.waitForTimeout(500);
   await expect(page.locator('#player')).toContainText('Beta Episode 003');

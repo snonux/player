@@ -6,12 +6,13 @@ export function initOfflinePinLibrary() {
  const host=document.getElementById('settings-modal')?.querySelector('.modal');
  if(!host || host.querySelector('[data-offline-library]'))return;
  const panel=document.createElement('section');panel.dataset.offlineLibrary='';
- panel.innerHTML='<h4>Saved music collections</h4><p><a class="btn" href="/index.html?local=files">On this device</a></p><p>Pinned album and playlist copies stay separate from disposable playback cache. Browser storage is best effort; clearing site data removes downloads.</p><p role="status" data-status></p><button class="btn" data-refresh>Refresh saved collections</button><details><summary>Manage downloaded collections</summary><ul data-collections></ul></details>';
+ panel.innerHTML='<h4>Saved music collections</h4><p data-source></p><p><a class="btn" href="/index.html?local=files">On this device</a></p><p>Pinned album and playlist copies stay separate from disposable playback cache. Browser storage is best effort; clearing site data removes downloads.</p><p role="status" data-status></p><button class="btn" data-refresh>Refresh saved collections</button><details><summary>Manage downloaded collections</summary><ul data-collections></ul></details>';
  host.append(panel);
  let revision=0;
  async function render() {
   const version=++revision, account=state.user, status=panel.querySelector('[data-status]'),list=panel.querySelector('ul');
   list.replaceChildren();
+  panel.querySelector('[data-source]').textContent=`${location.origin}${account ? ` · Account ${account.id}` : ' · Signed out'}`;
   if(!account) {status.textContent='Sign in online to unlock this account’s saved collections. Offline sign-in is not available.';return;}
   status.textContent='Loading saved collections…';
   try {

@@ -281,7 +281,6 @@ class _LocalPodcastEpisodesScreenState
   void initState() {
     super.initState();
     if (widget.feedKey == null) {
-      filter = 'all';
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(refreshFeeds(missingOnly: true));
       });
@@ -665,31 +664,37 @@ class _LocalPodcastEpisodesScreenState
               : 'Refreshing feeds $refreshDone of $refreshTotal'),
         if (widget.feedKey == null)
           const Padding(
-              padding: EdgeInsets.all(8),
-              child: Text('Newest first · Includes listened episodes')),
-        if (widget.feedKey != null)
-          Padding(
-              padding: const EdgeInsets.all(8),
-              child: Wrap(spacing: 8, children: [
-                for (final option in ['uncompleted', 'completed', 'all'])
-                  ChoiceChip(
-                      label: Text(
-                          '${option[0].toUpperCase()}${option.substring(1)}'),
-                      selected: filter == option,
-                      onSelected: (_) {
-                        setState(() => filter = option);
-                        page(0);
-                      })
-              ])),
+              padding: EdgeInsets.all(8), child: Text('Newest first')),
+        Padding(
+            padding: const EdgeInsets.all(8),
+            child: Wrap(spacing: 8, children: [
+              for (final option in ['uncompleted', 'completed', 'all'])
+                ChoiceChip(
+                    label: Text(
+                        '${option[0].toUpperCase()}${option.substring(1)}'),
+                    selected: filter == option,
+                    onSelected: (_) {
+                      setState(() => filter = option);
+                      page(0);
+                    })
+            ])),
         Padding(
           padding: const EdgeInsets.all(8),
           child: SegmentedButton<bool>(
             segments: const [
-              ButtonSegment(value: false, icon: Icon(Icons.view_list), label: Text('List')),
-              ButtonSegment(value: true, icon: Icon(Icons.grid_view), label: Text('Grid')),
+              ButtonSegment(
+                  value: false,
+                  icon: Icon(Icons.view_list),
+                  label: Text('List')),
+              ButtonSegment(
+                  value: true,
+                  icon: Icon(Icons.grid_view),
+                  label: Text('Grid')),
             ],
             selected: {grid},
-            onSelectionChanged: (values) => ref.read(podcastEpisodeGridProvider.notifier).state = values.single,
+            onSelectionChanged: (values) => ref
+                .read(podcastEpisodeGridProvider.notifier)
+                .state = values.single,
           ),
         ),
         if (error != null) Text(error!),
@@ -712,11 +717,14 @@ class _LocalPodcastEpisodesScreenState
                   if (grid)
                     LayoutBuilder(builder: (context, constraints) {
                       // Flowing cards grow with text and expanded notes.
-                      final columns = (constraints.maxWidth / 300).floor().clamp(1, 6);
-                      final width = (constraints.maxWidth - (columns - 1) * 8) / columns;
+                      final columns =
+                          (constraints.maxWidth / 300).floor().clamp(1, 6);
+                      final width =
+                          (constraints.maxWidth - (columns - 1) * 8) / columns;
                       return Wrap(spacing: 8, runSpacing: 8, children: [
                         for (final e in rows.take(40))
-                          SizedBox(width: width, child: episodeTile(e, scope, true)),
+                          SizedBox(
+                              width: width, child: episodeTile(e, scope, true)),
                       ]);
                     })
                   else

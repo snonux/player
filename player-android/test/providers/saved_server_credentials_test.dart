@@ -732,6 +732,72 @@ void main() {
         isFalse);
   });
 
+  for (final consent in [false, true]) {
+    test('offline unlock waits for explicit consent ($consent)', () async {
+      final storage = _TokenStore();
+      final biometric = _Biometrics()..accepted = true;
+      final decision = Completer<bool>();
+      final offered = Completer<SavedServerCredential>();
+      final container = ProviderContainer(overrides: [
+        tokenStorageProvider.overrideWithValue(storage),
+        serverBiometricUnlockProvider.overrideWithValue(biometric),
+        savedAccountValidationProvider.overrideWithValue((_) async => false),
+      ]);
+      addTearDown(container.dispose);
+      final auth = container.read(authStateProvider.notifier);
+      await auth.switchServer('https://a.example');
+      await container
+          .read(savedServerCredentialsProvider)
+          .write(_credential('https://a.example', 'token-a'));
+      final unlock = auth.unlockSavedServer(confirmOffline: (credential) {
+        offered.complete(credential);
+        return decision.future;
+      });
+      expect((await offered.future).origin, 'https://a.example');
+      expect(storage.token, isNull);
+      expect(container.read(authStateProvider).requireValue.isUnauthenticated,
+          isTrue);
+      expect(container.read(credentialMutationQueueProvider).credentialsEnabled,
+          isFalse);
+      decision.complete(consent);
+      expect(await unlock, consent);
+      expect(container.read(authStateProvider).requireValue.isOffline, consent);
+      expect(storage.token, consent ? 'token-a' : null);
+      expect(container.read(credentialMutationQueueProvider).credentialsEnabled,
+          isFalse);
+    });
+  }
+
+  test('server switch during offline consent cannot unlock previous account',
+      () async {
+    final decision = Completer<bool>();
+    final offered = Completer<void>();
+    final storage = _TokenStore();
+    final container = ProviderContainer(overrides: [
+      tokenStorageProvider.overrideWithValue(storage),
+      serverBiometricUnlockProvider
+          .overrideWithValue(_Biometrics()..accepted = true),
+      savedAccountValidationProvider.overrideWithValue((_) async => false),
+    ]);
+    addTearDown(container.dispose);
+    final auth = container.read(authStateProvider.notifier);
+    await auth.switchServer('https://a.example');
+    await container
+        .read(savedServerCredentialsProvider)
+        .write(_credential('https://a.example', 'token-a'));
+    final unlock = auth.unlockSavedServer(confirmOffline: (_) {
+      offered.complete();
+      return decision.future;
+    });
+    await offered.future;
+    await auth.switchServer('https://b.example');
+    decision.complete(true);
+    expect(await unlock, isFalse);
+    expect(storage.token, isNull);
+    expect(container.read(authStateProvider).requireValue.isUnauthenticated,
+        isTrue);
+  });
+
   test(
       'offline fingerprint unlock keeps API gate closed until same account validates',
       () async {

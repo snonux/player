@@ -8,6 +8,7 @@ import '../navigation_key.dart';
 import '../providers/auth_state_provider.dart';
 import '../providers/first_run_provider.dart';
 import '../providers/settings_provider.dart';
+import 'offline_server_offer.dart';
 
 /// App bar action for switching between saved servers in one tap.
 ///
@@ -61,6 +62,7 @@ class _ServerSwitchButtonState extends ConsumerState<ServerSwitchButton> {
     final messenger =
         appMessengerKey.currentState ?? ScaffoldMessenger.maybeOf(context);
     final auth = container.read(authStateProvider.notifier);
+    final navigator = Navigator.of(context, rootNavigator: true);
     try {
       await auth.switchServer(server);
     } catch (_) {
@@ -74,7 +76,10 @@ class _ServerSwitchButtonState extends ConsumerState<ServerSwitchButton> {
     router.go(AppRoutes.login);
     if (mounted) setState(() => _switching = false);
     try {
-      if (await auth.unlockSavedServer()) {
+      if (await auth.unlockSavedServer(
+          confirmOffline: (credential) => navigator.mounted
+              ? offerOfflineServer(navigator.context, credential)
+              : Future.value(false))) {
         final user = container.read(authStateProvider).requireValue.user!;
         await initializeServerProgressQueueWith(container.read, user);
       }

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:player_android/providers/saved_account_validation_provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 // Widget tests for LoginScreen.
@@ -278,6 +279,105 @@ void main() {
         expect(container.read(authStateProvider).requireValue.isAuthenticated,
             isTrue);
       }
+    });
+  }
+
+  for (final consent in [false, true]) {
+    testWidgets(
+        'unreachable saved server offers scoped offline mode ($consent)',
+        (tester) async {
+      final storage = _FakeTokenStorage();
+      final biometric = _BiometricChoice(true);
+      final api = _FakeApiClient();
+      late ProviderContainer container;
+      await tester.runAsync(() async {
+        SharedPreferences.setMockInitialValues(
+            {'server_base_url': 'https://a.example'});
+        container = ProviderContainer(overrides: [
+          tokenStorageProvider.overrideWithValue(storage),
+          apiClientProvider.overrideWithValue(api),
+          serverBiometricUnlockProvider.overrideWithValue(biometric),
+          savedAccountValidationProvider.overrideWithValue((_) async => false),
+        ]);
+        await container.read(settingsProvider.future);
+        await container
+            .read(settingsProvider.notifier)
+            .selectDestination(LibraryDestination.server);
+        await container.read(authStateProvider.future);
+        await container
+            .read(savedServerCredentialsProvider)
+            .write(SavedServerCredential(
+              origin: 'https://a.example',
+              token: 'saved-token',
+              tokenId: 8,
+              user: const User(id: 1, username: 'alice', isAdmin: false),
+              expiresAt: DateTime.now()
+                  .add(const Duration(days: 1))
+                  .millisecondsSinceEpoch,
+            ));
+      });
+      addTearDown(container.dispose);
+      await tester.pumpWidget(UncontrolledProviderScope(
+          container: container, child: const MaterialApp(home: LoginScreen())));
+      await tester.pumpAndSettle();
+      expect(find.text('Saved account: alice'), findsOneWidget);
+      final outage = DioException(
+        requestOptions: RequestOptions(path: '/api/v1/auth/login'),
+        type: DioExceptionType.connectionError,
+        error: const SocketException('unreachable'),
+      );
+      await tester.enterText(
+          find.byKey(const Key('login_password')), 'password');
+      for (final attempt in [
+        ('bob', outage, false),
+        (
+          'alice',
+          DioException(
+            requestOptions: RequestOptions(path: '/api/v1/auth/login'),
+            response: Response(
+                requestOptions: RequestOptions(path: '/api/v1/auth/login'),
+                statusCode: 401),
+            type: DioExceptionType.badResponse,
+          ),
+          false
+        ),
+        ('alice', outage, true)
+      ]) {
+        api.loginError = attempt.$2;
+        await tester.enterText(
+            find.byKey(const Key('login_username')), attempt.$1);
+        await tester.ensureVisible(find.byKey(const Key('login_submit')));
+        await tester.tap(find.byKey(const Key('login_submit')));
+        await tester.pumpAndSettle();
+        expect(find.text('Unlock offline copies with fingerprint'),
+            attempt.$3 ? findsOneWidget : findsNothing);
+        expect(storage._token, isNull);
+      }
+      await tester.ensureVisible(find.byKey(const Key('login_fingerprint')));
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('login_fingerprint')));
+        await Future<void>.delayed(Duration.zero);
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(biometric.calls, 1);
+      expect(storage._token, isNull);
+      expect(find.text('Server unavailable'), findsOneWidget);
+      expect(
+          find.textContaining('Use offline mode for alice?'), findsOneWidget);
+      expect(find.textContaining('https://a.example could not be reached'),
+          findsOneWidget);
+      await tester.runAsync(() async {
+        await tester.tap(consent
+            ? find.byKey(const Key('use_server_offline'))
+            : find.text('Stay signed out'));
+        await Future<void>.delayed(Duration.zero);
+      });
+      await tester.pumpAndSettle();
+      expect(container.read(authStateProvider).requireValue.isOffline, consent);
+      expect(storage._token, consent ? 'saved-token' : null);
+      expect(container.read(credentialMutationQueueProvider).credentialsEnabled,
+          isFalse);
     });
   }
 

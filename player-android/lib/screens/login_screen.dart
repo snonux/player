@@ -11,6 +11,8 @@ import 'package:go_router/go_router.dart';
 import '../utils/error_mappers.dart';
 import '../services/saved_server_credentials.dart';
 import '../providers/settings_provider.dart';
+import '../providers/saved_account_validation_provider.dart';
+import '../widgets/offline_server_offer.dart';
 
 /// Sign-in screen shown to returning users who already have an account.
 ///
@@ -45,6 +47,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   // Drives the loading indicator and disables the submit button while an
   // HTTP request is in flight to prevent double-submission.
   bool _isLoading = false;
+  bool _serverUnavailable = false;
 
   @override
   void dispose() {
@@ -82,7 +85,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // Client-side validation: abort early if any field is invalid.
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _serverUnavailable = false;
+    });
 
     try {
       final apiClient = ref.read(apiClientProvider);
@@ -103,6 +109,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Guard against stale BuildContext if the widget was disposed during
       // the async gap (e.g. a rapid navigation triggered by another listener).
       if (!mounted) return;
+      final saved = ref.read(selectedServerCredentialProvider).valueOrNull;
+      if (isServerUnavailable(e) &&
+          saved != null &&
+          saved.isValid &&
+          saved.user.username == _usernameController.text.trim()) {
+        setState(() => _serverUnavailable = true);
+      }
       // Delegate to the shared error mapper with login-specific status fallbacks.
       _showError(dioErrorMessage(e, statusFallbacks: {
         401: 'Invalid username or password.',
@@ -134,7 +147,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     setState(() => _isLoading = true);
     try {
       final unlocked =
-          await ref.read(authStateProvider.notifier).unlockSavedServer();
+          await ref.read(authStateProvider.notifier).unlockSavedServer(
+                confirmOffline: (credential) => mounted
+                    ? offerOfflineServer(context, credential)
+                    : Future.value(false),
+              );
       if (!mounted) return;
       if (unlocked) {
         final user = ref.read(authStateProvider).requireValue.user!;
@@ -188,11 +205,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 if (saved != null) ...[
                   const SizedBox(height: 16),
+                  Text('Saved account: ${saved.user.username}'),
+                  if (_serverUnavailable)
+                    Text('Server unavailable. Unlock saved copies for '
+                        '${saved.user.username} on ${saved.origin} to use offline mode.'),
                   ElevatedButton.icon(
                     key: const Key('login_fingerprint'),
                     onPressed: _isLoading ? null : _unlockSavedServer,
                     icon: const Icon(Icons.fingerprint),
-                    label: const Text('Unlock saved login with fingerprint'),
+                    label: Text(_serverUnavailable
+                        ? 'Unlock offline copies with fingerprint'
+                        : 'Unlock saved login with fingerprint'),
                   ),
                   const Text('Or enter your server password below.'),
                 ],

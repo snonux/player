@@ -16,6 +16,9 @@ import 'package:player_android/providers/local_library_provider.dart';
 import 'package:player_android/providers/podcast_library_provider.dart';
 import 'package:player_android/providers/settings_provider.dart';
 import 'package:player_android/screens/audio_player_screen.dart';
+import 'package:player_android/screens/standalone_podcasts_screen.dart';
+import 'package:player_android/podcast_routes.dart';
+import 'package:go_router/go_router.dart';
 import 'package:player_android/services/podcast_downloads.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/podcast_repository.dart';
@@ -129,6 +132,8 @@ void main() {
       apiClientProvider.overrideWith((ref) =>
           throw StateError('Device podcasts used server credentials/API')),
     ]);
+    // Let the provider own this notifier, including early-failure cleanup.
+    container.read(podcastDownloadsProvider);
     Future<void> until(bool Function() condition) async {
       final end = DateTime.now().add(const Duration(seconds: 20));
       while (!condition() && DateTime.now().isBefore(end)) {
@@ -195,6 +200,39 @@ void main() {
                   feed: feed, filter: 'uncompleted'))
               .map((e) => e['title']),
           contains('Broken episode'));
+      // Browse the real durable completion state through the native overview.
+      final router = GoRouter(routes: [
+        GoRoute(path: '/', builder: (_, __) => const LocalPodcastEpisodesScreen()),
+        ...podcastRoutes(),
+      ]);
+      addTearDown(router.dispose);
+      await tester.pumpWidget(UncontrolledProviderScope(
+          container: container, child: MaterialApp.router(routerConfig: router)));
+      await tester.pumpAndSettle();
+      expect(find.text('First episode'), findsNothing);
+      expect(find.text('Second episode'), findsNothing);
+      expect(find.text('Broken episode'), findsOneWidget);
+      await tester.tap(find.text('Grid'));
+      await tester.pumpAndSettle();
+      expect(find.text('First episode'), findsNothing);
+      await tester.tap(find.text('Completed'));
+      await tester.pumpAndSettle();
+      expect(find.text('First episode'), findsOneWidget);
+      expect(find.text('Second episode'), findsOneWidget);
+      expect(find.text('Broken episode'), findsNothing);
+      await tester.tap(find.text('All'));
+      await tester.pumpAndSettle();
+      expect(find.text('Broken episode'), findsOneWidget);
+      await tester.tap(find.text('List'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('More episode actions').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mark uncompleted'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Uncompleted'));
+      await tester.pumpAndSettle();
+      expect(find.text('First episode'), findsOneWidget);
+      expect(find.text('Second episode'), findsNothing);
       expect(tester.takeException(), isNull);
     } finally {
       if (!expansionGate.isCompleted) expansionGate.complete();
@@ -202,7 +240,6 @@ void main() {
       await handler.stop();
       container.dispose();
       await player.dispose();
-      downloads.dispose();
       await repository.close();
       await publisher.close(force: true);
       await folder.delete(recursive: true);

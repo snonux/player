@@ -159,9 +159,9 @@ updates publisher data without waiting for server sync. Cached rows remain
 visible throughout. Podcast feed pages and playback share the app navigation
 stack: Back returns to the episode list, retaining its filter, page, and scroll.
 
-Individual podcasts retain **Uncompleted** (including started episodes),
-**Completed**, and **All** filters. **All podcast episodes** always includes
-listened episodes, with muted titles/artwork and a **Listened** label. It names
+Episode lists default to **Uncompleted** (including started episodes).
+**Completed** and **All** keep listened episodes reachable, with muted
+titles/artwork and a **Listened** label. **All podcast episodes** names
 each podcast and fills missing feed caches in the background when opened;
 cached episodes stay available during refresh, with progress and retry after
 a failed feed fetch. While signed in, an unavailable or oversized publisher
@@ -170,7 +170,9 @@ only; listening state, deletions and device downloads remain separate.
 Standalone browsing keeps using the publisher and the device cache.
 
 **Mark completed / Mark uncompleted** saves locally and queues synchronization
-for the selected account, retaining the saved position. Download audio directly
+for the selected account, retaining the saved position. Playing to the natural
+end marks an episode completed automatically; completed episodes leave the
+default list and remain available through **Completed** or **All**. Download audio directly
 from its publisher, then choose **Play / Resume** or **Play from beginning**.
 **Delete downloaded file** removes only this device's audio; subscription,
 completion, position and pending sync edits remain. **Delete episode** in the
@@ -313,7 +315,12 @@ Offline listening changes stay with that cached account and sync when you later
 sign in to the same account.
 
 If the server is unreachable (including a gateway outage), fingerprint unlock
-opens **Offline downloads** for that saved server/account. Open the left navigation menu →
+offers **Use offline mode** for the named saved server/account. Accepting opens
+**Offline downloads**, labeled with that account and server; declining keeps the
+login locked. A password sign-in that cannot reach the server also offers the
+fingerprint option for matching saved credentials. Download rows show their
+server and account so copies from different libraries remain clear.
+Open the left navigation menu →
 **Podcasts** to resume downloaded episodes from the same account’s saved position.
 Podcast audio and progress remain on the device through app restarts; server
 sync resumes after reconnecting. Only complete matching
