@@ -6,14 +6,18 @@ import { keyboardLogin } from './helpers/music-ui';
 const dir = process.env.PLAYER_PODCAST_FIXTURE;
 test.skip(!dir, 'Requires disposable podcast fixture');
 const auth = dir ? JSON.parse(readFileSync(`${dir}/auth.json`, 'utf8')) : {};
-test.beforeEach(async ({ page, baseURL }) => {
+test.beforeEach(async ({ page, baseURL }, testInfo) => {
   await page.route('**/js/**', async route => {
     const url = new URL(route.request().url());
     if (url.origin !== new URL(baseURL).origin || !url.pathname.startsWith('/js/')) return route.continue();
     const path = url.pathname;
     await route.fulfill({ path: resolve(__dirname, '../../../web', path.slice(1)), contentType: 'application/javascript' });
   });
-  await keyboardLogin(page, auth.admin);
+  // Device-only journeys start signed out. Clearing cookies on a live account
+  // page races its background requests and their authentication redirect.
+  if (!testInfo.title.startsWith('device feed ')) {
+    await keyboardLogin(page, auth.admin);
+  }
 });
 test('offline retention boundary persists tombstones and isolates downloaded bytes', async ({ page }) => {
   const result = await page.evaluate(async () => {
@@ -74,7 +78,6 @@ test('offline retention boundary persists tombstones and isolates downloaded byt
   expect(result.ownBytes).toBe(false); expect(result.otherBytes).toBe(true);
 });
 test('device feed manual completion and seven-day expiry survive refresh', async ({ page }) => {
-  await page.context().clearCookies();
   await page.goto('/index.html?local=podcasts');
   await page.evaluate(async () => {
     const store = await import('/js/local-podcasts-store.js');
@@ -101,7 +104,6 @@ test('device feed manual completion and seven-day expiry survive refresh', async
   await expect(page.getByRole('button', { name: 'Device retention episode', exact: true })).toHaveCount(0);
 });
 test('device feed natural playback completes while seeking to end does not', async ({ page }) => {
-  await page.context().clearCookies();
   // A small real PCM source makes this listening check independent of publisher
   // state and codecs. No fake ended events or media-element clock mutation.
   const samples = 16000 * 2, wav = Buffer.alloc(44 + samples * 2);
