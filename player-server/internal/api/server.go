@@ -582,6 +582,8 @@ func (s *Server) routesPodcast() {
 	s.handleBoth(http.MethodGet, "/api/podcasts/episodes", s.requireSession(s.handleListSubscribedEpisodes))
 	s.handleBoth(http.MethodGet, "/api/podcasts/{id}/episodes", s.requireSession(s.handleListEpisodes))
 	s.handleBoth(http.MethodPost, "/api/podcasts/episodes/{episode_id}/download", s.requireSession(s.handleDownloadEpisode))
+	s.handleBoth(http.MethodGet, "/api/podcasts/episodes/{episode_id}/stream", s.requireSession(s.handleStreamPodcastEpisode))
+	s.handleBoth(http.MethodHead, "/api/podcasts/episodes/{episode_id}/stream", s.requireSession(s.handleStreamPodcastEpisode))
 	s.handleBoth(http.MethodPost, "/api/podcasts/episodes/{episode_id}/complete", s.requireSession(s.handleToggleComplete))
 }
 

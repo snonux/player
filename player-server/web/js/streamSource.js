@@ -57,6 +57,9 @@ export function localPodcastSourceURL(media) {
 export function mediaPlaybackUrl(media) {
   const enclosure = localPodcastSourceURL(media);
   if (enclosure) return enclosure;
+  if (Number.isSafeInteger(media?.podcast_stream_episode) && media.podcast_stream_episode > 0 && media.id === -media.podcast_stream_episode) {
+    return `/api/podcasts/episodes/${media.podcast_stream_episode}/stream`;
+  }
   // Only explicit Play downloaded entries select a saved rendition. Never
   // accept a foreign origin, arbitrary path or unrecognized profile here.
   if (media.offlinePinURL) {

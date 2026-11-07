@@ -35,6 +35,7 @@ class PodcastDownloadControls extends ConsumerStatefulWidget {
 class PodcastDownloadControlsState
     extends ConsumerState<PodcastDownloadControls> {
   bool busy = false;
+  bool downloadBusy = false;
   String? error;
   String? _copyKey;
   Future<Map<String, Object?>?>? _copy;
@@ -56,9 +57,14 @@ class PodcastDownloadControlsState
     _copyKey = null;
   }
 
-  Future<void> run(Future<void> Function() action) async {
+  Future<void> run(Future<void> Function() action,
+      {bool download = false}) async {
     setState(() {
-      busy = true;
+      if (download) {
+        downloadBusy = true;
+      } else {
+        busy = true;
+      }
       error = null;
     });
     try {
@@ -71,7 +77,13 @@ class PodcastDownloadControlsState
     } finally {
       if (mounted) {
         _refreshCopy();
-        setState(() => busy = false);
+        setState(() {
+          if (download) {
+            downloadBusy = false;
+          } else {
+            busy = false;
+          }
+        });
       }
     }
   }
@@ -82,7 +94,7 @@ class PodcastDownloadControlsState
         final request = await ref
             .read(podcastDownloadsProvider)
             .playbackRequest(scope, widget.feed, widget.episode,
-                fromBeginning: fromBeginning);
+                fromBeginning: fromBeginning, allowStreaming: true);
         if (!mounted) return;
         await context.push<void>(AppRoutes.podcastPlayer, extra: request);
         if (mounted) widget.onPlaybackReturn?.call();
@@ -162,10 +174,10 @@ class PodcastDownloadControlsState
   Widget build(BuildContext context) {
     final downloads = ref.watch(podcastDownloadsProvider);
     final key = widget.episode['episode_key'] as String;
-    // Refresh only while this row owns an in-flight action. Unconditional
-    // clears on every list notify restarted copy() and greyed out Download.
+    // Transfers outlive this row and its player route. Refresh on service
+    // changes even after returning to a newly mounted list.
     ref.listen(podcastDownloadsProvider, (previous, next) {
-      if (!mounted || !busy) return;
+      if (!mounted) return;
       setState(_refreshCopy);
     });
     return FutureBuilder<Map<String, Object?>?>(
@@ -173,7 +185,6 @@ class PodcastDownloadControlsState
         builder: (context, snapshot) {
           final state = snapshot.data?['state'];
           final transferring = state == 'pending' || state == 'downloading';
-          final settled = snapshot.connectionState == ConnectionState.done;
           final hasMenu = widget.onDeleteEpisode != null ||
               widget.completeLabel != null ||
               state == 'available' ||
@@ -197,32 +208,35 @@ class PodcastDownloadControlsState
                       child: Wrap(spacing: 8, runSpacing: 4, children: [
                     if (transferring)
                       TextButton.icon(
-                          onPressed: () {
-                            downloads.cancel();
-                            setState(_refreshCopy);
-                          },
+                          style: TextButton.styleFrom(
+                              minimumSize: const Size(48, 48)),
+                          onPressed: () => run(
+                              () => downloads.cancelEpisode(widget.feed, key)),
                           icon: const Icon(Icons.close),
                           label: const Text('Cancel download'))
-                    else if (state == 'available')
-                      FilledButton.icon(
-                          onPressed: busy ? null : () => play(),
-                          icon: const Icon(Icons.play_arrow),
-                          label: Text(
-                              (widget.episode['position_seconds'] as num? ??
-                                          0) >
-                                      0
-                                  ? 'Resume'
-                                  : 'Play'))
-                    else
+                    else if (state != 'available')
                       TextButton.icon(
-                          onPressed: busy || !settled
+                          style: TextButton.styleFrom(
+                              minimumSize: const Size(48, 48)),
+                          onPressed: busy || downloadBusy
                               ? null
                               : () => run(
-                                  () => downloads.download(widget.feed, key)),
+                                  () => downloads.download(widget.feed, key),
+                                  download: true),
                           icon: const Icon(Icons.download),
                           label: Text(state == 'failed'
                               ? 'Retry download'
                               : 'Download')),
+                    FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                            minimumSize: const Size(48, 48)),
+                        onPressed: busy ? null : () => play(),
+                        icon: const Icon(Icons.play_arrow),
+                        label: Text(
+                            (widget.episode['position_seconds'] as num? ?? 0) >
+                                    0
+                                ? 'Resume'
+                                : 'Play')),
                   ])),
                   if (hasMenu)
                     IconButton(

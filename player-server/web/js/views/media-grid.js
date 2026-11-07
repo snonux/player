@@ -71,6 +71,9 @@ export function initMediaGrid(options = {}) {
   // and, for Play, start it once the card exists.
   // Play works even when the new card sorts onto another page, because it
   // plays from the loaded list by media ID rather than from the DOM.
+  grid?.addEventListener('podcast:episode-stream', async e => {
+    if (!(await callbacks.playMediaById?.(e.detail?.media?.id))) toast('Select the episode to play', 'info');
+  });
   grid?.addEventListener('podcast:episode-downloaded', async (e) => {
     await loadMedia();
     const mediaId = e.detail?.media?.id;

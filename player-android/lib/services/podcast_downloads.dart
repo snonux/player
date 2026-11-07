@@ -124,6 +124,18 @@ class PodcastDownloads extends ChangeNotifier {
     _client?.close(force: true);
   }
 
+  /// A stale row must never cancel a different episode's newer transfer.
+  Future<void> cancelEpisode(String feed, String episode) async {
+    final active = _activeIdentity;
+    final finished = _activeFinished;
+    if (active == null || finished == null) return;
+    final target = await _identity(feed, episode);
+    final transferring = await _identity(active.$1, active.$2);
+    if (!identical(finished, _activeFinished) || target != transferring) return;
+    cancel();
+    await finished.future;
+  }
+
   void _check() {
     if (_cancelled || _disposed) throw OfflineDownloadCancelled();
   }
@@ -411,7 +423,9 @@ class PodcastDownloads extends ChangeNotifier {
 
   Future<PodcastPlaybackRequest> playbackRequest(
       String scope, String feed, Map<String, Object?> episode,
-      {bool fromBeginning = false, bool allowStreaming = false}) async {
+      {bool fromBeginning = false,
+      bool allowStreaming = false,
+      bool continuePlayback = true}) async {
     final key = episode['episode_key'] as String;
     final row = await copy(feed, key);
     if (row?['state'] != 'available' && !allowStreaming) {
@@ -482,13 +496,15 @@ class PodcastDownloads extends ChangeNotifier {
           imageUrl: episode['image_url'] as String? ?? '',
           feedImageUrl: episode['feed_image_url'] as String? ?? '',
           publishedAt: podcastPublicationDate(episode['published_at'])),
-      sourceName: 'Podcast on this device',
+      sourceName: row?['state'] == 'available'
+          ? 'Podcast on this device'
+          : 'Podcast stream',
       sourceUri: row?['state'] == 'available'
           ? _file(row!['id'] as String).uri
           : _url(episode['enclosure_url'] as String),
-      continuation: allowStreaming
-          ? null
-          : (offline) => continuation(scope, feed, key, offline: offline),
+      continuation: continuePlayback
+          ? (offline) => continuation(scope, feed, key, offline: offline)
+          : null,
       synchronize: synchronize,
       readPosition: () => readPosition(null),
       readPositionForDuration: readPosition,
@@ -529,7 +545,7 @@ class PodcastDownloads extends ChangeNotifier {
       }
       result.add(await playbackRequest(
           scope, episode['feed_key'] as String, episode,
-          allowStreaming: true));
+          allowStreaming: true, continuePlayback: false));
     }
     return result;
   }

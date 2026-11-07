@@ -28,7 +28,7 @@ const downloaded = {
   server_copy: { media_id: 99 },
 };
 
-assert(episodePlayableMedia(undownloaded) === null, 'undownloaded has no playable slot');
+assert(episodePlayableMedia(undownloaded)?.podcast_stream_episode === 1, 'undownloaded episode has a publisher stream slot');
 const stub = episodePlayableMedia(downloaded);
 assert(stub && stub.id === 99 && stub.type === 'audio' && stub.is_podcast === true,
   'downloaded episode becomes an audio media stub for playMediaById');
@@ -40,7 +40,7 @@ assert(fromDownload.id === 42 && fromDownload.file_name === 'ep.mp3',
   'download response is preferred over server_copy');
 
 const slots = mediaSlotsForEpisodes([undownloaded, downloaded]);
-assert(slots.length === 2 && slots[0] === null && slots[1]?.id === 99,
+assert(slots.length === 2 && slots[0]?.id === -1 && slots[1]?.id === 99,
   'page slots align with episode card indices');
 
 setMedia([]);
@@ -53,7 +53,7 @@ assert(state.media.findIndex((m) => m && String(m.id) === '42') === 1,
 // Simulate the All-episodes render path: empty list then slots for the page.
 setMedia([]);
 setMedia(mediaSlotsForEpisodes([downloaded, undownloaded]));
-assert(state.media[0]?.id === 99 && state.media[1] === null,
+assert(state.media[0]?.id === 99 && state.media[1]?.id === -1,
   'subscription view replaces the cleared browse list with playable slots');
 
 // Production playMediaById must tolerate null holes (undownloaded earlier cards).

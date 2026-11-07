@@ -66,7 +66,9 @@ void main() {
           await socket.close();
           return;
         }
-        if (mode == 'slow') {
+        if (mode == 'slow' ||
+            (mode == 'concurrent' &&
+                paths.where((path) => path == '/audio').length == 1)) {
           response.add([1, 2, 3]);
           await response.flush();
           streaming!.complete();
@@ -189,7 +191,8 @@ void main() {
         (await downloads.continuation('local', feed, key, offline: true))
             .map((request) => request.title),
         ['copy']);
-    expect(rest.last.sourceUri.removeFragment().toString(), episode['enclosure_url']);
+    expect(rest.last.sourceUri.removeFragment().toString(),
+        episode['enclosure_url']);
     expect(rest.last.sourceUri.userInfo, isEmpty);
     expect((rest.last as PodcastPlaybackRequest).continuation, isNull,
         reason: 'successors cannot rebuild or wrap the captured feed journey');
@@ -440,6 +443,54 @@ void main() {
     mode = 'ok';
     await downloads.download(feed, key);
     expect((await downloads.copy(feed, key))!['state'], 'available');
+  });
+
+  test('streaming and scoped cancellation are independent of a held save',
+      () async {
+    final key = episode['episode_key'] as String;
+    mode = 'concurrent';
+    streaming = Completer<void>();
+    release = Completer<void>();
+    final pending = downloads.download(feed, key);
+    final streamClient = HttpClient();
+    try {
+      await streaming!.future;
+      final request = await downloads.playbackRequest('local', feed, episode,
+          allowStreaming: true);
+      expect(request.sourceUri.scheme, 'http');
+      expect(request.continuation, isNotNull);
+      expect((await downloads.copy(feed, key))!['state'], 'downloading');
+      // A different row cannot cancel this episode's save.
+      await downloads.cancelEpisode(feed, 'guid:other');
+      expect((await downloads.copy(feed, key))!['state'], 'downloading');
+      final response =
+          await (await streamClient.getUrl(request.sourceUri)).close();
+      expect(
+          await response
+              .fold<List<int>>([], (bytes, part) => bytes..addAll(part)),
+          [1, 2, 3, 4]);
+      await downloads
+          .cancelEpisode(feed, key)
+          .timeout(const Duration(seconds: 3));
+      await pending;
+      expect((await downloads.copy(feed, key))!['state'], 'missing');
+      expect(
+          await Directory('${directory.path}/audio').list().toList(), isEmpty);
+      // A fresh stream still works after cancellation; no playback client was
+      // closed and no incomplete file is promoted to an offline copy.
+      final after =
+          await (await streamClient.getUrl(request.sourceUri)).close();
+      expect(await after.fold<int>(0, (size, bytes) => size + bytes.length), 4);
+      mode = 'ok';
+      await downloads.download(feed, key);
+      final saved = await downloads.playbackRequest('local', feed, episode,
+          allowStreaming: true);
+      expect(saved.sourceUri.scheme, 'file');
+    } finally {
+      release!.complete();
+      streamClient.close(force: true);
+      await pending;
+    }
   });
 
   test(

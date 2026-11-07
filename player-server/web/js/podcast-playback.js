@@ -9,7 +9,7 @@ export async function preparePodcastPlayback(media, resumeFrom, timeoutMS = 3000
   let episode = media.podcast_episode || null, classified = false, timer;
   const work = (async () => {
     let detail;
-    try { detail = await API.mediaDetail(media.id); classified = true; } catch {}
+    try { if (!media.podcast_stream_episode) detail = await API.mediaDetail(media.id); classified = true; } catch {}
     if (podcastSyncStatus().generation !== lease) return;
     episode = detail?.podcast_episode || episode;
     if (!episode && !resumeFrom) resumeFrom = detail?.progress?.finished ? 0 : (detail?.progress?.position_seconds ?? resumeFrom);
@@ -50,4 +50,15 @@ export async function nextPodcastEpisode(current, stillWanted = () => true) {
     const state = episodeSnapshot(ep);
     return !(state.completion?.completed ?? ep.completed) && !state.deletion?.deleted;
   }) || null;
+}
+
+// Temporary player identity cannot collide with a server media row. Episode
+// history stays keyed by feed/episode while its saved copy is still arriving.
+export function podcastStreamMedia(ep) {
+  if (!Number.isSafeInteger(ep?.id) || ep.id <= 0) return null;
+  return { id: -ep.id, podcast_stream_episode: ep.id, type: 'audio', is_podcast: true,
+    title: ep.title || '', file_name: ep.title || '', duration: ep.duration_seconds || 0,
+    podcast: { title: ep.title || '', feed_title: ep.feed_title || ep.podcast_title || '',
+      description: ep.description || '', image_url: ep.image_url || '', feed_image_url: ep.feed_image_url || '' },
+    podcast_episode: episodeSnapshot(ep) };
 }

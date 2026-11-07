@@ -1909,6 +1909,23 @@ List episodes for a podcast feed. `{id}` is the **set ID** (not the feed ID).
 
 ---
 
+### `GET|HEAD /api/podcasts/episodes/{episode_id}/stream` · `/api/v1/podcasts/episodes/{episode_id}/stream`
+
+Stream the publisher enclosure immediately without importing a saved server
+copy. Requires a session and either read access to the feed's set or an active
+subscription. Range and If-Range requests and publisher range response headers
+are preserved; HEAD returns headers only. The per-feed outbound address policy
+also applies to this route. Session cookies and authorization headers are never
+sent to the publisher. Responses are private and not cached. Unsupported media
+or a publisher failure returns 502; invalid IDs return 400, unknown episodes
+404, and denied access 403.
+
+Streaming and the download POST are independent. Cancelling the download
+request stops its publisher transfer and cleans unfinished files without
+interrupting a separate playback stream. Completion of a saved copy does not
+replace an already-playing stream. Cancelling the stream closes its own
+publisher request.
+
 ### `POST /api/podcasts/episodes/{episode_id}/download` · `POST /api/v1/podcasts/episodes/{episode_id}/download`
 
 Trigger a server-side download of a podcast episode. The episode is downloaded
@@ -2118,6 +2135,7 @@ Removes a bookmark. Removing a station that is not bookmarked also succeeds.
 | `GET` | `podcasts` | session | List podcast feeds |
 | `POST` | `podcasts` | admin | Subscribe to feed |
 | `GET` | `podcasts/{id}/episodes` | session | List episodes |
+| `GET/HEAD` | `podcasts/episodes/{episode_id}/stream` | session | Stream publisher audio without waiting for a saved copy |
 | `POST` | `podcasts/episodes/{episode_id}/download` | session | Download episode |
 | `POST` | `podcasts/episodes/{episode_id}/complete` | session | Toggle completion |
 | `GET` | `radio/stations` | session | Search radio stations |

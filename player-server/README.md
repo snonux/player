@@ -144,3 +144,12 @@ to another episode. The focused Chrome and Firefox check uses the disposable
 podcast fixture:
 `PLAYER_URL=http://127.0.0.1:PORT PLAYER_PODCAST_FIXTURE=/path/to/fixture npx playwright test -c playwright.podcast-continuation.config.ts`
 from `test/e2e-web`.
+
+Podcast **Play** and **Resume** can stream immediately from the publisher, even
+while **Download to server** is saving the same episode. **Cancel download**
+stops that saved-copy transfer and removes unfinished bytes while playback
+continues. The control stays available after switching episode layouts or
+returning to the list. A finished download is used the next time the episode
+opens; it does not restart current playback. Already saved episodes continue
+to use their server copy. Streaming requires the publisher to be reachable and
+the audio format to be supported by the browser.

@@ -181,8 +181,14 @@ downloaded files keeps the episodes in your lists and never deletes server files
 **Mark completed / Mark uncompleted** saves locally and queues synchronization
 for the selected account, retaining the saved position. Playing to the natural
 end marks an episode completed automatically; completed episodes leave the
-default list and remain available through **Completed** or **All**. Download audio directly
-from its publisher, then choose **Play / Resume** or **Play from beginning**.
+default list and remain available through **Completed** or **All**. **Play / Resume**
+streams audio from its publisher immediately when there is no complete device
+copy. **Download** saves a separate copy for offline listening; Play stays
+available while it downloads. **Cancel download** removes the unfinished copy
+without stopping streaming or changing listening history. You can return from
+the player to the episode list to cancel a transfer while audio keeps playing.
+Completed copies are preferred on the next Play. **Play from beginning** is in
+the episode menu for saved copies.
 **Delete downloaded file** removes only this device's audio; subscription,
 completion, position and pending sync edits remain. **Delete episode** in the
 episode menu asks for confirmation, removes the episode from your lists and
@@ -782,6 +788,7 @@ Podcast playback continues through the remaining uncompleted episodes of the
 same feed in newest-first order, then stops. Android prefers downloaded copies
 and can stream subsequent episodes directly from the publisher without Player
 credentials. Pausing, seeking to the end, or a playback error does not skip to
-another episode. Initial Android playback retains its Download/Play workflow.
+another episode. Initial playback can stream immediately, including while a
+separate device download is in progress.
 Verify native continuation with
 `flutter test integration_test/podcast_continuation_test.dart -d emulator-5554`.

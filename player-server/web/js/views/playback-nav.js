@@ -2,7 +2,7 @@ import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from '..
 import { playAlbumCollection, advanceQueue, deactivateQueue } from '../queue.js';
 export { playAlbumCollection } from '../queue.js';
 import { API } from '../api.js';
-import { preparePodcastPlayback, nextPodcastEpisode } from '../podcast-playback.js';
+import { preparePodcastPlayback, nextPodcastEpisode, podcastStreamMedia } from '../podcast-playback.js';
 import { podcastSyncStatus, episodeSnapshot } from '../podcast-episode-state.js';
 import { toast } from '../utils.js';
 import { state } from '../state.js';
@@ -139,8 +139,7 @@ export async function navigatePlayable(delta, options = {}) {
       if (episode.server_copy?.media_id) {
         media = (await API.mediaDetail(episode.server_copy.media_id)).media;
       } else {
-        toast('Downloading next podcast episode…', 'info');
-        media = await API.downloadEpisode(episode.id);
+        media = podcastStreamMedia(episode);
       }
       if (!wanted() || episodeSnapshot(episode).deletion?.deleted) return;
       // playItem begins its own intent; the source/command guard must survive

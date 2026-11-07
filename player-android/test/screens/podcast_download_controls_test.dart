@@ -76,6 +76,9 @@ class _Downloads extends PodcastDownloads {
   }
 
   @override
+  Future<void> cancelEpisode(String feed, String episode) async => cancel();
+
+  @override
   Future<void> remove(String feed, String episode) async {
     state = 'missing';
     notifyListeners();
@@ -100,6 +103,12 @@ void main() {
     await tester.tap(find.text('Download'));
     await tester.pumpAndSettle();
     expect(find.text('Download pending'), findsOneWidget);
+    expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Play'))
+            .onPressed,
+        isNotNull,
+        reason: 'A download must not disable streaming playback.');
     await tester.tap(find.text('Cancel download'));
     await tester.pumpAndSettle();
     expect(find.text('Download'), findsOneWidget);

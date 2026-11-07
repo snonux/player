@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/snonux/player/internal/repository"
 	"github.com/snonux/player/internal/service"
@@ -150,7 +152,12 @@ func (s *Server) handleDownloadEpisode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Saving may outlast the server's ordinary response deadline. The request
+	// context still cancels the publisher transfer when the listener aborts it.
+	response := http.NewResponseController(w)
+	_ = response.SetWriteDeadline(time.Time{})
 	media, err := s.podcastSvc.DownloadEpisode(r.Context(), episodeID, userIDFromContext(r))
+	_ = response.SetWriteDeadline(time.Now().Add(30 * time.Second))
 	if err != nil {
 		if errors.Is(err, service.ErrForbidden) {
 			forbidden(w, "access denied")
@@ -224,4 +231,55 @@ func (s *Server) handleUnsubscribePodcast(w http.ResponseWriter, r *http.Request
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleStreamPodcastEpisode proxies publisher bytes independently of a saved
+// download, so cancelling that POST never interrupts the listener's stream.
+func (s *Server) handleStreamPodcastEpisode(w http.ResponseWriter, r *http.Request) {
+	streamer, ok := s.podcastSvc.(service.PodcastEpisodeStreamer)
+	if !ok {
+		http.Error(w, "Podcast streaming unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	id, err := pathID(r, "episode_id")
+	if err != nil || id == 0 {
+		badRequest(w, "invalid episode id")
+		return
+	}
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	headers := time.AfterFunc(radioIdleTimeout, cancel)
+	response, err := streamer.OpenEpisodeStream(ctx, id, userIDFromContext(r), r.Method, r.Header.Get("Range"), r.Header.Get("If-Range"))
+	headers.Stop()
+	if err != nil {
+		if errors.Is(err, service.ErrForbidden) {
+			forbidden(w, "access denied")
+			return
+		}
+		if errors.Is(err, service.ErrNotFound) {
+			notFound(w)
+			return
+		}
+		http.Error(w, "Publisher audio unavailable. Retry playback.", http.StatusBadGateway)
+		return
+	}
+	defer response.Body.Close()
+	for _, name := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "ETag", "Last-Modified"} {
+		if value := response.Header.Get(name); value != "" {
+			w.Header().Set(name, value)
+		}
+	}
+	if w.Header().Get("Content-Type") == "" || response.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+	if response.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		w.Header().Set("Content-Length", "0")
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(response.StatusCode)
+	if r.Method == http.MethodHead || response.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		return
+	}
+	relayStream(ctx, cancel, w, response.Body)
 }

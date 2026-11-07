@@ -151,7 +151,7 @@ function currentMediaElement() {
 
 function setCurrentMediaState(media, index) {
   currentMedia = media;
-  personal?.setMedia(media);
+  personal?.setMedia(media.podcast_stream_episode ? null : media);
   sleepTimer?.setMedia(media);
   if (Number.isInteger(index)) currentMediaIndex = index;
 }
@@ -690,7 +690,7 @@ export function selectAndPlay(media, index, resumeFrom = 0) {
   listeningOccurrence = listeningOccurrenceID();
   document.dispatchEvent?.(new CustomEvent('player:media-opened', { detail: { media } }));
   currentMedia = media;
-  personal?.setMedia(media);
+  personal?.setMedia(media.podcast_stream_episode ? null : media);
   sleepTimer?.setMedia(media);
   currentMediaIndex = index ?? -1;
   if (isDetached()) {
@@ -774,7 +774,7 @@ function showMedia(media, source, thumbnailUrl) {
   currentThumbnailUrl = thumbnailUrl;
   sourceEpoch++;
   osSession?.clear();
-  personal?.setMedia(media.live_radio ? null : media);
+  personal?.setMedia(media.live_radio || media.podcast_stream_episode ? null : media);
   sleepTimer?.setMedia(media);
   resetSeekPreview();
   // Whatever was still being prepared belongs to the previous item.
@@ -1186,7 +1186,7 @@ function adoptGaplessBoundary(token, media, outgoingDuration) {
   currentSource = { url: audioTransport.currentSrc, resumeFrom: 0, library: true, userId: currentSource?.userId };
   currentThumbnailUrl = media.thumbnail_path ? `/api/media/${media.id}/thumbnail` : '';
   sourceEpoch++; completingEpoch = null;
-  personal?.setMedia(media); sleepTimer?.setMedia(media);
+  personal?.setMedia(media.podcast_stream_episode ? null : media); sleepTimer?.setMedia(media);
   audioVisuals?.setMedia(media, currentThumbnailUrl, state.sets.find(set => set.id === media.set_id)?.name || '');
   lyrics?.setMedia(media.live_radio ? null : media, currentSource.url);
   showCoverArt(els(), currentThumbnailUrl);
@@ -1392,7 +1392,7 @@ function saveCurrentProgress({ finished = false } = {}) {
 function enqueueProgress(id, position, finished = false) {
   if (currentMedia?.id === id && currentMedia.podcast_episode) {
     const ms = saveEpisodePosition(currentMedia.podcast_episode, position, { finished, lease: currentMedia.podcast_lease });
-    if (ms && (reportProgress || currentSource?.authenticated)) void saveListeningProgress(id, position, listeningOccurrence, new Date(ms).toISOString()).catch(() => {});
+    if (ms && !currentMedia.podcast_stream_episode && (reportProgress || currentSource?.authenticated)) void saveListeningProgress(id, position, listeningOccurrence, new Date(ms).toISOString()).catch(() => {});
     return Promise.resolve();
   }
   const classified = currentMedia?.id === id && currentMedia.podcast_classified;

@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v100';
+const CACHE = 'kiss-v101';
 const ASSETS = [
   '/',
   '/index.html',
@@ -30,6 +30,7 @@ const ASSETS = [
   '/js/podcast-global-sync.js',
   '/js/podcast-identity.js',
   '/js/podcast-playback.js',
+  '/js/podcast-downloads.js',
   '/js/podcast-retention.js',
   '/js/podcast-deletion-store.js',
   '/js/set-sort.js',

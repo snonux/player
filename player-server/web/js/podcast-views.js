@@ -1,3 +1,5 @@
+import { podcastStreamMedia } from './podcast-playback.js';
+import { podcastDownloading, downloadPodcastEpisode, cancelPodcastDownload } from './podcast-downloads.js';
 import { bindPodcastMultiselect } from './podcast-multiselect.js';
 import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from './podcast-metadata.js';
 import { openPodcastDiscovery } from './podcast-discovery.js';
@@ -25,7 +27,7 @@ export function episodePlayableMedia(ep, downloaded = null) {
     feed_image_url: ep.feed_image_url || downloaded?.podcast?.feed_image_url || '' };
   if (downloaded?.id) return { ...downloaded, podcast, podcast_episode: episodeSnapshot(ep) };
   const id = ep?.server_copy?.media_id;
-  if (!id) return null;
+  if (!id) return podcastStreamMedia(ep);
   return {
     id,
     type: 'audio',
@@ -303,7 +305,7 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
     card.dataset.feedKey = ep.feed_key || '';
     card.dataset.episodeKey = ep.episode_key || '';
     card.dataset.index = String(index);
-    const mediaId = ep.server_copy?.media_id;
+    const mediaId = state.media[index]?.id;
     if (mediaId) card.dataset.id = String(mediaId);
     card.tabIndex = -1;
     renderViewEpisodeCard(card, ep, { showFeed: !feedKey });
@@ -422,12 +424,26 @@ function bindPager(grid, pageInfo) {
   });
 }
 
-const downloadControllers = new WeakMap();
+const renderedEpisodes = new WeakMap();
+globalThis.document?.addEventListener?.('podcast:download-changed', event => {
+  for (const card of document.querySelectorAll('.episode-card[data-episode-id]')) {
+    const ep = renderedEpisodes.get(card);
+    if (ep && String(ep.id) === String(event.detail.id)) {
+      if (event.detail.media) {
+        ep.server_copy = { media_id: event.detail.media.id };
+        rememberEpisodeMedia(parseInt(card.dataset.index, 10), episodePlayableMedia(ep, event.detail.media));
+        card.dataset.id = String(event.detail.media.id);
+      }
+      renderViewEpisodeCard(card, ep, {showFeed: !state.podcastFeedKey});
+    }
+  }
+});
 
 function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
   const selectionFocused = card.querySelector('.media-selection-check') === document.activeElement;
   const focusedAction = card.contains(document.activeElement) ? document.activeElement?.dataset.action : null;
-  const downloading = Boolean(downloadControllers.get(card));
+  renderedEpisodes.set(card, ep);
+  const downloading = podcastDownloading(ep.id);
   card.classList.toggle('listened', Boolean(ep.completed));
   card.innerHTML = episodeCardHtml(ep, { showFeed, downloading });
   bindPodcastMetadata(card);
@@ -462,7 +478,7 @@ function renderViewEpisodeCard(card, ep, { showFeed } = {}) {
   });
   cancelBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
-    downloadControllers.get(card)?.abort();
+    cancelPodcastDownload(ep.id);
   });
   completeBtn?.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -502,12 +518,12 @@ export function episodeCardHtml(ep, { showFeed, downloading = false } = {}) {
     ? `<div class="subtitle">${escapeHtml(ep.feed_title)}</div>`
     : '';
   const metaBits = [dateStr, duration, position, downloadState].filter(Boolean).join(' · ');
-  const playLabel = !downloaded ? 'Download and play' : canResume ? 'Resume' : 'Play';
+  const playLabel = hasProgress ? 'Resume' : 'Play';
   const descriptionBlock = showNotesHTML(ep.description);
-  const primary = downloading
+  const primary = `${downloading
     ? '<button type="button" class="icon-btn btn-sm" data-action="cancel-download" title="Cancel download" aria-label="Cancel download">✕</button>'
-    : `${downloaded ? '' : '<button type="button" class="icon-btn btn-sm btn-download-episode" data-action="download-episode" title="Download to server" aria-label="Download episode to server">↓</button>'}
-        <button type="button" class="icon-btn btn-sm" data-action="play" title="${playLabel}" aria-label="${playLabel} episode">▶</button>`;
+    : downloaded ? '' : '<button type="button" class="icon-btn btn-sm btn-download-episode" data-action="download-episode" title="Download to server" aria-label="Download episode to server">↓</button>'}
+    <button type="button" class="icon-btn btn-sm" data-action="play" title="${playLabel}" aria-label="${playLabel} episode">▶</button>`;
   const extras = `
         <button type="button" class="icon-btn btn-sm card-action-extra btn-complete${completed ? ' active' : ''}" data-action="complete"
           title="${completeLabel}" aria-label="${completeLabel}" aria-pressed="${completed}">✓</button>
@@ -532,33 +548,23 @@ export function episodeCardHtml(ep, { showFeed, downloading = false } = {}) {
     </div>`;
 }
 
-async function runEpisodeDownload(card, ep, { play = false, fromBeginning = false } = {}) {
-  if (downloadControllers.get(card)) return;
-  const index = parseInt(card.dataset.index, 10);
-  const controller = new AbortController();
-  downloadControllers.set(card, controller);
-  renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
-  if (play) toast('Downloading episode…', 'info');
+async function runEpisodeDownload(card, ep) {
+  if (podcastDownloading(ep.id)) return;
+  const lease = podcastSyncStatus().generation;
   try {
-    const media = await API.downloadEpisode(ep.id, { signal: controller.signal });
+    const media = await downloadPodcastEpisode(ep.id);
+    if (podcastSyncStatus().generation !== lease) return;
     ep.server_copy = { media_id: media.id };
     if (episodeSnapshot(ep).deletion?.deleted) return;
-    rememberEpisodeMedia(index, episodePlayableMedia(ep, media));
-    card.dataset.id = String(media.id);
+    if (card.isConnected) {
+      rememberEpisodeMedia(parseInt(card.dataset.index, 10), episodePlayableMedia(ep, media));
+      card.dataset.id = String(media.id);
+      renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
+    }
     toast('Episode downloaded');
-    downloadControllers.delete(card);
-    renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
-    if (play && !(await playMediaById(media.id, { fromBeginning }))) {
-      toast('Episode downloaded; select it to play', 'info');
-    }
   } catch (err) {
-    downloadControllers.delete(card);
-    renderViewEpisodeCard(card, ep, { showFeed: !state.podcastFeedKey });
-    if (err?.name === 'AbortError' || controller.signal.aborted) {
-      toast('Download canceled', 'info');
-      return;
-    }
-    toast(err.message || 'Download failed', 'error');
+    if (podcastSyncStatus().generation !== lease) return;
+    toast(err?.name === 'AbortError' ? 'Download canceled' : err.message || 'Download failed', err?.name === 'AbortError' ? 'info' : 'error');
   }
 }
 
@@ -584,11 +590,15 @@ async function playEpisode(card, ep, fromBeginning = false) {
     if (!(await playMediaById(media.id, { fromBeginning }))) toast('Select the episode to play', 'info');
     return;
   }
-  await runEpisodeDownload(card, ep, { play: true, fromBeginning });
+  const stream = podcastStreamMedia(ep);
+  if (!stream) return;
+  rememberEpisodeMedia(index, stream);
+  card.dataset.id = String(stream.id);
+  if (!(await playMediaById(stream.id, { fromBeginning }))) toast('Select the episode to play', 'info');
 }
 
 async function downloadEpisodeOnly(card, ep) {
-  await runEpisodeDownload(card, ep, { play: false });
+  await runEpisodeDownload(card, ep);
 }
 
 async function markCompletion(card, ep, completed) {
@@ -620,7 +630,7 @@ async function deleteEpisode(card, ep, button) {
     // The state layer persists the edit before starting its network request.
     const request = setEpisodeDeleted(ep);
     if (episodeSnapshot(ep).deletion?.deleted) {
-      downloadControllers.get(card)?.abort();
+      cancelPodcastDownload(ep.id);
       focusAfterRemoval(card); clearEpisodeSlot(card); card.remove();
     }
     await request;

@@ -65,7 +65,7 @@ const base = {
 {
   const html = episodeCardHtml(base, { downloading: true });
   assert(html.includes('data-action="cancel-download"'), 'Cancel while downloading');
-  assert(!html.includes('data-action="play"'), 'Play hidden while downloading');
+  assert(html.includes('data-action="play"'), 'Play remains available while downloading');
   assert(!html.includes('data-action="download-episode"'), 'Download hidden while downloading');
   assert(html.includes('Downloading…'), 'status shows transfer');
   const moreTag = html.match(/data-action="more"[^>]*>/)?.[0] || '';
