@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:sqflite/sqflite.dart';
 import 'podcast_identity.dart';
 import 'podcast_feed_fetcher.dart';
+import 'podcast_metadata.dart';
 
 String podcastAccountScope(String origin, int userId) =>
     'account:${Uri.parse(origin).origin}#$userId';
@@ -104,10 +105,61 @@ class PodcastRepository {
           .map((row) => row['scope'] as String)
           .toList();
 
-  Future<List<Map<String, Object?>>> subscriptions(String scope) async =>
-      (await database).rawQuery(
-          'SELECT s.*, f.description,f.image_url,f.last_error,f.last_checked_ms FROM podcast_subscriptions s LEFT JOIN podcast_feeds f USING(feed_key) WHERE s.scope=? AND s.subscribed=1 ORDER BY s.title COLLATE NOCASE',
-          [scope]);
+  Future<List<Map<String, Object?>>> subscriptions(String scope) async {
+    final db = await database;
+    return db.transaction((tx) async {
+      final subscriptions = await tx.query('podcast_subscriptions',
+          where: 'scope=? AND subscribed=1',
+          whereArgs: [scope],
+          orderBy: 'title COLLATE NOCASE');
+      final metadata = <String, Map<String, Object?>>{};
+      // Publisher redirects and account sync can retain different canonical keys.
+      // Match the same aliases as episode browsing, keeping subscription identity.
+      for (final feed in await tx.query('podcast_feeds')) {
+        for (final key in [
+          feed['feed_key'] as String,
+          ...(jsonDecode(feed['aliases'] as String) as List).cast<String>()
+        ]) {
+          final scoped = await resolveAccountKey(tx, scope, 'feed', '', key);
+          final previous = metadata[scoped];
+          if (previous == null ||
+              podcastArtworkUrl(previous['image_url']).isEmpty &&
+                  podcastArtworkUrl(feed['image_url']).isNotEmpty) {
+            metadata[scoped] = feed;
+          }
+        }
+      }
+      final rows = <Map<String, Object?>>[];
+      for (final subscription in subscriptions) {
+        final key = await resolveAccountKey(
+            tx, scope, 'feed', '', subscription['feed_key'] as String);
+        final feed = metadata[key];
+        var artwork = podcastArtworkUrl(feed?['image_url']);
+        if (artwork.isEmpty && feed != null) {
+          // Some publishers supply episode images without a channel image.
+          final episodes = await tx.query('podcast_episodes',
+              columns: ['image_url'],
+              where: "feed_key=? AND image_url!=''",
+              whereArgs: [feed['feed_key']],
+              orderBy: 'published_at DESC,episode_key');
+          artwork = episodes
+                  .map((episode) => podcastArtworkUrl(episode['image_url']))
+                  .where((url) => url.isNotEmpty)
+                  .firstOrNull ??
+              '';
+        }
+        rows.add({
+          ...subscription,
+          'description': feed?['description'],
+          'image_url': artwork,
+          'last_error': feed?['last_error'],
+          'last_checked_ms': feed?['last_checked_ms'],
+        });
+      }
+      return rows;
+    });
+  }
+
   Future<List<Map<String, Object?>>> episodes(String feedKey) async =>
       (await database).query('podcast_episodes',
           where: 'feed_key=?',
@@ -123,7 +175,7 @@ class PodcastRepository {
     if (offset < 0 ||
         limit < 1 ||
         limit > 200 ||
-        !['uncompleted', 'completed', 'all'].contains(filter)) {
+        !['uncompleted', 'completed', 'all', 'started'].contains(filter)) {
       throw ArgumentError('Invalid podcast page');
     }
     final db = await database;
@@ -206,7 +258,9 @@ class PodcastRepository {
         if (state['deleted'] == 1) continue;
         final completed = state['completed'] == 1;
         if (filter == 'completed' && !completed ||
-            filter == 'uncompleted' && completed) {
+            filter == 'uncompleted' && completed ||
+            filter == 'started' &&
+                (completed || (state['position_seconds'] as num? ?? 0) <= 0)) {
           continue;
         }
         final previous = rows[(scopedFeed, key)];
@@ -226,6 +280,11 @@ class PodcastRepository {
       }
       final ordered = rows.values.toList()
         ..sort((a, b) {
+          if (filter == 'started') {
+            final recent = (b['position_ms'] as int? ?? 0)
+                .compareTo(a['position_ms'] as int? ?? 0);
+            if (recent != 0) return recent;
+          }
           final published =
               (b['published_at'] as int).compareTo(a['published_at'] as int);
           if (published != 0) return published;

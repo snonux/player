@@ -158,3 +158,39 @@ final podcastServerSubscriptionsProvider =
   if (active && lease.current()) ref.invalidate(podcastSubscriptionsProvider);
   return result;
 });
+
+/// Populate sync-only subscriptions while the overview keeps showing its cache.
+/// Publisher artwork is public; authenticated fallback stays inside the API client.
+final podcastOverviewMetadataProvider =
+    FutureProvider.autoDispose<void>((ref) async {
+  var active = true;
+  ref.onDispose(() => active = false);
+  final scopeFuture = ref.watch(podcastScopeProvider.future);
+  final repository = ref.watch(podcastRepositoryProvider);
+  final metadata = ref.watch(podcastServerMetadataProvider);
+  final membership = ref.watch(podcastServerSubscriptionsProvider.future);
+  final scope = await scopeFuture;
+  if (!active) return;
+  // Membership reconciliation may add feeds after the cached first frame.
+  try {
+    await membership;
+  } catch (_) {
+    // Membership errors do not prevent hydrating existing cached subscriptions.
+  }
+  if (!active) return;
+  for (final key in await repository.missingSubscriptions(scope)) {
+    if (!active) return;
+    try {
+      await repository.refreshSubscription(scope, key);
+    } catch (_) {
+      if (active && metadata != null && metadata.scope == scope) {
+        try {
+          await metadata.refresh(key);
+        } catch (_) {
+          // Optional metadata must not hide cached subscriptions or block use.
+        }
+      }
+    }
+    if (active) ref.invalidate(podcastSubscriptionsProvider);
+  }
+});

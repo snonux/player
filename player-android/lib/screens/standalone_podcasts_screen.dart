@@ -16,6 +16,9 @@ import '../widgets/podcast_publication_date.dart';
 import '../services/podcast_metadata.dart';
 import '../providers/global_sync_provider.dart';
 
+// Shared by all episode routes so opening a feed keeps the chosen layout.
+final podcastEpisodeGridProvider = StateProvider<bool>((ref) => false);
+
 class StandalonePodcastsScreen extends ConsumerStatefulWidget {
   const StandalonePodcastsScreen(
       {super.key, this.viewSwitcher, this.syncMessage});
@@ -113,6 +116,7 @@ class _StandalonePodcastsScreenState
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(podcastOverviewMetadataProvider);
     final feeds = ref.watch(podcastSubscriptionsProvider);
     final scope = ref.watch(podcastScopeProvider).valueOrNull;
     return Scaffold(
@@ -480,6 +484,115 @@ class _LocalPodcastEpisodesScreenState
     return 'In progress · $clock';
   }
 
+  Widget episodeTile(Map<String, Object?> e, String? scope, bool grid) {
+    final tile = ListTile(
+      key: ValueKey((e['feed_key'], e['episode_key'])),
+      title: grid
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ColorFiltered(
+                  colorFilter: ColorFilter.mode(
+                    e['completed'] == 1 ? Colors.grey : Colors.transparent,
+                    e['completed'] == 1 ? BlendMode.saturation : BlendMode.dst,
+                  ),
+                  child: Opacity(
+                    opacity: e['completed'] == 1 ? 0.5 : 1,
+                    child: PodcastArtwork(
+                      imageUrl: e['image_url'] as String? ?? '',
+                      fallbackUrl: e['feed_image_url'] as String? ?? '',
+                      title: e['title'] as String,
+                      size: 112,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  e['title'] as String,
+                  style: e['completed'] == 1
+                      ? TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        )
+                      : null,
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                ColorFiltered(
+                  colorFilter: ColorFilter.mode(
+                    e['completed'] == 1 ? Colors.grey : Colors.transparent,
+                    e['completed'] == 1 ? BlendMode.saturation : BlendMode.dst,
+                  ),
+                  child: Opacity(
+                    opacity: e['completed'] == 1 ? 0.5 : 1,
+                    child: PodcastArtwork(
+                      imageUrl: e['image_url'] as String? ?? '',
+                      fallbackUrl: e['feed_image_url'] as String? ?? '',
+                      title: e['title'] as String,
+                      size: 88,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    e['title'] as String,
+                    style: e['completed'] == 1
+                        ? TextStyle(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          )
+                        : null,
+                  ),
+                ),
+              ],
+            ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.feedKey == null) Text(e['podcast_title'] as String),
+          PodcastPublicationDate(
+            date: podcastPublicationDate(e['published_at']),
+          ),
+          Text(_progressSummary(e)),
+          if ((e['position_seconds'] as num) > 0 &&
+              (e['duration_seconds'] as num) > 0)
+            LinearProgressIndicator(
+              value: ((e['position_seconds'] as num) /
+                      (e['duration_seconds'] as num))
+                  .clamp(0.0, 1.0),
+            ),
+          PodcastShowNotes(description: e['description'] as String? ?? ''),
+          PodcastDownloadControls(
+            feed: e['feed_key'] as String,
+            scope: e['browse_scope'] as String,
+            episode: e,
+            onPlaybackReturn: reload,
+            onDeleteEpisode: () =>
+                deleteEpisode(e, e['browse_scope'] as String),
+            completeLabel:
+                e['completed'] == 1 ? 'Mark uncompleted' : 'Mark completed',
+            onToggleComplete: scope == null ||
+                    pending.contains(
+                      '${e['scope_feed_key']}:${e['scope_episode_key']}',
+                    )
+                ? null
+                : () => complete(e, scope),
+          ),
+        ],
+      ),
+    );
+    return grid
+        ? Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: tile,
+            ),
+          )
+        : tile;
+  }
+
   @override
   Widget build(BuildContext context) {
     final scope = ref.watch(podcastScopeProvider).valueOrNull;
@@ -500,6 +613,7 @@ class _LocalPodcastEpisodesScreenState
         unawaited(refreshFeeds(missingOnly: true));
       }
     });
+    final grid = ref.watch(podcastEpisodeGridProvider);
     final episodes =
         ref.watch(podcastEpisodePageProvider((widget.feedKey, filter, offset)));
     return Scaffold(
@@ -567,6 +681,17 @@ class _LocalPodcastEpisodesScreenState
                         page(0);
                       })
               ])),
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, icon: Icon(Icons.view_list), label: Text('List')),
+              ButtonSegment(value: true, icon: Icon(Icons.grid_view), label: Text('Grid')),
+            ],
+            selected: {grid},
+            onSelectionChanged: (values) => ref.read(podcastEpisodeGridProvider.notifier).state = values.single,
+          ),
+        ),
         if (error != null) Text(error!),
         Expanded(
             child: episodes.when(
@@ -584,70 +709,18 @@ class _LocalPodcastEpisodesScreenState
                         padding: EdgeInsets.all(24),
                         child: Text(
                             'No episodes in this filter. Refresh the feed to fetch episodes.')),
-                  for (final e in rows.take(40))
-                    ListTile(
-                      key: ValueKey((e['feed_key'], e['episode_key'])),
-                      title: Row(children: [
-                        ColorFiltered(
-                            colorFilter: ColorFilter.mode(
-                                e['completed'] == 1
-                                    ? Colors.grey
-                                    : Colors.transparent,
-                                e['completed'] == 1
-                                    ? BlendMode.saturation
-                                    : BlendMode.dst),
-                            child: Opacity(
-                                opacity: e['completed'] == 1 ? 0.5 : 1,
-                                child: PodcastArtwork(
-                                    imageUrl: e['image_url'] as String? ?? '',
-                                    fallbackUrl:
-                                        e['feed_image_url'] as String? ?? '',
-                                    title: e['title'] as String,
-                                    size: 88))),
-                        const SizedBox(width: 16),
-                        Expanded(
-                            child: Text(e['title'] as String,
-                                style: e['completed'] == 1
-                                    ? TextStyle(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurfaceVariant)
-                                    : null)),
-                      ]),
-                      subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (widget.feedKey == null)
-                              Text(e['podcast_title'] as String),
-                            PodcastPublicationDate(
-                                date:
-                                    podcastPublicationDate(e['published_at'])),
-                            Text(_progressSummary(e)),
-                            if ((e['position_seconds'] as num) > 0 &&
-                                (e['duration_seconds'] as num) > 0)
-                              LinearProgressIndicator(
-                                  value: ((e['position_seconds'] as num) /
-                                          (e['duration_seconds'] as num))
-                                      .clamp(0.0, 1.0)),
-                            PodcastShowNotes(
-                                description: e['description'] as String? ?? ''),
-                            PodcastDownloadControls(
-                                feed: e['feed_key'] as String,
-                                scope: e['browse_scope'] as String,
-                                episode: e,
-                                onPlaybackReturn: reload,
-                                onDeleteEpisode: () => deleteEpisode(
-                                    e, e['browse_scope'] as String),
-                                completeLabel: e['completed'] == 1
-                                    ? 'Mark uncompleted'
-                                    : 'Mark completed',
-                                onToggleComplete: scope == null ||
-                                        pending.contains(
-                                            '${e['scope_feed_key']}:${e['scope_episode_key']}')
-                                    ? null
-                                    : () => complete(e, scope)),
-                          ]),
-                    ),
+                  if (grid)
+                    LayoutBuilder(builder: (context, constraints) {
+                      // Flowing cards grow with text and expanded notes.
+                      final columns = (constraints.maxWidth / 300).floor().clamp(1, 6);
+                      final width = (constraints.maxWidth - (columns - 1) * 8) / columns;
+                      return Wrap(spacing: 8, runSpacing: 8, children: [
+                        for (final e in rows.take(40))
+                          SizedBox(width: width, child: episodeTile(e, scope, true)),
+                      ]);
+                    })
+                  else
+                    for (final e in rows.take(40)) episodeTile(e, scope, false),
                   Wrap(
                       alignment: WrapAlignment.center,
                       crossAxisAlignment: WrapCrossAlignment.center,

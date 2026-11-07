@@ -14,6 +14,7 @@ import '../providers/auth_state_provider.dart';
 import 'dart:async';
 
 import 'package:cookie_jar/cookie_jar.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'media_playback_navigation.dart';
@@ -621,6 +622,30 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
           request, ref.read(apiClientProvider));
     }
     request = await _refreshRetryQuality(request, generation);
+    if (request is PodcastPlaybackRequest && request.continuation != null) {
+      final podcast = request;
+      final accountOffline = ref.exists(authStateProvider) &&
+          ref.read(authStateProvider).valueOrNull?.isOffline == true;
+      _musicEntries = [podcast];
+      // The handler calls this only when the selected episode finishes or
+      // Next is pressed. Starting local audio never waits for optional metadata.
+      _expandMusic = () async {
+        var offline = accountOffline;
+        try {
+          offline = offline ||
+              (await Connectivity().checkConnectivity())
+                  .every((result) => result == ConnectivityResult.none);
+        } catch (_) {
+          // Cached playback also works without connectivity metadata.
+        }
+        try {
+          return [podcast, ...await podcast.continuation!(offline)];
+        } catch (_) {
+          return [podcast];
+        }
+      };
+      return request;
+    }
     if (request is! ServerPlaybackRequest || widget.sequence.isEmpty) {
       return request;
     }
@@ -723,21 +748,27 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     final lease = attempt.lease;
     final coordinator = ref.read(playbackSessionCoordinatorProvider);
     handler.startMusicSequence(
-        queueLabel:
-            widget.sequence.firstOrNull?.music?.album ?? context.tr('Album'),
+        queueLabel: _activeRequest is PodcastPlaybackRequest
+            ? _activeRequest!.podcast?.feedTitle ?? 'Podcast'
+            : widget.sequence.firstOrNull?.music?.album ?? context.tr('Album'),
         sequenceLease: lease,
         claimQueue: (request) => coordinator.claim(
             kind: request.kind,
             identity: request.identity,
             sourceUri: request.sourceUri.toString(),
             stop: handler.stop),
-        wrap: _remoteReturnRequest == null && !widget.albumCollection,
+        wrap: _activeRequest is! PodcastPlaybackRequest &&
+            _remoteReturnRequest == null &&
+            !widget.albumCollection,
         entries: _musicEntries,
         index: _musicStartIndex,
         expand: _expandMusic!,
         changed: lease.updateSource,
-        load: ref.read(cachedAudioLoaderProvider(
-            ref.read(credentialMutationQueueProvider).generation)));
+        load: _activeRequest is PodcastPlaybackRequest
+            ? (request, current) async =>
+                current() ? AudioSource.uri(request.sourceUri) : null
+            : ref.read(cachedAudioLoaderProvider(
+                ref.read(credentialMutationQueueProvider).generation)));
     _watchMusicState(handler, lease);
   }
 
@@ -1136,7 +1167,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     final ready = request != null && !_isLoading && _error == null;
     final personal = ready && !casting && !widget.isPublicShare;
     final store = personal ? _personalBinding.storeFor(ref, request) : null;
-    final music = handler.musicState != null;
+    final music =
+        handler.musicState != null && _activeRequest is! PodcastPlaybackRequest;
     return [
       if (music && ready && !casting && !handler.musicQueue.active)
         OverflowMenuItem(
@@ -1630,7 +1662,8 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   /// [AudioPlayer] directly, so the media-session notification stays in sync
   /// with every button press (Law of Demeter: one collaborator for mutations).
   Widget _buildControls(PlayerAudioHandler handler) {
-    final music = handler.musicState != null;
+    final music =
+        handler.musicState != null && _activeRequest is! PodcastPlaybackRequest;
     return StreamBuilder<bool>(
       stream: handler.player.playingStream,
       builder: (context, snapshot) {

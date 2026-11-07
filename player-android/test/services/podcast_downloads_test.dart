@@ -151,6 +151,53 @@ void main() {
   });
 
   test(
+      'continuation is finite, skips completed/deleted and prefers device copies',
+      () async {
+    final db = await repository.database;
+    final key = episode['episode_key'] as String;
+    await db.update('podcast_episodes', {'published_at': 500},
+        where: 'episode_key=?', whereArgs: [key]);
+    for (final (name, published) in [
+      ('copy', 400),
+      ('completed', 300),
+      ('deleted', 200),
+      ('online', 100)
+    ]) {
+      await db.insert('podcast_episodes', {
+        ...episode,
+        'episode_key': name,
+        'published_at': published,
+        'enclosure_key': 'enc:$name',
+        'title': name,
+      });
+    }
+    final store = PodcastSyncStore(repository);
+    await store.saveEpisode('local', feed, 'completed', completed: true);
+    await db.insert('podcast_episode_state', {
+      'scope': 'local',
+      'feed_key': feed,
+      'episode_key': 'deleted',
+      'deleted': 1,
+    });
+    await downloads.download(feed, key);
+    await downloads.download(feed, 'copy');
+    final request = await downloads.playbackRequest('local', feed, episode);
+    final rest = await request.continuation!(false);
+    expect(rest.map((r) => r.title), ['copy', 'online']);
+    expect(rest.first.sourceUri.scheme, 'file');
+    expect(
+        (await downloads.continuation('local', feed, key, offline: true))
+            .map((request) => request.title),
+        ['copy']);
+    expect(rest.last.sourceUri.removeFragment().toString(), episode['enclosure_url']);
+    expect(rest.last.sourceUri.userInfo, isEmpty);
+    expect((rest.last as PodcastPlaybackRequest).continuation, isNull,
+        reason: 'successors cannot rebuild or wrap the captured feed journey');
+    expect(await downloads.continuation('local', feed, 'online'), isEmpty);
+    expect(await downloads.continuation('local', feed, 'missing'), isEmpty);
+  });
+
+  test(
       'native duration overrides feed; manual status and start-over retain clocks',
       () async {
     final key = episode['episode_key'] as String;

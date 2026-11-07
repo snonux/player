@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { API } from '../api.js';
+import { nextPodcastEpisode } from '../podcast-playback.js';
+import { setPodcastAccount } from '../podcast-episode-state.js';
+
+setPodcastAccount(910);
+const row = (key, fields = {}) => ({ feed_key: 'feed:example.test/rss', episode_key: key, ...fields });
+const firstPage = Array.from({ length: 100 }, (_, i) => row(`newer-${i}`, { completed: true }));
+const current = row('current');
+firstPage[99] = current;
+const completed = row('completed', { completed: true });
+const deleted = row('deleted', { deleted: true });
+deleted.deletion = { deleted: true, observed_ms: 100 };
+const next = row('next');
+const pages = [firstPage, [completed, deleted, next, row('last')]];
+const requests = [];
+API.subscribedEpisodes = async options => { requests.push(options); return pages[options.offset / 100]; };
+assert.equal((await nextPodcastEpisode(current)).episode_key, 'next');
+assert.deepEqual(requests.map(r => r.offset), [0, 100], 'continuation crosses browse page boundaries');
+assert.ok(requests.every(r => r.feedKey === current.feed_key && r.filter === 'all'), 'current remains locatable after completion');
+assert.equal(await nextPodcastEpisode(row('last')), null, 'feed ending does not wrap');
+assert.equal(await nextPodcastEpisode(row('removed')), null, 'missing current episode stops');
+let wanted = true;
+API.subscribedEpisodes = async () => { wanted = false; return firstPage; };
+assert.equal(await nextPodcastEpisode(current, () => wanted), null, 'account or playback intent change cancels a pending lookup');
+console.log('podcast continuation tests passed');

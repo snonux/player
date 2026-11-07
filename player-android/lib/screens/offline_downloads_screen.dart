@@ -1,3 +1,5 @@
+import '../widgets/continue_listening.dart';
+import '../providers/continue_listening_provider.dart';
 import '../widgets/offline_music_browser.dart';
 import '../providers/auth_state_provider.dart';
 import '../providers/api_client_provider.dart';
@@ -148,10 +150,15 @@ class _OfflineDownloadsScreenState
                   onPressed: () => ref.invalidate(offlineMediaListProvider),
                   child: const Text('Could not load downloads. Retry'))),
           data: (items) => items.isEmpty
-              ? const Center(
-                  child: Text(
-                      'No offline copies yet. Use Keep offline on a server file.'))
+              ? ListView(children: const [
+                  ContinueListening(),
+                  Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                          'No offline copies yet. Use Keep offline on a server file.')),
+                ])
               : ListView(children: [
+                  const ContinueListening(),
                   Padding(
                       padding: const EdgeInsets.all(16),
                       child: Text(
@@ -164,7 +171,10 @@ class _OfflineDownloadsScreenState
                       onOpen: () => _open(item),
                       onRemove: () => _remove(item),
                       onPersonalChanged: () {
-                        if (mounted) setState(() => _personalRevision++);
+                        if (mounted) {
+                          ref.invalidate(continueListeningProvider(false));
+                          setState(() => _personalRevision++);
+                        }
                       },
                     ),
                 ]),
@@ -175,7 +185,10 @@ class _OfflineDownloadsScreenState
 
   Future<void> _open(OfflineMedia item) async {
     await context.push(AppRoutes.offlinePlayerPath(item.key));
-    if (mounted) setState(() => _personalRevision++);
+    if (mounted) {
+      ref.invalidate(continueListeningProvider(false));
+      setState(() => _personalRevision++);
+    }
   }
 
   Future<void> _remove(OfflineMedia item) async {

@@ -32,3 +32,22 @@ export async function preparePodcastPlayback(media, resumeFrom, timeoutMS = 3000
 export function podcastNaturalEnd({ played, seeking, advancing, error, position, target }) {
   return played && !seeking && !error && advancing && position > target;
 }
+
+// Continue within this feed in its visible newest-first order. Inspect the
+// complete catalog (including the completed current row) so pagination and
+// changing the browse view cannot wrap playback or lose its place.
+export async function nextPodcastEpisode(current, stillWanted = () => true) {
+  const rows = [];
+  for (let offset = 0; ; offset += 100) {
+    const page = await API.subscribedEpisodes({ feedKey: current.feed_key, filter: 'all', limit: 100, offset });
+    if (!stillWanted()) return null;
+    rows.push(...page);
+    if (page.length < 100) break;
+  }
+  const index = rows.findIndex(ep => ep.episode_key === current.episode_key);
+  if (index < 0) return null;
+  return rows.slice(index + 1).find(ep => {
+    const state = episodeSnapshot(ep);
+    return !(state.completion?.completed ?? ep.completed) && !state.deletion?.deleted;
+  }) || null;
+}

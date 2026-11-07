@@ -310,7 +310,7 @@ export async function insertQueue(songs, action = 'next', {replace = false, sour
   if (!added.length) return false;
   restoreError = false;
   autoplay.cancel();
-  if (replace) autoplay.reset();
+  if (replace) { autoplay.reset(); if (added[0]?.media.localPodcast) repeat = 'off'; }
   remember();
   const previous = undo;
   if (replace) { entries = []; index = -1; label = source; invalidateNext(); shuffle = shuffled; shuffleMode = 'tracks'; canonical = []; if (shuffled) { const ordered = [...added]; added.splice(0, added.length, ...shuffledCopy(added)); canonical = ordered.map(e => e.id); } }

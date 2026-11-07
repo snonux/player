@@ -1,3 +1,5 @@
+import '../widgets/continue_listening.dart';
+import '../providers/continue_listening_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -68,7 +70,10 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
           retry: () => ref.invalidate(localMediaListProvider),
         ),
         data: (items) => items.isEmpty
-            ? _emptyLibrary(settings?.configurationError)
+            ? ListView(children: [
+                const ContinueListening(deviceOnly: true),
+                _emptyLibrary(settings?.configurationError),
+              ])
             : _mediaList(items),
       ),
     );
@@ -113,6 +118,7 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
 
   Widget _mediaList(List<LocalMedia> items) => ListView(
         children: [
+          const ContinueListening(deviceOnly: true),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
             child:
@@ -125,7 +131,10 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
               title: Text(media.title,
                   maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text(_subtitle(media)),
-              onTap: () => context.push(AppRoutes.localPlayerPath(media.id)),
+              onTap: () async {
+                await context.push(AppRoutes.localPlayerPath(media.id));
+                if (mounted) ref.invalidate(continueListeningProvider(true));
+              },
               trailing: PopupMenuButton<_LocalMediaAction>(
                 tooltip: 'Manage ${media.title}',
                 onSelected: (action) => switch (action) {
@@ -177,6 +186,7 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
           await ref.read(localLibraryManagerProvider).addDocument(kind);
       if (added != null) {
         ref.invalidate(localMediaListProvider);
+        ref.invalidate(continueListeningProvider(true));
         _showMessage('Added ${added.title}');
       }
     });
@@ -216,6 +226,7 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
       if (relinked != null) {
         ref.invalidate(localMediaByIdProvider(media.id));
         ref.invalidate(localMediaListProvider);
+        ref.invalidate(continueListeningProvider(true));
         final message = relinked.previousFileWasUnavailable
             ? 'The previous file was unavailable. Updated ${relinked.media.title}.'
             : 'Updated ${relinked.media.title}';
@@ -252,6 +263,7 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
           await ref.read(localLibraryManagerProvider).remove(media.id);
       ref.invalidate(localMediaByIdProvider(media.id));
       ref.invalidate(localMediaListProvider);
+      ref.invalidate(continueListeningProvider(true));
       if (result.releaseFailed) {
         _showMessage(
           'Removed from Player, but Android could not release the file permission.',

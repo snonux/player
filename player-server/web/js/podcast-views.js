@@ -60,6 +60,7 @@ let playMediaById = async () => false;
 let pageSize = 100;
 let sidebarFeeds = [];
 let visibleEpisodes = [];
+let episodeLayout = 'grid';
 let stateUpdateTimer;
 let sidebarRefreshRevision = 0;
 
@@ -223,6 +224,7 @@ function ensureSidebar() {
 
 export async function renderPodcastVirtualView(grid, { revision, alive, pageSize: size } = {}) {
   if (!grid) return null;
+  grid.classList.remove('picture-grid');
   setPodcastViewPageSize(size);
   breadcrumbHidden(true);
   if (state.podcastOverview) {
@@ -278,6 +280,7 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
     approx: hasNext,
   };
 
+  grid.classList.toggle('podcast-episode-list', episodeLayout === 'list');
   grid.innerHTML = filterBarHtml(title, filter)
     + pagerHtml(pageInfo, 'top')
     + (episodes.length ? '' : `<p class="text-muted text-sm grid-full podcast-empty">${feedKey ? 'No episodes match this filter, or the feed has not refreshed yet. Use Refresh feed to fetch its latest episodes.' : 'No episodes match this filter.'}</p>`)
@@ -342,6 +345,7 @@ function filterBarHtml(title, filter) {
     <div role="group" aria-label="Podcast view"><button type="button" class="btn btn-ghost" data-podcast-view="episodes" aria-pressed="${!state.podcastOverview}">Episodes</button><button type="button" class="btn btn-ghost" data-podcast-view="podcasts" aria-pressed="${!!state.podcastOverview}">Podcasts</button></div>
     ${!state.podcastFeedKey && state.sets.some(set => set.is_podcast) ? `<a class="btn btn-ghost" href="/?set=${state.sets.find(set => set.is_podcast).id}">Downloaded server files</a>` : ''}
     ${state.podcastFeedKey ? `<div class="podcast-filter-bar" role="group" aria-label="Completion filter">${buttons}</div>` : '<p class="text-muted text-sm">Newest first · Listened episodes stay in this list.</p>'}
+    ${state.podcastOverview ? '' : `<div class="episode-layout-controls" role="group" aria-label="Episode layout"><button type="button" class="btn" data-episode-layout="list" aria-pressed="${episodeLayout === 'list'}">List</button><button type="button" class="btn" data-episode-layout="grid" aria-pressed="${episodeLayout === 'grid'}">Grid</button></div>`}
     <p id="podcast-pending-hint" class="text-muted text-sm" role="status"></p>
   </div>`;
 }
@@ -356,6 +360,11 @@ function pagerHtml(page, place) {
 }
 
 function bindFilterBar(grid) {
+  grid.querySelectorAll('[data-episode-layout]').forEach(button => button.onclick = () => {
+    episodeLayout = button.dataset.episodeLayout;
+    grid.classList.toggle('podcast-episode-list', episodeLayout === 'list');
+    grid.querySelectorAll('[data-episode-layout]').forEach(control => control.setAttribute('aria-pressed', String(control.dataset.episodeLayout === episodeLayout)));
+  });
   grid.querySelectorAll('[data-podcast-view]').forEach(button => button.onclick = () => {
     if (button.dataset.podcastView === 'podcasts') openPodcastOverview();
     else openAllPodcastEpisodes();

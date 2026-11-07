@@ -89,6 +89,105 @@ class _Player extends AudioPlayer {
 }
 
 void main() {
+  for (final cancellation in ['pause', 'seek']) {
+    testWidgets(
+        'podcast expansion is lazy and $cancellation cancels a pending next episode',
+        (tester) async {
+      final player = _Player();
+      final handler = PlayerAudioHandler(player);
+      final pending = Completer<List<PlaybackRequest>>();
+      var expansions = 0;
+      final first = PodcastPlaybackRequest(
+          identity: 'podcast:first',
+          sourceUri: Uri.file('/first.wav'),
+          title: 'First',
+          savePosition: (_) async {},
+          markFinished: () async {});
+      final second = PodcastPlaybackRequest(
+          identity: 'podcast:second',
+          sourceUri: Uri.file('/second.wav'),
+          title: 'Second',
+          savePosition: (_) async {},
+          markFinished: () async {});
+      handler.activateSourceSession(handler.beginSourceSession());
+      handler.setMediaRequest(first);
+      handler.startProgress(
+          savePosition: first.savePosition!,
+          markFinished: first.markFinished!,
+          naturalEndOnly: true);
+      handler.startMusicSequence(
+          wrap: false,
+          entries: [first],
+          index: 0,
+          load: (request, _) async => AudioSource.uri(request.sourceUri),
+          changed: (_) {},
+          expand: () {
+            expansions++;
+            return pending.future;
+          });
+      expect(expansions, 0,
+          reason: 'optional catalog work does not block selected playback');
+      player.elapsed = player.total!;
+      player.state = ProcessingState.completed;
+      player.processing.add(player.state);
+      await tester.pump();
+      expect(expansions, 1);
+      if (cancellation == 'pause') {
+        await handler.pause();
+      } else {
+        await handler.seek(const Duration(seconds: 5));
+      }
+      pending.complete([first, second]);
+      await tester.pump();
+      expect(player.sourceRequests, 0,
+          reason:
+              '$cancellation during expansion cancels automatic transition');
+      expect(handler.musicState?.request, same(first));
+      await handler.skipToNext();
+      await tester.pump();
+      expect(expansions, 2,
+          reason: 'a later manual Next can retry canceled expansion');
+      expect(handler.musicState?.request, same(second));
+      await tester.runAsync(handler.stop);
+      await player.changes.close();
+      await player.processing.close();
+      await player.positions.close();
+      await player.events.close();
+    });
+  }
+
+  testWidgets('podcast sequence keeps the saved music queue intact',
+      (tester) async {
+    final player = _Player();
+    final handler = PlayerAudioHandler(player);
+    final song = LocalPlaybackRequest(
+        localMediaId: 1, sourceUri: Uri.file('/song.wav'), title: 'Saved song');
+    void sequence(PlaybackRequest request) => handler.startMusicSequence(
+        wrap: false,
+        entries: [request],
+        index: 0,
+        load: (request, _) async => AudioSource.uri(request.sourceUri),
+        changed: (_) {},
+        expand: () async => [request]);
+    handler.activateSourceSession(handler.beginSourceSession());
+    sequence(song);
+    final saved = handler.musicQueue.entries.single;
+    handler.activateSourceSession(handler.beginSourceSession());
+    final episode = PodcastPlaybackRequest(
+        identity: 'podcast:one',
+        sourceUri: Uri.file('/episode.wav'),
+        title: 'Episode');
+    sequence(episode);
+    expect(handler.musicQueue.entries.single, same(saved));
+    expect(handler.musicQueue.active, isFalse);
+    expect(handler.musicState?.request, same(episode));
+    await tester.runAsync(handler.stop);
+    await player.changes.close();
+    await player.processing.close();
+    await player.positions.close();
+    await player.events.close();
+  });
+
   testWidgets(
       'podcast natural end before next position tick completes; seek to end does not',
       (tester) async {

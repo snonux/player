@@ -1,3 +1,4 @@
+import '../widgets/continue_listening.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -248,6 +249,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       : () => switchToLocalLibrary(ref, context),
                   child: const Text('Use files on this device'),
                 ),
+                const ContinueListening(deviceOnly: true),
               ],
             ),
           ),

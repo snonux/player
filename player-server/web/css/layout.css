@@ -1199,3 +1199,44 @@ body {
 .episode-card.listened .badge { color: var(--text-secondary); }
 /* Podcast actions must remain reachable on touch and keyboard without hover. */
 .episode-card .card-actions { display: flex; }
+
+/* Episode cards retain their controls in either layout. Scope to episode
+   children so the preference cannot change a later music/folder view. */
+.media-grid.podcast-episode-list:has(> .episode-card) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.media-grid.podcast-episode-list .episode-card {
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  align-items: start;
+}
+.podcast-episode-list .episode-card > .meta { grid-area: 1 / 2; }
+.podcast-episode-list .episode-card .thumb-wrap { min-height: 9rem; }
+.episode-card .title, .episode-card .subtitle {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.local-episode-list.episode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  gap: var(--gap);
+  align-items: start;
+}
+.local-episode-list.episode-grid .local-files-row {
+  flex-direction: column;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+}
+.local-episode-list.episode-grid .podcast-episode-cover {
+  width: 7rem;
+  height: 7rem;
+}
+@media (max-width: 480px) {
+  .media-grid.podcast-episode-list .episode-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .podcast-episode-list .episode-card > .meta { grid-area: 2 / 1; }
+}
+
+.episode-layout-controls .btn { min-width: 44px; min-height: 44px; }

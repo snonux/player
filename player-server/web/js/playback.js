@@ -80,6 +80,15 @@ let progressWrites = Promise.resolve();
 let currentMediaIndex = -1;
 let reportProgress = true;
 let sourceEpoch = 0;
+let transportEpoch = 0;
+
+// Captures the source and explicit transport commands while a successor waits
+// on catalog, download or metadata work. A paused terminal element emits no
+// further pause event when the OS sends Pause, so commands have their own epoch.
+export function capturePlaybackTransition() {
+  const source = sourceEpoch, transport = transportEpoch;
+  return () => source === sourceEpoch && transport === transportEpoch;
+}
 let completingEpoch = null;
 let nextHandler = null;
 let previousHandler = null;
@@ -393,11 +402,11 @@ function bindMediaEvents(e, m) {
   });
   m.addEventListener('ended', async () => {
     if (m !== currentMediaElement() || !m.ended || !playedSinceLoad) return;
-    if (currentMedia?.podcast_episode && !podcastNaturalEnd({ played: playedSinceLoad, seeking: m.seeking,
+    if ((currentMedia?.podcast_episode || currentMedia?.localPodcast) && !podcastNaturalEnd({ played: playedSinceLoad, seeking: m.seeking,
       advancing, error: m.error, position: m.currentTime, target: playbackTarget })) return;
     playedSinceLoad = false;
     if (currentMedia?.live_radio) { updateUI(false); setPlayerStatus('Station disconnected · press Play to reconnect.'); return; }
-    const epoch = sourceEpoch, intent = currentPlaybackIntent();
+    const epoch = sourceEpoch, transport = transportEpoch, intent = currentPlaybackIntent();
     if (completingEpoch === epoch) return;
     completingEpoch = epoch;
     const endedID = currentMedia?.id;
@@ -405,14 +414,14 @@ function bindMediaEvents(e, m) {
     isPlaying = false;
     stopProgressTimer();
     await saveCurrentProgress({ finished: true });
-    if (sourceEpoch === epoch && isPlaybackIntent(intent) && currentMedia?.id === endedID && currentMediaElement() === m && m.ended) {
+    if (sourceEpoch === epoch && transportEpoch === transport && isPlaybackIntent(intent) && currentMedia?.id === endedID && currentMediaElement() === m && m.ended) {
       triggerNext({ forcePlay: true, completed: true });
     }
   });
   m.addEventListener('seeking', () => { sourceEpoch++; playbackTarget = m.currentTime; });
   for (const event of ['pause', 'seeked']) m.addEventListener(event, () => document.dispatchEvent(new Event('player:position')));
   m.addEventListener('play', () => { playedSinceLoad = true; advancing = true; sourceEpoch++; completingEpoch = null; updateUI(true); isPlaying = true; startProgressTimer(); });
-  m.addEventListener('pause', () => { if (!m.ended) { saveCurrentProgress(); playedSinceLoad = false; advancing = false; } updateUI(false); isPlaying = false; stopProgressTimer(); });
+  m.addEventListener('pause', () => { if (!m.ended) { transportEpoch++; saveCurrentProgress(); playedSinceLoad = false; advancing = false; } updateUI(false); isPlaying = false; stopProgressTimer(); });
   m.addEventListener('playing', () => {
     if (m !== currentMediaElement()) return;
     // The browser can emit play before loadstart. The latter clears the
@@ -1096,6 +1105,7 @@ export function currentSleepDeadline() { return sleepTimer?.deadline() ?? null; 
 export function setSleepDeadline(value) { sleepTimer?.restore(value); sleepTimer?.tick(); }
 
 function pauseFromSystem() {
+  transportEpoch++;
   cancelLiveRequest();
   if (currentMedia?.live_radio) {
     const m = currentMediaElement();
@@ -1119,6 +1129,7 @@ function publishLocalSession() {
 // requestPlay starts playback of the current item, or remembers the wish
 // while its compat stream is still being prepared.
 export function requestPlay() {
+  transportEpoch++;
   if (currentMedia?.live_radio) {
     const m = currentMediaElement();
     if (!m || !currentSource) return;

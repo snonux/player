@@ -15,7 +15,7 @@ import 'podcast_repository.dart';
 import 'podcast_sync_store.dart';
 import 'podcast_sync.dart';
 
-/// Device copies only. No API client, account transport, or music hooks.
+/// Device copies and credential-free publisher playback. No server API client.
 class PodcastDownloads extends ChangeNotifier {
   PodcastDownloads(this.repository, this.playback,
       {Directory? directory, this.captureSyncAccount})
@@ -331,10 +331,10 @@ class PodcastDownloads extends ChangeNotifier {
 
   Future<PodcastPlaybackRequest> playbackRequest(
       String scope, String feed, Map<String, Object?> episode,
-      {bool fromBeginning = false}) async {
+      {bool fromBeginning = false, bool allowStreaming = false}) async {
     final key = episode['episode_key'] as String;
     final row = await copy(feed, key);
-    if (row?['state'] != 'available') {
+    if (row?['state'] != 'available' && !allowStreaming) {
       throw StateError('Download this episode first.');
     }
     final store = PodcastSyncStore(repository);
@@ -343,6 +343,9 @@ class PodcastDownloads extends ChangeNotifier {
     // sync so a later account switch cannot send under new credentials.
     PodcastSyncAccount? account;
     Future<void> synchronize() async {
+      // Device-only history has no account to reconcile. Do not wake auth or
+      // server transports merely because an offline device episode is opened.
+      if (scope == 'local') return;
       try {
         final lease = account ?? captureSyncAccount?.call();
         if (lease == null || lease.scope != scope || !lease.current()) {
@@ -400,7 +403,12 @@ class PodcastDownloads extends ChangeNotifier {
           feedImageUrl: episode['feed_image_url'] as String? ?? '',
           publishedAt: podcastPublicationDate(episode['published_at'])),
       sourceName: 'Podcast on this device',
-      sourceUri: _file(row!['id'] as String).uri,
+      sourceUri: row?['state'] == 'available'
+          ? _file(row!['id'] as String).uri
+          : _url(episode['enclosure_url'] as String),
+      continuation: allowStreaming
+          ? null
+          : (offline) => continuation(scope, feed, key, offline: offline),
       synchronize: synchronize,
       readPosition: () => readPosition(null),
       readPositionForDuration: readPosition,
@@ -413,6 +421,37 @@ class PodcastDownloads extends ChangeNotifier {
         unawaited(synchronize());
       },
     );
+  }
+
+  /// A finite newest-first feed journey. Local copies are preferred; native
+  /// publisher streams carry no server credentials. Completed/deleted rows are
+  /// omitted and reaching the oldest eligible episode stops playback.
+  Future<List<PlaybackRequest>> continuation(
+      String scope, String feed, String key,
+      {bool offline = false}) async {
+    final episodes = <Map<String, Object?>>[];
+    for (var offset = 0;; offset += 200) {
+      final page = await repository.browseEpisodes(scope,
+          feed: feed, filter: 'all', offset: offset, limit: 200);
+      episodes.addAll(page);
+      if (page.length < 200) break;
+    }
+    final start = episodes.indexWhere((e) => e['episode_key'] == key);
+    if (start < 0) return const [];
+    final result = <PlaybackRequest>[];
+    for (final episode in episodes.skip(start + 1)) {
+      if (episode['completed'] == 1) continue;
+      if (offline &&
+          (await copy(episode['feed_key'] as String,
+                  episode['episode_key'] as String))?['state'] !=
+              'available') {
+        continue;
+      }
+      result.add(await playbackRequest(
+          scope, episode['feed_key'] as String, episode,
+          allowStreaming: true));
+    }
+    return result;
   }
 
   @override

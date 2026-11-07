@@ -114,7 +114,24 @@ for the exact platform checks and automated coverage.
 Folder scanning, playlists, local tags, and syncing local
 history across devices are outside this feature.
 
+## Continue listening offline
+
+The server chooser and sign-in page show **Continue listening** below the
+connection controls. Tap a started device file or downloaded podcast to reopen
+its player at the saved position without a server or publisher connection.
+The device library offers the same shortcuts; **Show more** expands the list.
+Finished items and missing podcast downloads are omitted.
+
+Account-owned podcast history and saved server files appear in **Offline
+downloads** after unlocking that account. Their titles stay hidden in the
+shortcut panel while the account is locked. Each source retains its existing
+resume, retry, and progress synchronization behavior.
+
 ## Podcasts on this device
+
+The podcast overview shows cached publisher covers, including subscriptions synced
+under an alternate feed URL. New subscriptions fetch missing metadata in the
+background. A feed without its own cover uses available episode artwork.
 
 Episode rows show publisher artwork (episode cover first, podcast cover as
 fallback), the publication date, and expandable **Show notes**. Artwork uses a
@@ -728,3 +745,27 @@ continues to use its existing controls.
 Implementation checks pass; launcher placement/resizing, light/dark rendering,
 TalkBack, actual background controls and account/restart boundaries await the
 integrated native acceptance run. See [M56 implementation notes](../docs/music-m56-implementation.md).
+
+## Podcast episode layouts
+
+Choose **List** or **Grid** above an episode list. Both layouts keep the existing titles,
+metadata, expandable show notes and playback and episode actions. The choice lasts while the app is open and follows navigation into
+subscriptions. Grid cards adapt to narrow screens and grow with enlarged text.
+Browser device podcasts have the same layout choice inside a subscription.
+
+Focused layout verification:
+
+```sh
+flutter test test/screens/podcast_episode_layout_test.dart
+flutter test integration_test/podcast_episode_layout_test.dart -d emulator-5554
+```
+The native check uses the real screen and controls with deterministic cached
+repository data, including narrow/landscape layouts and enlarged text.
+
+Podcast playback continues through the remaining uncompleted episodes of the
+same feed in newest-first order, then stops. Android prefers downloaded copies
+and can stream subsequent episodes directly from the publisher without Player
+credentials. Pausing, seeking to the end, or a playback error does not skip to
+another episode. Initial Android playback retains its Download/Play workflow.
+Verify native continuation with
+`flutter test integration_test/podcast_continuation_test.dart -d emulator-5554`.

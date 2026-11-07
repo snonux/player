@@ -2,11 +2,14 @@ import { beginPlaybackIntent, currentPlaybackIntent, isPlaybackIntent } from '..
 import { playAlbumCollection, advanceQueue, deactivateQueue } from '../queue.js';
 export { playAlbumCollection } from '../queue.js';
 import { API } from '../api.js';
-import { preparePodcastPlayback } from '../podcast-playback.js';
+import { preparePodcastPlayback, nextPodcastEpisode } from '../podcast-playback.js';
+import { podcastSyncStatus, episodeSnapshot } from '../podcast-episode-state.js';
+import { toast } from '../utils.js';
 import { state } from '../state.js';
 import { currentElement, selectByElement } from '../selection.js';
 import {
   currentMediaId,
+  capturePlaybackTransition,
   currentMediaInfo,
   hasLoadedMedia,
   isPlaybackActive,
@@ -50,12 +53,13 @@ function filterPlayableCards(cards, skipImages) {
 }
 
 async function playItem(media, index, options = {}) {
+  if (options.stillWanted?.() === false) return false;
   deactivateQueue();
   const revision = ++playRevision;
   const intent = beginPlaybackIntent();
   const prepared = await preparePodcastPlayback(media, 0);
   if (revision !== playRevision || !isPlaybackIntent(intent)) return false;
-  if (prepared.cancelled) return false;
+  if (prepared.cancelled || options.stillWanted?.() === false) return false;
   selectAndPlay({ ...media, podcast_episode: prepared.episode, podcast_account: prepared.account, podcast_lease: prepared.lease,
     podcast_classified: prepared.classified, podcast_prepared: true,
     podcast_from_beginning: Boolean(options.fromBeginning) }, index, options.fromBeginning ? 0 : prepared.position);
@@ -122,6 +126,31 @@ function selectedPlayableIndex(cards, preferCurrent) {
 export async function navigatePlayable(delta, options = {}) {
   const intent = currentPlaybackIntent();
   if (await advanceQueue(delta, options)) return;
+  const current = currentMediaInfo();
+  if (options.completed && current?.podcast_episode) {
+    const lease = podcastSyncStatus().generation;
+    const sourceCurrent = capturePlaybackTransition();
+    const sameSource = () => sourceCurrent() && currentMediaInfo() === current && podcastSyncStatus().generation === lease;
+    const wanted = () => isPlaybackIntent(intent) && sameSource();
+    try {
+      const episode = await nextPodcastEpisode(current.podcast_episode, wanted);
+      if (!wanted() || !episode) return;
+      let media;
+      if (episode.server_copy?.media_id) {
+        media = (await API.mediaDetail(episode.server_copy.media_id)).media;
+      } else {
+        toast('Downloading next podcast episode…', 'info');
+        media = await API.downloadEpisode(episode.id);
+      }
+      if (!wanted() || episodeSnapshot(episode).deletion?.deleted) return;
+      // playItem begins its own intent; the source/command guard must survive
+      // that intent change until its asynchronous metadata preparation settles.
+      await playItem({ ...media, is_podcast: true, podcast_episode: episode }, -1, { stillWanted: sameSource });
+    } catch (_) {
+      if (wanted()) toast('Could not play the next episode. Open the podcast to retry.', 'error');
+    }
+    return;
+  }
   if (!isPlaybackIntent(intent)) return;
   const skipImages = skipsImagesFrom(currentMediaInfo());
   const cards = filterPlayableCards(visiblePlayableCards(), skipImages);

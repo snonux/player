@@ -10,6 +10,51 @@ void main() {
   databaseFactory = databaseFactoryFfi;
 
   test(
+      'subscription covers follow account and publisher aliases and episode fallback',
+      () async {
+    final repository = PodcastRepository(
+        databasePath: inMemoryDatabasePath, fetcher: FixtureFetcher());
+    try {
+      final deviceKey =
+          await repository.subscribe('A', 'https://example.com/source');
+      final db = await repository.database;
+      const accountKey = 'feed:example.com/canonical';
+      await db.update('podcast_subscriptions', {'feed_key': accountKey},
+          where: 'scope=?', whereArgs: ['A']);
+      await db.insert('podcast_account_aliases', {
+        'scope': 'A',
+        'kind': 'feed',
+        'source': deviceKey,
+        'target': accountKey
+      });
+      await db.update('podcast_feeds',
+          {'image_url': 'https://publisher.example/channel.png'},
+          where: 'feed_key=?', whereArgs: [deviceKey]);
+      final subscription = (await repository.subscriptions('A')).single;
+      expect(subscription['feed_key'], accountKey);
+      expect(
+          subscription['image_url'], 'https://publisher.example/channel.png');
+      await db.update('podcast_feeds', {'image_url': ''});
+      await db.update('podcast_episodes',
+          {'image_url': 'https://publisher.example/episode.png'});
+      expect((await repository.subscriptions('A')).single['image_url'],
+          'https://publisher.example/episode.png');
+      expect(await repository.subscriptions('B'), isEmpty);
+      // A publisher alias alone can also link a synced key to this device cache.
+      await db.delete('podcast_account_aliases');
+      await db.update('podcast_feeds', {'aliases': '["$accountKey"]'});
+      expect((await repository.subscriptions('A')).single['image_url'],
+          'https://publisher.example/episode.png');
+      await db.update('podcast_episodes',
+          {'image_url': 'https://user:password@publisher.example/private.png'});
+      expect(
+          (await repository.subscriptions('A')).single['image_url'], isEmpty);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  test(
       'deleted episodes stay absent after metadata refresh and remain visible to another account',
       () async {
     final repository = PodcastRepository(

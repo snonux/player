@@ -44,6 +44,7 @@ export function initLocalPodcastsApp() {
   const results = host.querySelector('[data-results]');
   let busy = false;
   let detailKey = null;
+  let episodeLayout = 'list';
 
   function message(text) { status.textContent = t(text); }
 
@@ -51,7 +52,7 @@ export function initLocalPodcastsApp() {
     if (busy) return;
     busy = true; message('Starting playback…');
     try {
-      const media = {
+      const media = episode => ({
         id: episode.episode_key,
         type: 'audio',
         file_name: episode.title,
@@ -60,8 +61,11 @@ export function initLocalPodcastsApp() {
         localPodcast: true,
         podcast: { title: episode.title, description: episode.description,
           image_url: episode.image_url, feed_image_url: episode.feed_image_url },
-      };
-      const added = await insertQueue([media], 'now', { replace: true, source: t('Podcasts on this device') });
+      });
+      const episodes = await listLocalPodcastEpisodes(episode.feed_key);
+      const index = episodes.findIndex(row => row.episode_key === episode.episode_key);
+      const remaining = index < 0 ? [episode] : episodes.slice(index);
+      const added = await insertQueue(remaining.map(media), 'now', { replace: true, source: t('Podcasts on this device') });
       message(added ? 'Playing.' : 'Playback is busy. Retry.');
     } catch (error) {
       message(error.message || 'Could not play this episode (enclosure may block CORS).');
@@ -87,7 +91,23 @@ export function initLocalPodcastsApp() {
         }
         message(`${episodes.length} episode${episodes.length === 1 ? '' : 's'}`);
         const list = document.createElement('ul');
-        list.className = 'local-files-list';
+        list.className = `local-files-list local-episode-list${episodeLayout === 'grid' ? ' episode-grid' : ''}`;
+        const layouts = document.createElement('div');
+        layouts.className = 'playlist-actions episode-layout-controls';
+        layouts.setAttribute('role', 'group'); layouts.setAttribute('aria-label', 'Episode layout');
+        for (const value of ['list', 'grid']) {
+          const button = document.createElement('button');
+          button.type = 'button'; button.className = 'btn';
+          button.textContent = value === 'grid' ? 'Grid' : 'List';
+          button.setAttribute('aria-pressed', String(episodeLayout === value));
+          button.onclick = () => {
+            episodeLayout = value;
+            list.classList.toggle('episode-grid', value === 'grid');
+            layouts.querySelectorAll('button').forEach(control => control.setAttribute('aria-pressed', String(control === button)));
+          };
+          layouts.append(button);
+        }
+        results.append(layouts);
         for (const episode of episodes) {
           const li = document.createElement('li');
           li.className = 'local-files-row';
@@ -132,7 +152,10 @@ export function initLocalPodcastsApp() {
         more.textContent = '☰';
         more.setAttribute('aria-label', `More for ${feed.title || feed.feed_url}`);
         more.onclick = () => openMore(more, feed);
-        li.append(open, more);
+        const artwork = document.createElement('span');
+        artwork.innerHTML = episodeArtworkHTML({ feed_image_url: feed.image_url || feed.episodes?.find(episode => episode.image_url)?.image_url || '' });
+        li.append(artwork, open, more);
+        bindPodcastMetadata(li);
         list.append(li);
       }
       results.append(list);

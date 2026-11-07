@@ -1,3 +1,4 @@
+import '../widgets/continue_listening.dart';
 import '../l10n/music_localizations.dart';
 import '../widgets/language_settings.dart';
 import '../widgets/network_settings.dart';
@@ -73,6 +74,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(height: 24),
                 const _ServerConnectionPanel(showSavedServers: true),
+                const ContinueListening(deviceOnly: true),
                 TextButton(
                   onPressed: _openLocalLibrary,
                   child: const Text('Use files on this device'),

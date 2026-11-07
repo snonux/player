@@ -151,8 +151,11 @@ final class PodcastPlaybackRequest extends PlaybackRequest {
     this.synchronize,
     this.finishAtPosition,
     this.readPositionForDuration,
+    this.continuation,
   });
 
+  /// Remaining episodes in feed order, captured when this episode opens.
+  final Future<List<PlaybackRequest>> Function(bool offline)? continuation;
   final Future<void> Function()? synchronize;
   final Future<double?> Function(Duration?)? readPositionForDuration;
   @override

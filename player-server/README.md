@@ -103,3 +103,29 @@ by default. Long notes scroll separately from playback controls; collapse them
 with Show notes. Device podcast playback uses its cached episode description.
 Verify Chrome and Firefox with `npx playwright test -c playwright.podcast-notes.config.ts`
 from `test/e2e-web/`; this runs against a disposable local static server.
+
+## Podcast episode layouts
+
+Choose **List** or **Grid** above an episode list. Both layouts keep the existing titles,
+metadata, expandable show notes and playback and episode actions. The choice lasts while the app is open and follows navigation into
+subscriptions. Grid cards adapt to narrow screens and grow with enlarged text.
+Browser device podcasts have the same layout choice inside a subscription.
+
+Focused layout verification:
+
+```sh
+cd test/e2e-web
+npm ci
+npx playwright test -c playwright.episode-layout.config.ts
+```
+The Chrome/Firefox check exercises subscribed-episode rendering and device
+RSS browsing with deterministic metadata, including offline layout switching.
+
+Podcast playback continues to the next uncompleted episode of the same feed
+in newest-first order and stops at the end. Server playback downloads the next
+episode when needed. Browser device podcasts queue the remaining episodes of
+the selected feed. A paused seek to the end or a playback failure does not skip
+to another episode. The focused Chrome and Firefox check uses the disposable
+podcast fixture:
+`PLAYER_URL=http://127.0.0.1:PORT PLAYER_PODCAST_FIXTURE=/path/to/fixture npx playwright test -c playwright.podcast-continuation.config.ts`
+from `test/e2e-web`.
