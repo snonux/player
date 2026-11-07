@@ -72,6 +72,7 @@ import 'package:player_android/services/local_library_repository.dart';
 import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/services/progress_queue.dart';
 import 'package:player_android/services/playback_preparer.dart';
+import 'package:player_android/services/playback_cache.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/music_queue.dart';
 import 'package:player_android/services/network_policy.dart';
@@ -291,6 +292,22 @@ class _FakeProgressQueue implements ProgressQueueBase {
   Future<void> dispose() async {} // no-op
 }
 
+/// Keeps real cache startup pending until the test has observed loading.
+class _DelayedPlaybackCache extends PlaybackCache {
+  _DelayedPlaybackCache({required Directory directory})
+      : super(directory: directory);
+
+  final opening = Completer<void>();
+  final releaseOpening = Completer<void>();
+
+  @override
+  Future<void> initialize() async {
+    if (!opening.isCompleted) opening.complete();
+    await releaseOpening.future;
+    await super.initialize();
+  }
+}
+
 /// A [PlayerAudioHandler] subclass that wraps a real [AudioPlayer] but
 /// overrides [setMediaItem] and playback methods to be no-ops so that no
 /// platform channels are invoked during widget tests.
@@ -487,6 +504,7 @@ Future<void> _pumpScreen(
   CastController? castController,
   CastDiscovery? castDiscovery,
   ThemeData? theme,
+  PlaybackCache? playbackCache,
 }) async {
   final handler = handlerOverride ?? fakeHandler ?? _FakePlayerAudioHandler();
   fakeClient.media.addEntries(sequence.map((item) => MapEntry(item.id, item)));
@@ -517,6 +535,8 @@ Future<void> _pumpScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        if (playbackCache != null)
+          playbackCacheProvider.overrideWith((ref) => playbackCache),
         if (localDatabase != null)
           localLibraryDatabaseProvider.overrideWithValue(localDatabase),
         unpairedServerEndpointOverride(),
@@ -1444,6 +1464,8 @@ void main() {
     addTearDown(_teardownAudioSessionMock);
     SharedPreferences.setMockInitialValues({});
     sqfliteFfiInit();
+    final previousDatabaseFactory = databaseFactoryOrNull;
+    addTearDown(() => databaseFactoryOrNull = previousDatabaseFactory);
     databaseFactory = databaseFactoryFfiNoIsolate;
     final directory = await tester
         .runAsync(() => Directory.systemTemp.createTemp('personal-saf-ui-'));
@@ -2288,6 +2310,22 @@ void main() {
         'failed server profile Quality recovery retains Original across Retry failures',
         (tester) async {
       const origin = 'http://localhost:8080';
+      final directory = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('quality-recovery-cache-')))!;
+      final cache = _DelayedPlaybackCache(directory: directory);
+      addTearDown(() async {
+        await tester.runAsync(() => directory.delete(recursive: true));
+      });
+      Future<void> waitFor(bool Function() ready) async {
+        for (var attempt = 0; attempt < 150 && !ready(); attempt++) {
+          await tester.pump();
+          await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 10)));
+        }
+        await tester.pump();
+        expect(ready(), isTrue, reason: 'Playback did not reach its outcome');
+      }
+
       await tester.runAsync(() async {
         await StreamQuality.initialize();
         await MusicNetworkPolicy.save('mode', 'wifi');
@@ -2310,6 +2348,7 @@ void main() {
       });
       await _pumpScreen(tester, client,
           handlerOverride: handler,
+          playbackCache: cache,
           request: ServerPlaybackRequest(
               mediaId: 42,
               serverOrigin: origin,
@@ -2319,8 +2358,25 @@ void main() {
               title: 'song.flac',
               savePosition: (_) async {},
               markFinished: () async {}));
-      await _flushPlaybackStartup(tester);
+      await waitFor(() => cache.opening.isCompleted);
+      expect(cache.opening.isCompleted, isTrue);
+      expect(StreamQuality.selected(origin), 'opus96');
+      expect(find.byKey(const Key('audio_player_loading')), findsOneWidget);
+      expect(find.byKey(const Key('audio_player_error')), findsNothing);
+      expect(client.probedUrls, isEmpty);
+      expect(player.sourceRequests, 0);
+      cache.releaseOpening.complete();
+      await waitFor(() =>
+          find.byKey(const Key('audio_player_error')).evaluate().isNotEmpty);
+      expect(
+          await tester
+              .runAsync(() => File('${directory.path}/index.json').exists()),
+          isTrue);
+      expect(cache.budget, 128);
       expect(find.byKey(const Key('audio_player_error')), findsOneWidget);
+      expect(client.probedUrls,
+          [Uri.parse('$origin/api/v1/media/42/compat?profile=opus96')]);
+      expect(player.sourceRequests, 0);
       await tester.tap(find.text('Quality'));
       await tester.pumpAndSettle();
       await tester.tap(find.byType(DropdownButtonFormField<String>).last);
@@ -2331,13 +2387,17 @@ void main() {
       await tester.pumpAndSettle();
       player.failNextLoad = true;
       await tester.tap(find.byKey(const Key('audio_player_retry')));
-      await _flushPlaybackStartup(tester);
+      await waitFor(() =>
+          player.sourceRequests == 1 &&
+          find.byKey(const Key('audio_player_error')).evaluate().isNotEmpty);
       expect(find.byKey(const Key('audio_player_error')), findsOneWidget);
+      expect(handler.playCalls, 0);
       expect((player.loadedSource as UriAudioSource).uri,
           Uri.parse('$origin/api/v1/media/42/stream'));
       await tester.tap(find.byKey(const Key('audio_player_retry')));
-      await _flushPlaybackStartup(tester);
+      await waitFor(() => player.isPlaying && handler.playCalls == 1);
       expect(find.byKey(const Key('audio_player_error')), findsNothing);
+      expect(find.byKey(const Key('audio_player_loading')), findsNothing);
       expect((player.loadedSource as UriAudioSource).uri,
           Uri.parse('$origin/api/v1/media/42/stream'));
       expect(client.probedUrls, hasLength(1));
