@@ -465,7 +465,7 @@ export function episodeCardHtml(ep, { showFeed, downloading = false } = {}) {
   const feedLine = showFeed && ep.feed_title
     ? `<div class="subtitle">${escapeHtml(ep.feed_title)}</div>`
     : '';
-  const metaBits = [dateStr, duration, completed ? 'Listened' : '', position, downloadState].filter(Boolean).join(' · ');
+  const metaBits = [dateStr, duration, position, downloadState].filter(Boolean).join(' · ');
   const playLabel = !downloaded ? 'Download and play' : canResume ? 'Resume' : 'Play';
   const descriptionBlock = showNotesHTML(ep.description);
   const primary = downloading
@@ -491,6 +491,7 @@ export function episodeCardHtml(ep, { showFeed, downloading = false } = {}) {
     <div class="meta">
       <div class="title" title="${escapeHtml(ep.title || 'Untitled')}">${escapeHtml(ep.title || 'Untitled')}</div>
       ${feedLine}
+      ${completed ? '<div class="episode-listened">✓ Listened</div>' : ''}
       ${descriptionBlock}
     </div>`;
 }

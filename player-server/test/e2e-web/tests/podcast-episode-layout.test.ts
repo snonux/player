@@ -51,8 +51,9 @@ test('subscribed episode layouts retain cards, focus and actions', async ({ page
 
 test('device podcast grid preserves cached episodes and playback controls', async ({ page }) => {
   const feed = 'https://grid.example/feed';
+  await page.route('https://grid.example/cover.png', route => route.fulfill({contentType: 'image/svg+xml', body:'<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="orange"/></svg>'}));
   await page.route(feed, route => route.fulfill({ contentType: 'application/rss+xml', headers: { 'Access-Control-Allow-Origin': '*' }, body:
-    `<rss><channel><title>Grid podcast</title>${Array.from({length:4},(_,i)=>`<item><guid>${i}</guid><title>Device episode ${i}</title><description>Device notes</description><enclosure url="https://grid.example/${i}.mp3"/></item>`).join('')}</channel></rss>` }));
+    `<rss><channel><title>Grid podcast</title><image><url>https://grid.example/cover.png</url></image>${Array.from({length:4},(_,i)=>`<item><guid>${i}</guid><title>Device episode ${i}</title><description>Device notes</description><enclosure url="https://grid.example/${i}.mp3"/></item>`).join('')}</channel></rss>` }));
   await page.goto('/index.html?local=podcasts');
   page.once('dialog', dialog => dialog.accept(feed));
   await page.getByRole('button', {name:'Add feed URL',exact:true}).click();
@@ -70,6 +71,22 @@ test('device podcast grid preserves cached episodes and playback controls', asyn
     await expect(page.getByRole('button',{name:'Device episode 0',exact:true})).toBeVisible();
   }
   await expect(page.getByRole('button',{name:'Device episode 0',exact:true})).toBeVisible();
+  const row = page.locator('.local-files-row').filter({has: page.getByRole('button', {name:'Device episode 0', exact:true})});
+  await row.locator('summary').filter({hasText:'More'}).click();
+  await row.getByRole('button', {name:'Mark completed', exact:true}).click();
+  await page.getByRole('group', {name:'Completion filter'}).getByRole('button', {name:'All',exact:true}).click();
+  await expect(row).toHaveClass(/listened/);
+  await expect(row.locator('.episode-listened')).toHaveText('✓ Listened');
+  for (const value of ['List', 'Grid']) {
+    await layout.getByRole('button', {name:value,exact:true}).click();
+    for (const theme of ['dark', 'light']) {
+      await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+      expect(await row.evaluate(el => getComputedStyle(el).backgroundColor)).toBe(theme === 'dark' ? 'rgb(40, 42, 46)' : 'rgb(229, 230, 232)');
+      expect(await row.locator('.podcast-episode-cover').evaluate(el => getComputedStyle(el).filter)).toBe('grayscale(1)');
+      expect(await row.locator('.podcast-episode-cover').evaluate(el => getComputedStyle(el).opacity)).toBe('0.3');
+      expect((await row.getByRole('button', {name:'Device episode 0',exact:true}).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    }
+  }
   await page.context().setOffline(true);
   await layout.getByRole('button', {name:'List',exact:true}).click();
   await expect(page.locator('.episode-grid')).toHaveCount(0);
@@ -91,7 +108,7 @@ for (const layout of ['List', 'Grid']) {
       episodeState.setPodcastAccount(42);
       state.virtualSet = 'podcasts'; state.podcastFeedKey = ''; state.podcastOverview = false; state.podcastFilter = 'uncompleted';
       const episodes = [0, 1].map(i => ({ id: i + 1, feed_key: 'feed:completion', episode_key: `guid:${i}`,
-        title: `Completion episode ${i}`, feed_title: 'Completion podcast', published_at: '2026-11-01', duration_seconds: 3, completed: i === 1 }));
+        image_url: `${location.origin}/logo.png`, title: `Completion episode ${i}`, feed_title: 'Completion podcast', published_at: '2026-11-01', duration_seconds: 3, completed: i === 1 }));
       API.subscribedEpisodes = async ({ filter }: { filter: string }) => episodes.filter(ep => filter === 'all' || ep.completed === (filter === 'completed')).map(ep => ({ ...ep }));
       API.syncPodcast = async ({ episodes: edits }: any) => {
         for (const edit of edits) {
@@ -117,6 +134,37 @@ for (const layout of ['List', 'Grid']) {
     await expect(cards).toHaveCount(2);
     await filters.getByRole('button', { name: 'All', exact: true }).click();
     await expect(cards).toHaveCount(2);
+    await expect(cards.first().locator('.episode-listened')).toHaveText('✓ Listened');
+    const appearance = await cards.first().evaluate(card => ({
+      background: getComputedStyle(card).backgroundColor,
+      artwork: getComputedStyle(card.querySelector('.podcast-episode-cover')!).filter,
+      opacity: getComputedStyle(card.querySelector('.podcast-episode-cover')!).opacity,
+      badge: getComputedStyle(card.querySelector('.badge')!).color,
+    }));
+    expect(appearance.background).toBe('rgb(40, 42, 46)');
+    expect(appearance.artwork).toBe('grayscale(1)');
+    expect(appearance.opacity).toBe('0.3');
+    expect(appearance.badge).toBe('rgb(0, 0, 0)');
+    for (const button of await cards.first().locator('.card-actions > button:not(.card-action-extra)').all()) {
+      const bounds = (await button.boundingBox())!;
+      expect(bounds.width).toBeGreaterThanOrEqual(44);
+      expect(bounds.height).toBeGreaterThanOrEqual(44);
+    }
+    for (const theme of ['dark', 'light']) {
+      await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+      expect(await cards.first().evaluate(card => getComputedStyle(card).backgroundColor)).toBe(theme === 'dark' ? 'rgb(40, 42, 46)' : 'rgb(229, 230, 232)');
+      for (const status of ['selected', 'playing']) {
+        const colors = await cards.first().evaluate((card, status) => {
+          card.classList.add(status);
+          const current = getComputedStyle(card).backgroundColor;
+          const probe = document.createElement('div'); probe.style.backgroundColor = `var(--${status}-bg)`; document.body.append(probe);
+          const expected = getComputedStyle(probe).backgroundColor; probe.remove(); card.classList.remove(status);
+          return { current, expected };
+        }, status);
+        expect(colors.current).toBe(colors.expected);
+      }
+    }
+
     await cards.first().getByRole('button', { name: 'More episode actions' }).click();
     await page.getByRole('group', { name: 'Media actions', exact: true }).getByRole('button', { name: 'Mark uncompleted', exact: true }).click();
     await filters.getByRole('button', { name: 'Uncompleted', exact: true }).click();

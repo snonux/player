@@ -46,7 +46,8 @@ void episodeLayoutTests() {
     await tester.pumpAndSettle();
     expect(find.byType(Card), findsNothing);
     expect(find.text('Episode 0'), findsOneWidget);
-    expect(repository.queries.every((query) => query.$2 == 'uncompleted'), isTrue);
+    expect(
+        repository.queries.every((query) => query.$2 == 'uncompleted'), isTrue);
     await tester.tap(find.text('Grid'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Podcasts'));
@@ -58,12 +59,14 @@ void episodeLayoutTests() {
   });
 
   for (final grid in [false, true]) {
-    testWidgets('completion filters retain episodes and undo in ${grid ? 'grid' : 'list'}',
+    testWidgets(
+        'completion filters retain episodes and undo in ${grid ? 'grid' : 'list'}',
         (tester) async {
       final repository = BrowsingRepository();
       final store = BrowsingStore(repository);
       await tester.pumpWidget(browsingApp(
-          const LocalPodcastEpisodesScreen(), repository, store: store));
+          const LocalPodcastEpisodesScreen(), repository,
+          store: store));
       await tester.pumpAndSettle();
       expect(repository.queries.last.$2, 'uncompleted');
       if (grid) {
@@ -79,6 +82,21 @@ void episodeLayoutTests() {
       await tester.tap(find.text('Completed'));
       await tester.pumpAndSettle();
       expect(find.text('Episode 0'), findsOneWidget);
+      expect(find.byIcon(Icons.check_circle), findsOneWidget);
+      expect(find.text('Listened'), findsOneWidget);
+      final artOpacity = tester
+          .widgetList<Opacity>(find.byType(Opacity))
+          .where((widget) => widget.opacity == 0.3);
+      expect(artOpacity, hasLength(1));
+      final completedSurface = tester.widgetList<Ink>(find.byType(Ink)).where(
+          (widget) =>
+              widget.decoration is BoxDecoration &&
+              (widget.decoration as BoxDecoration).border is Border &&
+              ((widget.decoration as BoxDecoration).border as Border)
+                      .left
+                      .width ==
+                  4);
+      expect(completedSurface, hasLength(1));
       await tester.tap(find.text('All'));
       await tester.pumpAndSettle();
       expect(find.text('Episode 0'), findsOneWidget);

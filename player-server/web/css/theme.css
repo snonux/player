@@ -1,6 +1,8 @@
 :root {
   /* Core palette */
   --bg-body: #0f1117;
+  --podcast-listened-bg: #282a2e;
+  --podcast-listened-border: #a3a8b8;
   --bg-surface: #161920;
   --bg-surface-hover: #1b1f27;
   --bg-elevated: #1e222c;
@@ -79,6 +81,8 @@
 /* Light theme overrides */
 [data-theme="light"] {
   --bg-body: #f4f5f8;
+  --podcast-listened-bg: #e5e6e8;
+  --podcast-listened-border: #4a4f5e;
   --bg-surface: #ffffff;
   --bg-surface-hover: #f0f2f7;
   --bg-elevated: #ffffff;

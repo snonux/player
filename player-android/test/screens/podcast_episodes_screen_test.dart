@@ -114,7 +114,7 @@ void main() {
     expect(find.text('Listened'), findsOneWidget);
     expect(find.text('Newest first'), findsOneWidget);
     final artwork = tester.widget<Opacity>(find.byType(Opacity).first);
-    expect(artwork.opacity, 0.5);
+    expect(artwork.opacity, 0.3);
     await tester.tap(find.widgetWithText(ChoiceChip, 'All'));
     await tester.pumpAndSettle();
     expect(find.text('Episode 0'), findsOneWidget);

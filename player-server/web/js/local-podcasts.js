@@ -132,7 +132,8 @@ export function initLocalPodcastsApp() {
         results.append(layouts);
         for (const episode of episodes) {
           const li = document.createElement('li');
-          li.className = 'local-files-row';
+          const completed = Boolean(localPodcastSnapshot(episode).completion?.completed);
+          li.className = `local-files-row${completed ? ' listened' : ''}`;
           const play = document.createElement('button');
           play.className = 'btn btn-ghost';
           play.type = 'button';
@@ -142,8 +143,12 @@ export function initLocalPodcastsApp() {
           copy.className = 'local-podcast-copy';
           const meta = document.createElement('p');
           meta.className = 'subtitle'; meta.textContent = publicationDate(episode.published_at);
-          if (localPodcastSnapshot(episode).completion?.completed) meta.textContent += ' · Listened';
           copy.append(play, meta);
+          if (completed) {
+            const listened = document.createElement('p');
+            listened.className = 'episode-listened'; listened.textContent = '✓ Listened';
+            copy.append(listened);
+          }
           const more = document.createElement('details');
           const summary = document.createElement('summary'); summary.className = 'btn'; summary.textContent = 'More';
           summary.setAttribute('aria-label', `More for ${episode.title}`); more.append(summary);

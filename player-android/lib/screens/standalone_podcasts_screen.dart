@@ -500,6 +500,8 @@ class _LocalPodcastEpisodesScreenState
   }
 
   Widget episodeTile(Map<String, Object?> e, String? scope, bool grid) {
+    final completed = e['completed'] == 1;
+    final colors = Theme.of(context).colorScheme;
     final tile = ListTile(
       key: ValueKey((e['feed_key'], e['episode_key'])),
       title: grid
@@ -512,7 +514,7 @@ class _LocalPodcastEpisodesScreenState
                     e['completed'] == 1 ? BlendMode.saturation : BlendMode.dst,
                   ),
                   child: Opacity(
-                    opacity: e['completed'] == 1 ? 0.5 : 1,
+                    opacity: completed ? 0.3 : 1,
                     child: PodcastArtwork(
                       imageUrl: e['image_url'] as String? ?? '',
                       fallbackUrl: e['feed_image_url'] as String? ?? '',
@@ -540,7 +542,7 @@ class _LocalPodcastEpisodesScreenState
                     e['completed'] == 1 ? BlendMode.saturation : BlendMode.dst,
                   ),
                   child: Opacity(
-                    opacity: e['completed'] == 1 ? 0.5 : 1,
+                    opacity: completed ? 0.3 : 1,
                     child: PodcastArtwork(
                       imageUrl: e['image_url'] as String? ?? '',
                       fallbackUrl: e['feed_image_url'] as String? ?? '',
@@ -570,7 +572,20 @@ class _LocalPodcastEpisodesScreenState
           PodcastPublicationDate(
             date: podcastPublicationDate(e['published_at']),
           ),
-          Text(_progressSummary(e)),
+          if (completed)
+            Row(
+              children: [
+                Icon(Icons.check_circle,
+                    size: 18, color: colors.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Text('Listened',
+                    style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontWeight: FontWeight.bold)),
+              ],
+            )
+          else
+            Text(_progressSummary(e)),
           if ((e['position_seconds'] as num) > 0 &&
               (e['duration_seconds'] as num) > 0)
             LinearProgressIndicator(
@@ -598,14 +613,27 @@ class _LocalPodcastEpisodesScreenState
         ],
       ),
     );
-    return grid
-        ? Card(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+    final styledTile = completed
+        ? Material(
+            color: colors.surfaceContainerHighest,
+            child: Ink(
+              decoration: BoxDecoration(
+                border:
+                    Border(left: BorderSide(color: colors.outline, width: 4)),
+              ),
               child: tile,
             ),
           )
         : tile;
+    return grid
+        ? Card(
+            color: completed ? colors.surfaceContainerHighest : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: styledTile,
+            ),
+          )
+        : styledTile;
   }
 
   @override
