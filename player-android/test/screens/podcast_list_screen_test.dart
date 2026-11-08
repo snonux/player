@@ -105,7 +105,7 @@ void main() {
             .any((query) => query.$1 == null && query.$2 == 'uncompleted'),
         isTrue);
     expect(find.text('My podcast'), findsOneWidget);
-    expect(find.text('Download'), findsOneWidget);
+    expect(find.byTooltip('Download'), findsOneWidget);
   });
 
   testWidgets('podcast set keeps downloaded server files reachable',

@@ -52,8 +52,7 @@ void podcastMultiselectTests() {
             store: store));
         await tester.pumpAndSettle();
         if (grid) {
-          await tester.tap(find.text('Grid'));
-          await tester.pumpAndSettle();
+          await showPodcastLayout(tester, grid: true);
         }
         await tester.longPress(find.text('Episode 0'));
         await tester.pumpAndSettle();
@@ -136,7 +135,7 @@ void podcastMultiselectTests() {
     await tester.longPress(find.text('Episode 0'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Next page'), 600,
-        maxScrolls: 20);
+        maxScrolls: 20, scrollable: find.byType(Scrollable).last);
     await tester.tap(find.text('Next page'));
     await tester.pumpAndSettle();
     expect(repository.queries.last.$3, 40);
@@ -144,7 +143,7 @@ void podcastMultiselectTests() {
     await tester.longPress(find.text('Episode 40'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Previous page'), 300,
-        maxScrolls: 20);
+        maxScrolls: 20, scrollable: find.byType(Scrollable).last);
     await tester.tap(find.text('Previous page'));
     await tester.pumpAndSettle();
     expect(find.text('Episode 0'), findsOneWidget);
@@ -187,8 +186,7 @@ void podcastSelectionLayoutTests() {
               repository));
           await tester.pumpAndSettle();
           if (grid) {
-            await tester.tap(find.text('Grid'));
-            await tester.pumpAndSettle();
+            await showPodcastLayout(tester, grid: true);
           }
           await tester.tap(find.byTooltip('Podcast views'));
           await tester.pumpAndSettle();

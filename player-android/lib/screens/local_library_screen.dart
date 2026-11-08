@@ -43,24 +43,18 @@ class _LocalLibraryScreenState extends ConsumerState<LocalLibraryScreen> {
           const ServerSwitchButton(),
         ],
       ),
-      drawer: LibraryNavigationDrawer(children: [
-        ListTile(
-          key: const Key('local_connect_server_menu'),
-          leading: const Icon(Icons.cloud_outlined),
-          title: const Text('Connect to server'),
-          onTap: () {
-            Navigator.of(context).pop();
-            context.push(AppRoutes.server);
-          },
+      drawer: const LibraryNavigationDrawer(children: [
+        DrawerDestination(
+          key: Key('local_connect_server_menu'),
+          icon: Icons.cloud_outlined,
+          label: 'Connect to server',
+          route: AppRoutes.server,
         ),
-        ListTile(
-          key: const Key('local_settings_button'),
-          leading: const Icon(Icons.settings_outlined),
-          title: const Text('Settings'),
-          onTap: () {
-            Navigator.of(context).pop();
-            context.push(AppRoutes.settings);
-          },
+        DrawerDestination(
+          key: Key('local_settings_button'),
+          icon: Icons.settings_outlined,
+          label: 'Settings',
+          route: AppRoutes.settings,
         ),
       ]),
       body: library.when(

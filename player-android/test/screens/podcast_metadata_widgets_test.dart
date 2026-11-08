@@ -27,9 +27,16 @@ void main() {
                 child: const LocalPodcastEpisodesScreen())),
         repository));
     await tester.pumpAndSettle();
+    expect(find.textContaining('Oct 26, 2026'), findsOneWidget);
+    expect(find.text('Show notes'), findsNothing,
+        reason: 'Show notes live in the episode sheet, not every row.');
+    await tester.tap(find.text('Episode 0'));
+    await tester.pumpAndSettle();
     expect(find.text('Published Oct 26, 2026'), findsOneWidget);
     expect(find.text('Show notes'), findsOneWidget);
     expect(find.byType(SelectableText), findsNothing);
+    await tester.ensureVisible(find.text('Show notes'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Show notes'));
     await tester.pumpAndSettle();
     final text = tester
@@ -50,6 +57,8 @@ void main() {
     final repository = BrowsingRepository()..metadata = {'description': ''};
     await tester.pumpWidget(
         browsingApp(const LocalPodcastEpisodesScreen(), repository));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('More episode actions'));
     await tester.pumpAndSettle();
     expect(find.text('Publication date unavailable'), findsOneWidget);
     expect(find.text('Show notes'), findsNothing);

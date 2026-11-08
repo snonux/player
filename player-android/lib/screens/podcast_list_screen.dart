@@ -21,16 +21,27 @@ class _PodcastListScreenState extends ConsumerState<PodcastListScreen> {
         ? null
         : 'Could not sync all podcasts. Showing saved items; reload to retry.';
     final toggle = Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-      child: SegmentedButton<bool>(
-        segments: const [
-          ButtonSegment(value: false, label: Text('Episodes')),
-          ButtonSegment(value: true, label: Text('Podcasts')),
-        ],
-        selected: {overview},
-        style: const ButtonStyle(
-            minimumSize: WidgetStatePropertyAll(Size(48, 48))),
-        onSelectionChanged: (value) => setState(() => overview = value.single),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<bool>(
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(
+                value: false,
+                icon: Icon(Icons.queue_music),
+                label: Text('Episodes')),
+            ButtonSegment(
+                value: true,
+                icon: Icon(Icons.podcasts),
+                label: Text('Podcasts')),
+          ],
+          selected: {overview},
+          style: const ButtonStyle(
+              minimumSize: WidgetStatePropertyAll(Size(48, 48))),
+          onSelectionChanged: (value) =>
+              setState(() => overview = value.single),
+        ),
       ),
     );
     return overview

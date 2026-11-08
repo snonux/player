@@ -1201,12 +1201,13 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       if (personal) TurboNotesButton(request: request, asMenuItem: true),
       SleepTimerMenuItem(timer: handler.sleepTimer, playerContext: context),
       if (ready && !casting) ...[
-        OverflowMenuItem(
-            key: const Key('audio_player_speed_selector'),
-            icon: Icons.speed,
-            label: 'Playback speed',
-            subtitle: '${_playbackSpeed}x',
-            onSelected: _showSpeedSheet),
+        if (request is! PodcastPlaybackRequest)
+          OverflowMenuItem(
+              key: const Key('audio_player_speed_selector'),
+              icon: Icons.speed,
+              label: 'Playback speed',
+              subtitle: '${_playbackSpeed}x',
+              onSelected: _showSpeedSheet),
         if (music) ...[
           OverflowMenuItem(
               key: const Key('audio_player_seek_back_15'),
@@ -1668,9 +1669,23 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       stream: handler.player.playingStream,
       builder: (context, snapshot) {
         final isPlaying = snapshot.data ?? false;
+        final podcast = _activeRequest is PodcastPlaybackRequest;
+        // Podcasts change speed often: keep it one tap away, with an equal
+        // slot on the other side so Play stays centered.
+        final speed = Expanded(
+            child: Center(
+                child: TextButton(
+                    key: const Key('podcast_speed_button'),
+                    style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(48, 48)),
+                    onPressed: _showSpeedSheet,
+                    child: Text('${_playbackSpeed}x',
+                        semanticsLabel: 'Playback speed ${_playbackSpeed}x'))));
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            if (podcast) speed,
             IconButton(
               key: const Key('audio_player_skip_back'),
               icon: Icon(music ? Icons.skip_previous : Icons.fast_rewind,
@@ -1683,7 +1698,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                   ? '${context.tr('Previous track')} · hold −15s'
                   : 'Skip back 15 seconds',
             ),
-            const SizedBox(width: 16),
+            SizedBox(width: podcast ? 8 : 16),
             IconButton(
               key: const Key('audio_player_play_pause'),
               icon: Icon(
@@ -1709,7 +1724,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               },
               tooltip: isPlaying ? context.tr('Pause') : context.tr('Play'),
             ),
-            const SizedBox(width: 16),
+            SizedBox(width: podcast ? 8 : 16),
             IconButton(
               key: const Key('audio_player_skip_forward'),
               icon: Icon(
@@ -1725,6 +1740,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                   ? '${context.tr('Next track')} · hold +15s'
                   : 'Skip forward 15 seconds',
             ),
+            if (podcast) const Spacer(),
           ],
         );
       },

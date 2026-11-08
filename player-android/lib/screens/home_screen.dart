@@ -186,58 +186,57 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
       bottomNavigationBar: const MusicMiniPlayer(),
       appBar: _buildAppBar(context),
       drawer: LibraryNavigationDrawer(
+        extras: const [
+          DrawerDestination(
+              icon: Icons.radio, label: 'Web radio', route: AppRoutes.radio),
+          DrawerDestination(
+              icon: Icons.history,
+              label: 'Continue Watching',
+              route: AppRoutes.continueWatching),
+        ],
         children: [
-          ListTile(
-            key: const Key('server_switch_to_local'),
-            leading: const Icon(Icons.phone_android),
-            title: const Text('On this device'),
-            onTap: () async {
-              Navigator.of(context).pop();
-              await switchToLocalLibrary(ref, context);
-            },
+          DrawerSectionLabel(context.tr('Music')),
+          for (final section in MusicCollection.values.skip(1))
+            if (!hiddenMusicSections.contains(section))
+              DrawerDestination(
+                  icon: switch (section) {
+                    MusicCollection.albums => Icons.album_outlined,
+                    MusicCollection.artists => Icons.people_outline,
+                    _ => Icons.library_music,
+                  },
+                  label: context.tr(section.label),
+                  route: section.route),
+          // Hidden shortcuts stay reachable in one place.
+          if (hiddenMusicSections.isNotEmpty)
+            const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 28),
+                child: AllMusicViews(closeDrawer: true)),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 28, vertical: 8),
+            child: Divider(height: 1),
           ),
-          const AllMusicViews(closeDrawer: true),
-          for (final destination in [
-            (Icons.history, 'Continue Watching', AppRoutes.continueWatching),
-            (Icons.radio, 'Web radio', AppRoutes.radio),
-            (
-              Icons.album_outlined,
-              context.tr('Music · Albums'),
-              AppRoutes.musicAlbums
-            ),
-            (
-              Icons.library_music,
-              context.tr('Music · Playlists'),
-              AppRoutes.musicPlaylists
-            ),
-            (
-              Icons.people_outline,
-              context.tr('Music · Artists'),
-              AppRoutes.musicArtists
-            ),
-            (Icons.share_outlined, 'My Shares', AppRoutes.shares),
-            (
-              Icons.settings_outlined,
-              context.tr('Settings'),
-              AppRoutes.settings
-            ),
-          ].where((destination) => !MusicCollection.values.any((section) =>
-              section.route == destination.$3 &&
-              hiddenMusicSections.contains(section))))
-            ListTile(
-              key: destination.$3 == AppRoutes.settings
-                  ? const Key('home_settings_button')
-                  : null,
-              leading: Icon(destination.$1),
-              title: Text(destination.$2),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.push(destination.$3);
-              },
-            ),
-          const Divider(),
-          const GlobalSyncMenuTile(),
-          const PreviewSizeMenuItems(),
+          DrawerDestination(
+              key: const Key('server_switch_to_local'),
+              icon: Icons.phone_android,
+              label: 'On this device',
+              route: AppRoutes.localLibrary,
+              onTap: () => switchToLocalLibrary(ref, context)),
+          const DrawerDestination(
+              icon: Icons.share_outlined,
+              label: 'My Shares',
+              route: AppRoutes.shares),
+          DrawerDestination(
+              key: const Key('home_settings_button'),
+              icon: Icons.settings_outlined,
+              label: context.tr('Settings'),
+              route: AppRoutes.settings),
+          const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: GlobalSyncMenuTile()),
+          DrawerSectionLabel(context.tr('View')),
+          const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: PreviewSizeMenuItems()),
         ],
       ),
       body: Column(children: [

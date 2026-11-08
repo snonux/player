@@ -10,9 +10,8 @@ import '../providers/api_client_provider.dart';
 import '../services/podcast_identity.dart';
 import '../widgets/podcast_download_controls.dart';
 import '../widgets/podcast_artwork.dart';
+import '../widgets/music_mini_player.dart';
 import '../widgets/podcast_library_switcher.dart';
-import '../widgets/podcast_show_notes.dart';
-import '../widgets/podcast_publication_date.dart';
 import '../services/podcast_metadata.dart';
 import '../providers/global_sync_provider.dart';
 
@@ -120,6 +119,7 @@ class _StandalonePodcastsScreenState
     final feeds = ref.watch(podcastSubscriptionsProvider);
     final scope = ref.watch(podcastScopeProvider).valueOrNull;
     return Scaffold(
+        bottomNavigationBar: const NowPlayingBar(),
         appBar: AppBar(
             bottom: widget.viewSwitcher == null
                 ? null
@@ -131,11 +131,7 @@ class _StandalonePodcastsScreenState
             actions: [
               IconButton(
                   tooltip: 'Explore podcasts',
-                  onPressed: busy
-                      ? null
-                      : () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                              builder: (_) => const PodcastDiscoveryScreen())),
+                  onPressed: busy ? null : _explore,
                   icon: const Icon(Icons.explore_outlined)),
               PopupMenuButton<String>(
                   tooltip: 'Podcast options',
@@ -145,6 +141,9 @@ class _StandalonePodcastsScreenState
                   onSelected: (action) {
                     if (action == 'refresh') {
                       _refreshFeeds();
+                    } else if (action == 'layout') {
+                      ref.read(podcastEpisodeGridProvider.notifier).state =
+                          !ref.read(podcastEpisodeGridProvider);
                     } else if (action == 'retention') {
                       showDialog<void>(
                           context: context,
@@ -162,29 +161,44 @@ class _StandalonePodcastsScreenState
                       subscribe();
                     }
                   },
-                  itemBuilder: (_) => const [
+                  itemBuilder: (_) => [
+                        const PopupMenuItem(
+                            value: 'refresh',
+                            child: ListTile(
+                                leading: Icon(Icons.refresh),
+                                title: Text('Refresh feeds'))),
+                        const PopupMenuItem(
+                            value: 'url',
+                            child: ListTile(
+                                leading: Icon(Icons.add_link),
+                                title: Text('Add feed URL'))),
                         PopupMenuItem(
-                            value: 'refresh', child: Text('Refresh feeds')),
-                        PopupMenuItem(
-                            value: 'url', child: Text('Add feed URL')),
-                        PopupMenuItem(
+                            value: 'layout',
+                            child: ListTile(
+                                leading: Icon(
+                                    ref.read(podcastEpisodeGridProvider)
+                                        ? Icons.view_list
+                                        : Icons.grid_view),
+                                title: Text(ref.read(podcastEpisodeGridProvider)
+                                    ? 'Show as list'
+                                    : 'Show as grid'))),
+                        const PopupMenuItem(
                             value: 'retention',
-                            child: Text('Completed episode cleanup')),
+                            child: ListTile(
+                                leading: Icon(Icons.auto_delete_outlined),
+                                title: Text('Completed episode cleanup'))),
                       ])
             ]),
         body: Column(children: [
           const PodcastLibrarySwitcher(),
-          if (widget.syncMessage != null)
-            Padding(
-                padding: const EdgeInsets.all(8),
-                child: Text(widget.syncMessage!)),
+          if (widget.syncMessage != null) PodcastNotice(widget.syncMessage!),
           if (busy) const LinearProgressIndicator(),
-          if (error != null)
-            Padding(padding: const EdgeInsets.all(16), child: Text(error!)),
+          if (error != null) PodcastNotice(error!, isError: true),
           if (widget.viewSwitcher == null)
             ListTile(
                 leading: const Icon(Icons.folder_copy_outlined),
                 title: const Text('All podcast episodes'),
+                trailing: const Icon(Icons.chevron_right),
                 onTap: () => context.push(AppRoutes.podcasts)),
           Expanded(
               child: feeds.when(
@@ -196,69 +210,167 @@ class _StandalonePodcastsScreenState
                           onPressed: () =>
                               ref.invalidate(podcastSubscriptionsProvider),
                           child: const Text('Retry opening podcasts'))),
-                  data: (items) => items
-                          .any((item) => item['browse_scope'] != scope)
-                      ? const Center(child: CircularProgressIndicator())
-                      : items.isEmpty
-                          ? Center(
-                              child: FilledButton.icon(
-                                  onPressed: busy ? null : subscribe,
-                                  icon: const Icon(Icons.podcasts),
-                                  label: const Text('Subscribe to podcast')))
-                          : ListView(children: [
-                              for (final feed in items)
-                                ListTile(
-                                    title: Row(children: [
-                                      PodcastArtwork(
-                                          imageUrl:
-                                              feed['image_url'] as String? ??
-                                                  '',
-                                          title: feed['title'] as String,
-                                          size: 88),
-                                      const SizedBox(width: 16),
-                                      Expanded(
-                                          child: Text(feed['title'] as String)),
-                                    ]),
-                                    subtitle: Text(
-                                        feed['last_error'] as String? ??
-                                            feed['fetch_url'] as String),
-                                    onTap: () => context.push(Uri(
-                                            path: AppRoutes.podcastFeed,
-                                            queryParameters: {
-                                              'feed':
-                                                  feed['feed_key'] as String,
-                                              'title': feed['title'] as String
-                                            }).toString()),
-                                    trailing: PopupMenuButton<String>(
-                                        tooltip: 'Manage podcast',
-                                        onSelected: (action) => run(() async {
-                                              final repository = ref.read(
-                                                  podcastRepositoryProvider);
-                                              if (action == 'refresh') {
-                                                await repository
-                                                    .refreshSubscription(
-                                                        feed['browse_scope']
-                                                            as String,
-                                                        feed['feed_key']
-                                                            as String);
-                                              } else {
-                                                await repository.unsubscribe(
-                                                    feed['browse_scope']
-                                                        as String,
-                                                    feed['feed_key'] as String);
-                                              }
-                                            }),
-                                        itemBuilder: (_) => const [
-                                              PopupMenuItem(
-                                                  value: 'refresh',
-                                                  child: Text('Refresh feed')),
-                                              PopupMenuItem(
-                                                  value: 'unsubscribe',
-                                                  child: Text(
-                                                      'Unsubscribe (keep history)'))
-                                            ]))
-                            ])))
+                  data: (items) =>
+                      items.any((item) => item['browse_scope'] != scope)
+                          ? const Center(child: CircularProgressIndicator())
+                          : items.isEmpty
+                              ? _EmptyFeeds(
+                                  onExplore: busy ? null : _explore,
+                                  onSubscribe: busy ? null : subscribe)
+                              : ref.watch(podcastEpisodeGridProvider)
+                                  ? _feedGrid(items)
+                                  : ListView(children: [
+                                      for (final feed in items) _feedTile(feed)
+                                    ])))
         ]));
+  }
+
+  void _explore() => Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const PodcastDiscoveryScreen()));
+
+  void _openFeed(Map<String, Object?> feed) =>
+      context.push(Uri(path: AppRoutes.podcastFeed, queryParameters: {
+        'feed': feed['feed_key'] as String,
+        'title': feed['title'] as String
+      }).toString());
+
+  /// Short source line: the feed's error, else its host name.
+  String _feedSubtitle(Map<String, Object?> feed) {
+    final failure = feed['last_error'] as String?;
+    if (failure != null && failure.isNotEmpty) return failure;
+    final url = feed['fetch_url'] as String;
+    final host = Uri.tryParse(url)?.host ?? '';
+    return host.isEmpty ? url : host;
+  }
+
+  Widget _manageButton(Map<String, Object?> feed) => PopupMenuButton<String>(
+      tooltip: 'Manage podcast',
+      onSelected: (action) => run(() async {
+            final repository = ref.read(podcastRepositoryProvider);
+            if (action == 'refresh') {
+              await repository.refreshSubscription(
+                  feed['browse_scope'] as String, feed['feed_key'] as String);
+            } else {
+              await repository.unsubscribe(
+                  feed['browse_scope'] as String, feed['feed_key'] as String);
+            }
+          }),
+      itemBuilder: (_) => const [
+            PopupMenuItem(value: 'refresh', child: Text('Refresh feed')),
+            PopupMenuItem(
+                value: 'unsubscribe', child: Text('Unsubscribe (keep history)'))
+          ]);
+
+  Widget _feedTile(Map<String, Object?> feed) {
+    final failed = (feed['last_error'] as String?)?.isNotEmpty == true;
+    return ListTile(
+        contentPadding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+        leading: PodcastArtwork(
+            imageUrl: feed['image_url'] as String? ?? '',
+            title: feed['title'] as String,
+            size: 56),
+        title: Text(feed['title'] as String,
+            maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text(_feedSubtitle(feed),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: failed
+                ? TextStyle(color: Theme.of(context).colorScheme.error)
+                : null),
+        onTap: () => _openFeed(feed),
+        trailing: _manageButton(feed));
+  }
+
+  /// Cover grid with at least three podcasts per row on a phone.
+  Widget _feedGrid(List<Map<String, Object?>> items) =>
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = ((constraints.maxWidth - 16) / 150).floor().clamp(3, 8);
+        final width = (constraints.maxWidth - 16 - (columns - 1) * 8) / columns;
+        // Flowing cards grow with enlarged text instead of clipping titles.
+        return SingleChildScrollView(
+            padding: const EdgeInsets.all(8),
+            child: Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final feed in items)
+                SizedBox(
+                    width: width,
+                    child: Builder(builder: (context) {
+                      final surface = Theme.of(context).colorScheme.surface;
+                      return Card(
+                          clipBehavior: Clip.antiAlias,
+                          margin: EdgeInsets.zero,
+                          child: InkWell(
+                              onTap: () => _openFeed(feed),
+                              child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Stack(children: [
+                                      AspectRatio(
+                                          aspectRatio: 1,
+                                          child: PodcastArtwork(
+                                              imageUrl: feed['image_url']
+                                                      as String? ??
+                                                  '',
+                                              title: feed['title'] as String,
+                                              size: null)),
+                                      Positioned(
+                                          right: 0,
+                                          top: 0,
+                                          child: DecoratedBox(
+                                              decoration: BoxDecoration(
+                                                  color: surface.withValues(
+                                                      alpha: 0.85),
+                                                  shape: BoxShape.circle),
+                                              child: _manageButton(feed))),
+                                    ]),
+                                    Padding(
+                                        padding: const EdgeInsets.all(8),
+                                        child: Text(feed['title'] as String,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleSmall)),
+                                  ])));
+                    })),
+            ]));
+      });
+}
+
+class _EmptyFeeds extends StatelessWidget {
+  const _EmptyFeeds({required this.onExplore, required this.onSubscribe});
+  final VoidCallback? onExplore, onSubscribe;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+        child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.podcasts,
+                  size: 64, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(height: 16),
+              Text('No podcasts yet', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 8),
+              Text('Find a show in the podcast directory or add its feed URL.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium),
+              const SizedBox(height: 24),
+              Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton.icon(
+                        onPressed: onExplore,
+                        icon: const Icon(Icons.explore_outlined),
+                        label: const Text('Explore podcasts')),
+                    OutlinedButton.icon(
+                        onPressed: onSubscribe,
+                        icon: const Icon(Icons.add_link),
+                        label: const Text('Subscribe to podcast')),
+                  ]),
+            ])));
   }
 }
 
@@ -648,146 +760,164 @@ class _LocalPodcastEpisodesScreenState
     if (scroll.hasClients) scroll.jumpTo(0);
   }
 
+  /// Listening state in a few words: listened, time left, or length.
   String _progressSummary(Map<String, Object?> e) {
     if (e['completed'] == 1) return 'Listened';
-    final position = (e['position_seconds'] as num?) ?? 0;
-    if (position <= 0) return 'Unplayed';
-    final total = position.round().clamp(0, 24 * 3600);
+    final position = ((e['position_seconds'] as num?) ?? 0).toDouble();
+    final duration = ((e['duration_seconds'] as num?) ?? 0).toDouble();
+    if (position > 0 && duration > position) {
+      return 'In progress · ${_clock(duration - position)} left';
+    }
+    if (position > 0) return 'In progress · ${_clock(position)}';
+    if (duration > 0) return 'Unplayed · ${_clock(duration)}';
+    return 'Unplayed';
+  }
+
+  static String _clock(double seconds) {
+    final total = seconds.round().clamp(0, 24 * 3600);
     final hours = total ~/ 3600;
     final minutes = (total % 3600) ~/ 60;
-    final seconds = (total % 60).toString().padLeft(2, '0');
-    final clock = hours > 0
-        ? '$hours:${minutes.toString().padLeft(2, '0')}:$seconds'
-        : '$minutes:$seconds';
-    return 'In progress · $clock';
+    if (hours > 0) return '$hours h ${minutes.toString().padLeft(2, '0')} min';
+    if (minutes > 0) return '$minutes min';
+    return '${total % 60} s';
   }
 
   Widget episodeTile(Map<String, Object?> e, String? scope, bool grid) {
     final completed = e['completed'] == 1;
-    final colors = Theme.of(context).colorScheme;
-    final tile = ListTile(
-      key: ValueKey((e['feed_key'], e['episode_key'])),
-      selected: selecting && selected.contains(episodeIdentity(e)),
-      onLongPress: bulkBusy ? null : () => selectEpisode(e),
-      onTap: selecting && !bulkBusy ? () => selectEpisode(e) : null,
-      leading: selecting
-          ? Checkbox(
-              value: selected.contains(episodeIdentity(e)),
-              semanticLabel: 'Select ${e['title']}',
-              onChanged: bulkBusy ? null : (_) => selectEpisode(e),
-            )
-          : null,
-      title: grid
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ColorFiltered(
-                  colorFilter: ColorFilter.mode(
-                    e['completed'] == 1 ? Colors.grey : Colors.transparent,
-                    e['completed'] == 1 ? BlendMode.saturation : BlendMode.dst,
-                  ),
-                  child: Opacity(
-                    opacity: completed ? 0.3 : 1,
-                    child: PodcastArtwork(
-                      imageUrl: e['image_url'] as String? ?? '',
-                      fallbackUrl: e['feed_image_url'] as String? ?? '',
-                      title: e['title'] as String,
-                      size: 112,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  e['title'] as String,
-                  style: e['completed'] == 1
-                      ? TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        )
-                      : null,
-                ),
-              ],
-            )
-          : Row(
-              children: [
-                ColorFiltered(
-                  colorFilter: ColorFilter.mode(
-                    e['completed'] == 1 ? Colors.grey : Colors.transparent,
-                    e['completed'] == 1 ? BlendMode.saturation : BlendMode.dst,
-                  ),
-                  child: Opacity(
-                    opacity: completed ? 0.3 : 1,
-                    child: PodcastArtwork(
-                      imageUrl: e['image_url'] as String? ?? '',
-                      fallbackUrl: e['feed_image_url'] as String? ?? '',
-                      title: e['title'] as String,
-                      size: 88,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Text(
-                    e['title'] as String,
-                    style: e['completed'] == 1
-                        ? TextStyle(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          )
-                        : null,
-                  ),
-                ),
-              ],
-            ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (widget.feedKey == null) Text(e['podcast_title'] as String),
-          PodcastPublicationDate(
-            date: podcastPublicationDate(e['published_at']),
-          ),
-          if (completed)
-            Row(
-              children: [
-                Icon(Icons.check_circle,
-                    size: 18, color: colors.onSurfaceVariant),
-                const SizedBox(width: 6),
-                Text('Listened',
-                    style: TextStyle(
-                        color: colors.onSurfaceVariant,
-                        fontWeight: FontWeight.bold)),
-              ],
-            )
-          else
-            Text(_progressSummary(e)),
-          if ((e['position_seconds'] as num) > 0 &&
-              (e['duration_seconds'] as num) > 0)
-            LinearProgressIndicator(
-              value: ((e['position_seconds'] as num) /
-                      (e['duration_seconds'] as num))
-                  .clamp(0.0, 1.0),
-            ),
-          if (!selecting)
-            PodcastShowNotes(description: e['description'] as String? ?? ''),
-          if (!selecting)
-            PodcastDownloadControls(
-              feed: e['feed_key'] as String,
-              scope: e['browse_scope'] as String,
-              episode: e,
-              onPlaybackReturn: reload,
-              onDeleteEpisode: () =>
-                  deleteEpisode(e, e['browse_scope'] as String),
-              completeLabel:
-                  e['completed'] == 1 ? 'Mark uncompleted' : 'Mark completed',
-              onToggleComplete: scope == null ||
-                      pending.contains(
-                        '${e['scope_feed_key']}:${e['scope_episode_key']}',
-                      )
-                  ? null
-                  : () => complete(e, scope),
-            ),
-        ],
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isSelected = selecting && selected.contains(episodeIdentity(e));
+    final position = (e['position_seconds'] as num?) ?? 0;
+    final duration = (e['duration_seconds'] as num?) ?? 0;
+    final date = podcastPublicationDate(e['published_at']);
+    final source = [
+      if (widget.feedKey == null) e['podcast_title'] as String,
+      if (date != null)
+        MaterialLocalizations.of(context).formatShortDate(date.toLocal()),
+    ].join(' · ');
+    final artwork = ColorFiltered(
+      colorFilter: ColorFilter.mode(
+        completed ? Colors.grey : Colors.transparent,
+        completed ? BlendMode.saturation : BlendMode.dst,
+      ),
+      child: Opacity(
+        opacity: completed ? 0.3 : 1,
+        child: PodcastArtwork(
+          imageUrl: e['image_url'] as String? ?? '',
+          fallbackUrl: e['feed_image_url'] as String? ?? '',
+          title: e['title'] as String,
+          size: grid ? null : 56,
+        ),
       ),
     );
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          e['title'] as String,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.titleSmall
+              ?.copyWith(color: completed ? colors.onSurfaceVariant : null),
+        ),
+        const SizedBox(height: 2),
+        if (source.isNotEmpty)
+          Text(source,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: colors.onSurfaceVariant)),
+        Row(children: [
+          if (completed) ...[
+            Icon(Icons.check_circle, size: 16, color: colors.onSurfaceVariant),
+            const SizedBox(width: 4),
+          ],
+          Flexible(
+            child: Text(_progressSummary(e),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontWeight: completed ? FontWeight.bold : null)),
+          ),
+        ]),
+        if (position > 0 && duration > 0 && !completed)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: LinearProgressIndicator(
+              value: (position / duration).clamp(0.0, 1.0),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+      ],
+    );
+    final body = grid
+        ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            AspectRatio(aspectRatio: 1, child: artwork),
+            const SizedBox(height: 8),
+            details
+          ])
+        : Row(children: [
+            artwork,
+            const SizedBox(width: 12),
+            Expanded(child: details),
+          ]);
+    final Widget tile;
+    if (selecting) {
+      final checkbox = Checkbox(
+        value: isSelected,
+        semanticLabel: 'Select ${e['title']}',
+        onChanged: bulkBusy ? null : (_) => selectEpisode(e),
+      );
+      tile = InkWell(
+        key: ValueKey((e['feed_key'], e['episode_key'])),
+        onTap: bulkBusy ? null : () => selectEpisode(e),
+        onLongPress: bulkBusy ? null : () => selectEpisode(e),
+        child: Ink(
+          color: isSelected ? colors.secondaryContainer : null,
+          child: grid
+              ? Stack(children: [
+                  Padding(
+                      padding: const EdgeInsets.only(bottom: 10), child: body),
+                  Positioned(
+                    left: 4,
+                    top: 4,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                          color: colors.surface.withValues(alpha: 0.85),
+                          shape: BoxShape.circle),
+                      child: checkbox,
+                    ),
+                  ),
+                ])
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 8, 16, 8),
+                  child: Row(children: [checkbox, Expanded(child: body)]),
+                ),
+        ),
+      );
+    } else {
+      tile = PodcastDownloadControls(
+        key: ValueKey((e['feed_key'], e['episode_key'])),
+        feed: e['feed_key'] as String,
+        scope: e['browse_scope'] as String,
+        episode: e,
+        body: grid ? details : body,
+        cover: grid ? artwork : null,
+        vertical: grid,
+        onLongPress: bulkBusy ? null : () => selectEpisode(e),
+        onPlaybackReturn: reload,
+        onDeleteEpisode: () => deleteEpisode(e, e['browse_scope'] as String),
+        completeLabel: completed ? 'Mark uncompleted' : 'Mark completed',
+        onToggleComplete: scope == null ||
+                pending.contains(
+                  '${e['scope_feed_key']}:${e['scope_episode_key']}',
+                )
+            ? null
+            : () => complete(e, scope),
+      );
+    }
     final styledTile = completed
         ? Material(
             color: colors.surfaceContainerHighest,
@@ -802,11 +932,9 @@ class _LocalPodcastEpisodesScreenState
         : tile;
     return grid
         ? Card(
+            clipBehavior: Clip.antiAlias,
             color: completed ? colors.surfaceContainerHighest : null,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: styledTile,
-            ),
+            child: styledTile,
           )
         : styledTile;
   }
@@ -845,6 +973,7 @@ class _LocalPodcastEpisodesScreenState
           if (!didPop && !bulkBusy) cancelSelection();
         },
         child: Scaffold(
+          bottomNavigationBar: selecting ? null : const NowPlayingBar(),
           appBar: AppBar(
               leading: selecting
                   ? IconButton(
@@ -892,9 +1021,16 @@ class _LocalPodcastEpisodesScreenState
                   PopupMenuButton<String>(
                     tooltip: 'Podcast views',
                     icon: const Icon(Icons.menu),
+                    style:
+                        IconButton.styleFrom(minimumSize: const Size(48, 48)),
                     onSelected: (view) {
                       if (view == 'select') {
                         selectEpisode(null);
+                        return;
+                      }
+                      if (view == 'layout') {
+                        ref.read(podcastEpisodeGridProvider.notifier).state =
+                            !grid;
                         return;
                       }
                       Navigator.of(context).push(MaterialPageRoute<void>(
@@ -907,15 +1043,29 @@ class _LocalPodcastEpisodesScreenState
                     },
                     itemBuilder: (_) => [
                       const PopupMenuItem(
-                          value: 'select', child: Text('Select episodes')),
+                          value: 'select',
+                          child: ListTile(
+                              leading: Icon(Icons.checklist),
+                              title: Text('Select episodes'))),
+                      PopupMenuItem(
+                          value: 'layout',
+                          child: ListTile(
+                              leading: Icon(
+                                  grid ? Icons.view_list : Icons.grid_view),
+                              title: Text(
+                                  grid ? 'Show as list' : 'Show as grid'))),
                       if (widget.feedKey == null && widget.viewSwitcher == null)
                         const PopupMenuItem(
                             value: 'feeds',
-                            child: Text('Subscriptions and feeds')),
+                            child: ListTile(
+                                leading: Icon(Icons.podcasts),
+                                title: Text('Subscriptions and feeds'))),
                       if (widget.feedKey == null && widget.serverSetId != null)
                         const PopupMenuItem(
                             value: 'files',
-                            child: Text('Downloaded server files')),
+                            child: ListTile(
+                                leading: Icon(Icons.folder_outlined),
+                                title: Text('Downloaded server files'))),
                     ],
                   ),
                   IconButton(
@@ -929,53 +1079,40 @@ class _LocalPodcastEpisodesScreenState
               const LinearProgressIndicator(
                   semanticsLabel: 'Updating selected episodes'),
             if (!bulkBusy) const PodcastLibrarySwitcher(),
-            if (widget.syncMessage != null)
-              Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Text(widget.syncMessage!)),
-            if (refreshing) const LinearProgressIndicator(),
+            if (widget.syncMessage != null) PodcastNotice(widget.syncMessage!),
             if (refreshing)
-              Text(refreshTotal == 0
-                  ? 'Updating podcasts…'
-                  : 'Refreshing feeds $refreshDone of $refreshTotal'),
-            if (widget.feedKey == null)
-              const Padding(
-                  padding: EdgeInsets.all(8), child: Text('Newest first')),
-            Padding(
-                padding: const EdgeInsets.all(8),
-                child: Wrap(spacing: 8, children: [
+              LinearProgressIndicator(
+                  semanticsLabel: refreshTotal == 0
+                      ? 'Updating podcasts…'
+                      : 'Refreshing feeds $refreshDone of $refreshTotal'),
+            SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Row(children: [
                   for (final option in ['uncompleted', 'completed', 'all'])
-                    ChoiceChip(
-                        label: Text(
-                            '${option[0].toUpperCase()}${option.substring(1)}'),
-                        selected: filter == option,
-                        onSelected: bulkBusy
-                            ? null
-                            : (_) {
-                                setState(() => filter = option);
-                                page(0);
-                              })
+                    Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                            label: Text(
+                                '${option[0].toUpperCase()}${option.substring(1)}'),
+                            selected: filter == option,
+                            onSelected: bulkBusy
+                                ? null
+                                : (_) {
+                                    setState(() => filter = option);
+                                    page(0);
+                                  })),
+                  if (refreshing)
+                    Text(
+                        refreshTotal == 0
+                            ? 'Updating podcasts…'
+                            : 'Refreshing feeds $refreshDone of $refreshTotal',
+                        style: Theme.of(context).textTheme.bodySmall)
+                  else if (widget.feedKey == null)
+                    Text('Newest first',
+                        style: Theme.of(context).textTheme.bodySmall),
                 ])),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(
-                      value: false,
-                      icon: Icon(Icons.view_list),
-                      label: Text('List')),
-                  ButtonSegment(
-                      value: true,
-                      icon: Icon(Icons.grid_view),
-                      label: Text('Grid')),
-                ],
-                selected: {grid},
-                onSelectionChanged: (values) => ref
-                    .read(podcastEpisodeGridProvider.notifier)
-                    .state = values.single,
-              ),
-            ),
-            if (error != null) Text(error!),
+            if (error != null) PodcastNotice(error!, isError: true),
             Expanded(
                 child: episodes.when(
               skipLoadingOnReload: true,
@@ -990,51 +1127,103 @@ class _LocalPodcastEpisodesScreenState
                 return rows.any((row) => row['browse_scope'] != scope)
                     ? const Center(child: CircularProgressIndicator())
                     : ListView(controller: scroll, children: [
-                        if (rows.isEmpty)
-                          const Padding(
-                              padding: EdgeInsets.all(24),
-                              child: Text(
-                                  'No episodes in this filter. Refresh the feed to fetch episodes.')),
+                        if (rows.isEmpty) const _EmptyEpisodes(),
                         if (grid)
                           LayoutBuilder(builder: (context, constraints) {
                             // Flowing cards grow with text and expanded notes.
-                            final columns = (constraints.maxWidth / 300)
-                                .floor()
-                                .clamp(1, 6);
+                            final available = constraints.maxWidth - 16;
+                            // At least three cards per row on a phone.
+                            final columns =
+                                (available / 150).floor().clamp(3, 8);
                             final width =
-                                (constraints.maxWidth - (columns - 1) * 8) /
-                                    columns;
-                            return Wrap(spacing: 8, runSpacing: 8, children: [
-                              for (final e in rows.take(40))
-                                SizedBox(
-                                    width: width,
-                                    child: episodeTile(e, scope, true)),
-                            ]);
+                                (available - (columns - 1) * 8) / columns;
+                            return Padding(
+                                padding: const EdgeInsets.all(8),
+                                child:
+                                    Wrap(spacing: 8, runSpacing: 8, children: [
+                                  for (final e in rows.take(40))
+                                    SizedBox(
+                                        width: width,
+                                        child: episodeTile(e, scope, true)),
+                                ]));
                           })
                         else
                           for (final e in rows.take(40))
                             episodeTile(e, scope, false),
-                        Wrap(
-                            alignment: WrapAlignment.center,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 8,
-                            children: [
-                              TextButton(
-                                  onPressed: offset == 0
-                                      ? null
-                                      : () => page(offset - 40),
-                                  child: const Text('Previous page')),
-                              Text('Page ${offset ~/ 40 + 1}'),
-                              TextButton(
-                                  onPressed: loadedRows.length <= 40
-                                      ? null
-                                      : () => page(offset + 40),
-                                  child: const Text('Next page')),
-                            ]),
+                        if (offset > 0 || loadedRows.length > 40)
+                          Wrap(
+                              alignment: WrapAlignment.center,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8,
+                              children: [
+                                TextButton(
+                                    onPressed: offset == 0
+                                        ? null
+                                        : () => page(offset - 40),
+                                    child: const Text('Previous page')),
+                                Text('Page ${offset ~/ 40 + 1}'),
+                                TextButton(
+                                    onPressed: loadedRows.length <= 40
+                                        ? null
+                                        : () => page(offset + 40),
+                                    child: const Text('Next page')),
+                              ]),
                       ]);
               },
             )),
           ]),
         ));
+  }
+}
+
+/// A short, readable status or error line above a podcast list.
+class PodcastNotice extends StatelessWidget {
+  const PodcastNotice(this.message, {super.key, this.isError = false});
+  final String message;
+  final bool isError;
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isError ? colors.errorContainer : colors.secondaryContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(children: [
+        Icon(isError ? Icons.error_outline : Icons.info_outline,
+            size: 20,
+            color: isError
+                ? colors.onErrorContainer
+                : colors.onSecondaryContainer),
+        const SizedBox(width: 8),
+        Expanded(
+            child: Text(message,
+                style: TextStyle(
+                    color: isError
+                        ? colors.onErrorContainer
+                        : colors.onSecondaryContainer))),
+      ]),
+    );
+  }
+}
+
+class _EmptyEpisodes extends StatelessWidget {
+  const _EmptyEpisodes();
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
+      child: Column(children: [
+        Icon(Icons.podcasts,
+            size: 56, color: theme.colorScheme.onSurfaceVariant),
+        const SizedBox(height: 16),
+        Text('No episodes in this filter. Refresh the feed to fetch episodes.',
+            textAlign: TextAlign.center, style: theme.textTheme.bodyLarge),
+      ]),
+    );
   }
 }

@@ -98,17 +98,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       appBar: AppBar(title: Text(context.tr('Settings'))),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              ListTile(
-                leading: const Icon(Icons.keyboard),
-                title: const Text('Keyboard shortcuts'),
-                subtitle: const Text(
-                    'With a keyboard: ; or F2 shows underlined control shortcuts. Escape cancels.'),
-                onTap: () => KeyboardAccess.showHints(context),
-              ),
               ListTile(
                 key: const Key('settings_local_library'),
                 contentPadding: EdgeInsets.zero,
@@ -187,8 +180,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   key: const Key('settings_category_music'),
                   icon: Icons.library_music_outlined,
                   title: 'Music & offline',
-                  subtitle:
-                      'Navigation, network, cache, downloads, history',
+                  subtitle: 'Navigation, network, cache, downloads, history',
                   onTap: () {
                     final historyKey =
                         'history:${ref.read(playerBaseUrlProvider).origin}:${currentUser?.id}';
@@ -210,8 +202,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             subtitle: const Text(
                                 'Saved separately from streaming quality'),
                             trailing: const Icon(Icons.chevron_right),
-                            onTap: () =>
-                                showDownloadQualitySheet(context, api),
+                            onTap: () => showDownloadQualitySheet(context, api),
                           ),
                           ListeningHistorySettings(key: ValueKey(historyKey)),
                         ],
@@ -230,8 +221,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (settingsAsync.valueOrNull?.configurationError !=
-                          null)
+                      if (settingsAsync.valueOrNull?.configurationError != null)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: Text(
@@ -259,8 +249,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.link_outlined),
                       title: const Text('My Shares'),
-                      subtitle:
-                          const Text('View and revoke your share links'),
+                      subtitle: const Text('View and revoke your share links'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => context.push(AppRoutes.shares),
                     ),
@@ -279,8 +268,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                   ),
               ],
-              const SizedBox(height: 32),
+              const SizedBox(height: 16),
               const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.keyboard),
+                title: const Text('Keyboard shortcuts'),
+                subtitle: const Text(
+                    'With a keyboard: ; or F2 shows underlined control shortcuts. Escape cancels.'),
+                onTap: () => KeyboardAccess.showHints(context),
+              ),
               FutureBuilder<PackageInfo>(
                 future: _packageInfo,
                 builder: (context, snapshot) {
@@ -363,7 +360,7 @@ class _SettingsCategoryPage extends StatelessWidget {
       appBar: AppBar(title: Text(title)),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           child: child,
         ),
       ),
