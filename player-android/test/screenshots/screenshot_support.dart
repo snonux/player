@@ -2,9 +2,7 @@
 // Run: SCREENSHOT_ROBOTO=/path/Roboto.ttf flutter test --update-goldens test/screenshots/podcasts_shot.dart
 // The *_shot.dart names keep these out of the normal test run; images land in out/.
 import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
