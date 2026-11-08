@@ -16,28 +16,33 @@
 <body>
 <header class="site-header" role="banner">
   <div class="header-main">
-    <button id="sidebar-toggle" class="icon-btn" title="Sets (s)" aria-label="Toggle sets sidebar">☰</button>
+    <button id="sidebar-toggle" class="icon-btn" title="Browse: music, podcasts, radio and sets (b)" aria-label="Toggle sets sidebar" aria-controls="sidebar" aria-keyshortcuts="b">☰</button>
     <a href="/" class="logo"><img src="/favicon.svg" alt="" class="logo-img">Player</a>
     <div class="spacer"></div>
+    <button id="header-search" class="btn btn-ghost btn-sm header-search" type="button" title="Search (/)" aria-label="Search library" aria-keyshortcuts="/"><span aria-hidden="true">🔎︎</span><span class="header-search-label">Search</span><kbd class="header-kbd" aria-hidden="true">/</kbd></button>
     <button class="btn btn-ghost btn-sm" data-queue-toggle title="Now Playing queue (Q)" aria-controls="queue-panel" data-i18n="Queue">Queue</button>
     <button id="global-sync-now" class="btn btn-ghost btn-sm hidden" aria-describedby="global-sync-status">Sync now</button>
     <button id="header-menu-toggle" class="icon-btn" type="button" popovertarget="header-menu" title="More options (m)" aria-label="More options" aria-haspopup="true" aria-expanded="false">⋮</button>
     <div id="header-menu" class="header-menu" popover aria-label="More options">
-      <button id="menu-sync-now" class="menu-item" type="button">⟳ <span>Sync now</span></button>
-      <button id="shuffle-toggle" class="menu-item" type="button" title="Shuffle library listing (r)" aria-label="Toggle library listing shuffle">🔀︎ <span>Shuffle listing</span></button>
-      <button id="radio-toggle" class="menu-item" type="button" title="Web radio (w)" aria-label="Open web radio" aria-controls="radio-modal">📻︎ <span>Web radio</span></button>
+      <div class="menu-label" aria-hidden="true">Browse</div>
+      <button id="shuffle-toggle" class="menu-item" type="button" title="Shuffle library listing (r)" aria-label="Toggle library listing shuffle">🔀︎ <span>Shuffle listing</span><kbd class="menu-kbd" aria-hidden="true">r</kbd></button>
+      <button id="radio-toggle" class="menu-item" type="button" title="Web radio (w)" aria-label="Open web radio" aria-controls="radio-modal">📻︎ <span>Web radio</span><kbd class="menu-kbd" aria-hidden="true">w</kbd></button>
       <button id="trash-toggle" class="menu-item" type="button" title="Trash" aria-label="Open trash">🗑 <span>Trash</span></button>
+      <hr>
+      <div class="menu-label" aria-hidden="true">View</div>
       <div class="menu-row thumbnail-size-controls" role="group" aria-label="Preview size">
         <span>Previews</span>
         <button id="thumbnail-smaller" class="btn btn-ghost btn-sm" type="button" aria-label="Smaller previews" title="Smaller previews (-)">−</button>
         <button id="thumbnail-reset" class="btn btn-ghost btn-sm" type="button" title="Reset preview size (0)" aria-live="polite">100%</button>
         <button id="thumbnail-larger" class="btn btn-ghost btn-sm" type="button" aria-label="Larger previews" title="Larger previews (+)">+</button>
       </div>
-      <hr>
       <button id="theme-toggle" class="menu-item" type="button" title="Toggle theme" aria-label="Toggle theme"><span data-icon></span> <span>Theme</span></button>
-      <button id="help-toggle" class="menu-item" type="button" title="Help (?)">? <span>Help</span></button>
+      <hr>
+      <div class="menu-label" aria-hidden="true">Help &amp; account</div>
+      <button id="help-toggle" class="menu-item" type="button" title="Help (?)" aria-label="Help">? <span>Help</span><kbd class="menu-kbd" aria-hidden="true">?</kbd></button>
       <button id="settings-toggle" class="menu-item" type="button" aria-controls="settings-modal">⚙ <span data-i18n="Settings">Settings</span></button>
-      <button id="admin-toggle" class="menu-item hidden" type="button" title="Admin panel" aria-label="Admin settings">🛡 <span>Admin panel</span></button>
+      <button id="menu-sync-now" class="menu-item" type="button">⟳ <span>Sync now</span></button>
+      <button id="admin-toggle" class="menu-item hidden" type="button" title="Admin panel (A)" aria-label="Admin settings">🛡 <span>Admin panel</span><kbd class="menu-kbd" aria-hidden="true">A</kbd></button>
       <button id="logout-btn" class="menu-item" type="button">⎋ <span>Log out</span></button>
     </div>
   </div>
@@ -70,25 +75,37 @@
   </div>
 </div>
 
-<!-- Sidebar: hidden by default, toggled via keyboard or menu -->
-<nav id="sidebar" class="sidebar" aria-label="Sets">
-  <div class="sidebar-header">
-    <h2>Sets</h2>
-    <button id="menu-close" class="icon-btn btn-sm" title="Close">✕</button>
+<!-- Sidebar: the browse drawer. Fixed destinations first, then the sets
+     list, which can grow long. Toggle with b or the ☰ button. -->
+<nav id="sidebar" class="sidebar" aria-label="Browse">
+  <div class="sidebar-header sidebar-top">
+    <h2 class="sidebar-title">Browse</h2>
+    <button id="menu-close" class="icon-btn btn-sm" title="Close (Esc)" aria-label="Close browse sidebar">✕</button>
   </div>
-  <div class="sidebar-header"><h2 data-i18n="Music">Music</h2></div>
-  <details class="all-music-views">
-    <summary class="btn btn-ghost" data-i18n="All music views">All music views</summary>
-    <button type="button" class="btn btn-ghost" data-music-open="albums" data-i18n="Open Albums">Open Albums</button>
-    <button type="button" class="btn btn-ghost" data-music-open="artists" data-i18n="Open Artists">Open Artists</button>
-    <button type="button" class="btn btn-ghost" data-music-open="playlists" data-i18n="Open Playlists">Open Playlists</button>
-  </details>
-  <button id="music-albums" class="btn btn-ghost" data-i18n="Albums">Albums</button>
-  <button id="music-playlists" class="btn btn-ghost" data-i18n="Playlists">Playlists</button>
-  <button id="music-artists" class="btn btn-ghost" data-i18n="Artists">Artists</button>
-  <button id="internet-radio" class="btn btn-ghost">Internet radio</button>
-  <div id="set-list"></div>
+  <div class="sidebar-section" id="sidebar-music">
+    <div class="sidebar-header"><h2 data-i18n="Music">Music</h2></div>
+    <button id="music-albums" class="btn btn-ghost nav-item" data-i18n="Albums">Albums</button>
+    <button id="music-artists" class="btn btn-ghost nav-item" data-i18n="Artists">Artists</button>
+    <button id="music-playlists" class="btn btn-ghost nav-item" data-i18n="Playlists">Playlists</button>
+    <details class="all-music-views">
+      <summary class="btn btn-ghost nav-item" data-i18n="All music views">All music views</summary>
+      <button type="button" class="btn btn-ghost nav-item" data-music-open="albums" data-i18n="Open Albums">Open Albums</button>
+      <button type="button" class="btn btn-ghost nav-item" data-music-open="artists" data-i18n="Open Artists">Open Artists</button>
+      <button type="button" class="btn btn-ghost nav-item" data-music-open="playlists" data-i18n="Open Playlists">Open Playlists</button>
+    </details>
+  </div>
+  <div id="podcast-nav-slot"></div>
+  <div class="sidebar-section" id="sidebar-radio">
+    <div class="sidebar-header"><h2>Radio</h2></div>
+    <button id="sidebar-web-radio" type="button" class="btn btn-ghost nav-item" title="Web radio directory (w)" aria-keyshortcuts="w">Web radio</button>
+    <button id="internet-radio" class="btn btn-ghost nav-item">Internet radio</button>
+  </div>
+  <div class="sidebar-section" id="sidebar-sets">
+    <div class="sidebar-header"><h2>Sets</h2></div>
+    <div id="set-list"></div>
+  </div>
 </nav>
+<div id="sidebar-scrim" class="sidebar-scrim" aria-hidden="true"></div>
 
 <!-- Main page area -->
 <div class="page" role="main">
@@ -369,59 +386,74 @@
       <input id="help-search" class="help-filter" type="search" placeholder="Key or action (press / to focus)" aria-controls="help-shortcuts" autocomplete="off">
       <p id="help-no-results" role="status" hidden>No shortcuts match. Clear the search to show all shortcuts.</p>
       <div id="help-shortcuts" class="help-shortcuts">
-        <div class="help-row"><span><kbd>↑</kbd> <kbd>↓</kbd></span><span>Navigate media list</span></div>
-        <div class="help-row"><span><kbd>k</kbd> <kbd>j</kbd></span><span>Navigate media list</span></div>
-        <div class="help-row"><span><kbd>←</kbd> <kbd>→</kbd></span><span>Move left / right (seek in fullscreen)</span></div>
-        <div class="help-row"><span><kbd>h</kbd> <kbd>l</kbd></span><span>Move left / right (seek in fullscreen)</span></div>
-        <div class="help-row"><span><kbd>/</kbd></span><span>Search library; filter shortcuts in help</span></div>
-        <div class="help-row"><span><kbd>1</kbd>–<kbd>9</kbd></span><span>Open set by position</span></div>
-        <div class="help-row"><span><kbd>Tab</kbd> <kbd>Shift+Tab</kbd></span><span>Next / previous set (sidebar open)</span></div>
-        <div class="help-row"><span><kbd>;</kbd> <kbd>F2</kbd></span><span>Show underlined shortcuts for every visible control; Escape cancels. F2 also works from text fields.</span></div>
-        <div class="help-row"><span><kbd>a</kbd></span><span>Open selected thumbnail actions. Hover reveals the same buttons in one row.</span></div>
-        <div class="help-row"><span><kbd>O</kbd></span><span>Access player controls (including Speed); menus and dialogs accept their underlined letters.</span></div>
-        <div class="help-row"><span><kbd>Enter</kbd></span><span>Open selected item</span></div>
-        <div class="help-row"><span><kbd>e</kbd> / <kbd>E</kbd></span><span>Play next / Add to queue: selected collections, checked album songs or selected audio. Song actions: a / ☰.</span></div>
-        <div class="help-row"><span><kbd>Y</kbd></span><span>Queue repeat: Off → All → One. Sets browse playback is unchanged.</span></div>
-        <div class="help-row"><span><kbd>&lt;</kbd> / <kbd>&gt;</kbd></span><span>Slower / faster audio; Speed → 1× Normal resets. Unavailable while casting.</span></div>
-        <div class="help-row"><span><kbd>Q</kbd></span><span>Open / close Now Playing queue. Queue: j/k select, Enter play, K/J move, Delete remove (Undo).</span></div>
-        <div class="help-row"><span><kbd>Space</kbd> <kbd>p</kbd></span><span data-i18n="Play / pause">Play / pause</span></div>
-        <div class="help-row"><span><kbd>N</kbd> <kbd>P</kbd></span><span>Next / previous track</span></div>
-        <div class="help-row"><span><kbd>R</kbd></span><span>Play random track</span></div>
-        <div class="help-row"><span><kbd>M</kbd></span><span>Rescan media library</span></div>
-        <div class="help-row"><span><kbd>i</kbd></span><span>Show / hide media info</span></div>
-        <div class="help-row"><span><kbd>n</kbd></span><span>Open notes</span></div>
-        <div class="help-row"><span><kbd>t</kbd></span><span>Edit tags</span></div>
-        <div class="help-row"><span><kbd>F</kbd></span><span>Toggle favorite</span></div>
-        <div class="help-row"><span><kbd>f</kbd></span><span>Toggle fullscreen</span></div>
-        <div class="help-row"><span><kbd>PgUp</kbd> <kbd>PgDn</kbd></span><span>Seek −10% / +10% (fullscreen)</span></div>
-        <div class="help-row"><span><kbd>v</kbd></span><span>Cycle audio visualization / Off (also in the player)</span></div>
-        <div class="help-row"><span><kbd>C</kbd></span><span>Minimize player</span></div>
-        <div class="help-row"><span><kbd>d</kbd></span><span>Detach / attach player</span></div>
-        <div class="help-row"><span><kbd>D</kbd></span><span>Download selected media</span></div>
-        <div class="help-row"><span><kbd>T</kbd></span><span>Regenerate thumbnail</span></div>
-        <div class="help-row"><span><kbd>Esc</kbd></span><span>Close dialog / exit fullscreen / return to thumbnails</span></div>
-        <div class="help-row"><span><kbd>q</kbd></span><span>Stop playback and close player</span></div>
-        <div class="help-row"><span><kbd>Backspace</kbd></span><span>Exit media view / go up one folder</span></div>
-        <div class="help-row"><span><kbd>m</kbd></span><span>More options menu (j / k move, Enter selects, Esc closes)</span></div>
-        <div class="help-row"><span><kbd>r</kbd></span><span>Shuffle / reshuffle library listing (queue shuffle is in Now Playing)</span></div>
-        <div class="help-row"><span><kbd>Z</kbd></span><span>Sleep timer duration</span></div>
-        <div class="help-row"><span><kbd>s</kbd></span><span>Share selected media</span></div>
-        <div class="help-row"><span><kbd>c</kbd></span><span>Toggle display fill-crop (fullscreen)</span></div>
-        <div class="help-row"><span><kbd>Shift+↑</kbd> <kbd>Shift+↓</kbd> <kbd>Shift+←</kbd> <kbd>Shift+→</kbd></span><span>Nudge display crop position (active crop)</span></div>
-        <div class="help-row"><span><kbd>x</kbd></span><span>Cycle display crop anchor (active crop)</span></div>
-        <div class="help-row"><span><kbd>o</kbd></span><span>All podcast episodes, newest first</span></div>
-        <div class="help-row"><span><kbd>Enter</kbd> <kbd>v</kbd> <kbd>Delete</kbd></span><span>Selected podcast episode: play, toggle listened, delete (with confirmation)</span></div>
-        <div class="help-row"><span><kbd>w</kbd></span><span>Web radio: explore stations, auto explore, bookmarks</span></div>
-        <div class="help-row"><span><kbd>j</kbd> <kbd>k</kbd> <kbd>↑</kbd> <kbd>↓</kbd></span><span>Web radio: move between stations; Enter plays</span></div>
-        <div class="help-row"><span><kbd>L</kbd></span><span>My Shares (outside expanded images)</span></div>
-        <div class="help-row"><span><kbd>u</kbd></span><span>Upload to current set</span></div>
-        <div class="help-row"><span><kbd>A</kbd></span><span>Admin panel (admins)</span></div>
-        <div class="help-row"><span><kbd>h</kbd> <kbd>l</kbd> <kbd>+</kbd> <kbd>−</kbd> <kbd>Shift+S</kbd></span><span>Image viewer: previous / next, zoom, slideshow</span></div>
-        <div class="help-row"><span><kbd>j</kbd> <kbd>k</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>H</kbd> <kbd>L</kbd></span><span>Expanded image: pan when zoomed; position active display crop</span></div>
-        <div class="help-row"><span><kbd>0</kbd></span><span>Expanded image: reset zoom and pan to fitted view</span></div>
-        <div class="help-row"><span><kbd>g</kbd></span><span><button id="picture-layout-toggle" class="btn btn-ghost btn-sm" type="button" aria-pressed="false">Picture layout</button> — fit image thumbnails to their aspect ratios</span></div>
-        <div class="help-row"><span><kbd>+</kbd> / <kbd>-</kbd> / <kbd>0</kbd></span><span>Larger / smaller / reset library previews (image view keeps its own zoom)</span></div>
-        <div class="help-row"><span><kbd>?</kbd></span><span>Show / hide help (including image viewer)</span></div>
+        <section class="help-section" aria-label="Move around"><h4 class="help-group">Move around</h4>
+          <div class="help-row"><span><kbd>↑</kbd> <kbd>↓</kbd></span><span>Navigate media list</span></div>
+          <div class="help-row"><span><kbd>k</kbd> <kbd>j</kbd></span><span>Navigate media list</span></div>
+          <div class="help-row"><span><kbd>←</kbd> <kbd>→</kbd></span><span>Move left / right (seek in fullscreen)</span></div>
+          <div class="help-row"><span><kbd>h</kbd> <kbd>l</kbd></span><span>Move left / right (seek in fullscreen)</span></div>
+          <div class="help-row"><span><kbd>/</kbd></span><span>Search library; filter shortcuts in help</span></div>
+          <div class="help-row"><span><kbd>1</kbd>–<kbd>9</kbd></span><span>Open set by position</span></div>
+          <div class="help-row"><span><kbd>Tab</kbd> <kbd>Shift+Tab</kbd></span><span>Next / previous set (sidebar open)</span></div>
+          <div class="help-row"><span><kbd>Enter</kbd></span><span>Open selected item</span></div>
+          <div class="help-row"><span><kbd>Backspace</kbd></span><span>Exit media view / go up one folder</span></div>
+          <div class="help-row"><span><kbd>Esc</kbd></span><span>Close dialog / exit fullscreen / return to thumbnails</span></div>
+        </section>
+        <section class="help-section" aria-label="Playback"><h4 class="help-group">Playback</h4>
+          <div class="help-row"><span><kbd>&lt;</kbd> / <kbd>&gt;</kbd></span><span>Slower / faster audio; Speed → 1× Normal resets. Unavailable while casting.</span></div>
+          <div class="help-row"><span><kbd>Space</kbd> <kbd>p</kbd></span><span data-i18n="Play / pause">Play / pause</span></div>
+          <div class="help-row"><span><kbd>N</kbd> <kbd>P</kbd></span><span>Next / previous track</span></div>
+          <div class="help-row"><span><kbd>R</kbd></span><span>Play random track</span></div>
+          <div class="help-row"><span><kbd>q</kbd></span><span>Stop playback and close player</span></div>
+          <div class="help-row"><span><kbd>Z</kbd></span><span>Sleep timer duration</span></div>
+        </section>
+        <section class="help-section" aria-label="Queue"><h4 class="help-group">Queue</h4>
+          <div class="help-row"><span><kbd>e</kbd> / <kbd>E</kbd></span><span>Play next / Add to queue: selected collections, checked album songs or selected audio. Song actions: a / ☰.</span></div>
+          <div class="help-row"><span><kbd>Y</kbd></span><span>Queue repeat: Off → All → One. Sets browse playback is unchanged.</span></div>
+          <div class="help-row"><span><kbd>Q</kbd></span><span>Open / close Now Playing queue. Queue: j/k select, Enter play, K/J move, Delete remove (Undo).</span></div>
+        </section>
+        <section class="help-section" aria-label="Selected item"><h4 class="help-group">Selected item</h4>
+          <div class="help-row"><span><kbd>a</kbd></span><span>Open selected thumbnail actions. Hover reveals the same buttons in one row.</span></div>
+          <div class="help-row"><span><kbd>i</kbd></span><span>Show / hide media info</span></div>
+          <div class="help-row"><span><kbd>n</kbd></span><span>Open notes</span></div>
+          <div class="help-row"><span><kbd>t</kbd></span><span>Edit tags</span></div>
+          <div class="help-row"><span><kbd>F</kbd></span><span>Toggle favorite</span></div>
+          <div class="help-row"><span><kbd>D</kbd></span><span>Download selected media</span></div>
+          <div class="help-row"><span><kbd>T</kbd></span><span>Regenerate thumbnail</span></div>
+          <div class="help-row"><span><kbd>s</kbd></span><span>Share selected media</span></div>
+          <div class="help-row"><span><kbd>Enter</kbd> <kbd>v</kbd> <kbd>Delete</kbd></span><span>Selected podcast episode: play, toggle listened, delete (with confirmation)</span></div>
+        </section>
+        <section class="help-section" aria-label="Open views &amp; panels"><h4 class="help-group">Open views &amp; panels</h4>
+          <div class="help-row"><span><kbd>b</kbd></span><span>Browse sidebar: Music, Podcasts, Radio, Sets (j / k move, Enter opens, Esc closes)</span></div>
+          <div class="help-row"><span><kbd>M</kbd></span><span>Rescan media library</span></div>
+          <div class="help-row"><span><kbd>m</kbd></span><span>More options menu (j / k move, Enter selects, Esc closes)</span></div>
+          <div class="help-row"><span><kbd>r</kbd></span><span>Shuffle / reshuffle library listing (queue shuffle is in Now Playing)</span></div>
+          <div class="help-row"><span><kbd>o</kbd></span><span>All podcast episodes, newest first</span></div>
+          <div class="help-row"><span><kbd>w</kbd></span><span>Web radio: explore stations, auto explore, bookmarks</span></div>
+          <div class="help-row"><span><kbd>j</kbd> <kbd>k</kbd> <kbd>↑</kbd> <kbd>↓</kbd></span><span>Web radio: move between stations; Enter plays</span></div>
+          <div class="help-row"><span><kbd>L</kbd></span><span>My Shares (outside expanded images)</span></div>
+          <div class="help-row"><span><kbd>u</kbd></span><span>Upload to current set</span></div>
+          <div class="help-row"><span><kbd>A</kbd></span><span>Admin panel (admins)</span></div>
+        </section>
+        <section class="help-section" aria-label="Player view &amp; images"><h4 class="help-group">Player view &amp; images</h4>
+          <div class="help-row"><span><kbd>f</kbd></span><span>Toggle fullscreen</span></div>
+          <div class="help-row"><span><kbd>PgUp</kbd> <kbd>PgDn</kbd></span><span>Seek −10% / +10% (fullscreen)</span></div>
+          <div class="help-row"><span><kbd>v</kbd></span><span>Cycle audio visualization / Off (also in the player)</span></div>
+          <div class="help-row"><span><kbd>C</kbd></span><span>Minimize player</span></div>
+          <div class="help-row"><span><kbd>d</kbd></span><span>Detach / attach player</span></div>
+          <div class="help-row"><span><kbd>c</kbd></span><span>Toggle display fill-crop (fullscreen)</span></div>
+          <div class="help-row"><span><kbd>Shift+↑</kbd> <kbd>Shift+↓</kbd> <kbd>Shift+←</kbd> <kbd>Shift+→</kbd></span><span>Nudge display crop position (active crop)</span></div>
+          <div class="help-row"><span><kbd>x</kbd></span><span>Cycle display crop anchor (active crop)</span></div>
+          <div class="help-row"><span><kbd>h</kbd> <kbd>l</kbd> <kbd>+</kbd> <kbd>−</kbd> <kbd>Shift+S</kbd></span><span>Image viewer: previous / next, zoom, slideshow</span></div>
+          <div class="help-row"><span><kbd>j</kbd> <kbd>k</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>H</kbd> <kbd>L</kbd></span><span>Expanded image: pan when zoomed; position active display crop</span></div>
+          <div class="help-row"><span><kbd>0</kbd></span><span>Expanded image: reset zoom and pan to fitted view</span></div>
+          <div class="help-row"><span><kbd>g</kbd></span><span><button id="picture-layout-toggle" class="btn btn-ghost btn-sm" type="button" aria-pressed="false">Picture layout</button> — fit image thumbnails to their aspect ratios</span></div>
+          <div class="help-row"><span><kbd>+</kbd> / <kbd>-</kbd> / <kbd>0</kbd></span><span>Larger / smaller / reset library previews (image view keeps its own zoom)</span></div>
+        </section>
+        <section class="help-section" aria-label="Help &amp; shortcuts"><h4 class="help-group">Help &amp; shortcuts</h4>
+          <div class="help-row"><span><kbd>;</kbd> <kbd>F2</kbd></span><span>Show underlined shortcuts for every visible control; Escape cancels. F2 also works from text fields.</span></div>
+          <div class="help-row"><span><kbd>O</kbd></span><span>Access player controls (including Speed); menus and dialogs accept their underlined letters.</span></div>
+          <div class="help-row"><span><kbd>?</kbd></span><span>Show / hide help (including image viewer)</span></div>
+        </section>
       </div>
       <div class="help-search text-muted text-xs mt-2">
         Search: plain text searches file name. Syntax: <code>set:yoga</code> <code>min:30</code> <code>max:55</code> <code>tag:a,b</code> <code>like:1</code> <code>type:video</code> <code>sort:random</code> <code>minsize:10</code> <code>maxsize:500</code>

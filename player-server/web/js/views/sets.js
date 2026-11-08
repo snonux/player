@@ -13,9 +13,10 @@ export function renderSets() {
   const el = document.getElementById('set-list');
   if (el) {
     // Sidebar stays navigation-only; regenerate-cover lives on set cards → More.
-    el.innerHTML = state.sets.map((s) =>
+    // The first nine sets show their number key (1–9 opens them directly).
+    el.innerHTML = state.sets.map((s, index) =>
       `<div class="set-row" tabindex="0" role="button" data-id="${s.id}" aria-label="Set ${escapeHtml(s.name)}">
-        <span class="set-item flex-1-18" data-id="${s.id}">${escapeHtml(s.name)}</span>
+        <span class="set-item flex-1-18" data-id="${s.id}"><span class="set-name">${escapeHtml(s.name)}</span>${index < 9 ? `<kbd class="nav-kbd" aria-hidden="true">${index + 1}</kbd>` : ''}</span>
       </div>`
     ).join('');
     el.querySelectorAll('.set-row').forEach((row) => {

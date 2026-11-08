@@ -401,6 +401,11 @@ export function initKeyboard(handlers) {
         e.preventDefault();
         handlers.radio?.(e);
         break;
+      case 'b':
+        if (e.repeat) return;
+        e.preventDefault();
+        handlers.browse?.(e);
+        break;
       case 'm':
         e.preventDefault();
         handlers.menu?.(e);

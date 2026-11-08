@@ -170,7 +170,7 @@ export async function refreshPodcastSidebar({ background = false } = {}) {
     list.innerHTML = sidebarFeeds.length
       ? sidebarFeeds.map((p) => {
         const name = escapeHtml(p.title || p.feed_url || p.feed_key);
-        return `<button type="button" class="btn btn-ghost podcast-nav-feed" data-feed-key="${escapeHtml(p.feed_key || '')}" aria-label="Podcast ${name}" title="${name}">${name}</button>`;
+        return `<button type="button" class="btn btn-ghost nav-item podcast-nav-feed" data-feed-key="${escapeHtml(p.feed_key || '')}" aria-label="Podcast ${name}" title="${name}">${name}</button>`;
       }).join('')
       : '<p class="text-muted text-sm">No subscriptions yet.</p>';
     list.querySelectorAll('[data-feed-key]').forEach((btn) => {
@@ -202,13 +202,18 @@ function ensureSidebar() {
   if (!sidebar || document.getElementById('podcast-nav')) return;
   const section = document.createElement('div');
   section.id = 'podcast-nav';
+  section.className = 'sidebar-section';
   section.innerHTML = `
     <div class="sidebar-header"><h2>Podcasts</h2></div>
-    <button id="podcast-all-episodes" type="button" class="btn btn-ghost" aria-label="All podcast episodes" aria-keyshortcuts="o" title="All podcast episodes (o)">All podcast episodes</button>
-    <button id="podcast-explore" type="button" class="btn btn-ghost">Explore podcasts</button>
+    <button id="podcast-all-episodes" type="button" class="btn btn-ghost nav-item" aria-label="All podcast episodes" aria-keyshortcuts="o" title="All podcast episodes (o)">All podcast episodes</button>
+    <button id="podcast-explore" type="button" class="btn btn-ghost nav-item">Explore podcasts</button>
     <div id="podcast-nav-list" class="podcast-nav-list" aria-label="Subscribed podcasts"></div>`;
+  // The slot keeps Podcasts between Music and Radio; older markup without it
+  // falls back to just before the sets list.
+  const slot = document.getElementById('podcast-nav-slot');
   const setList = document.getElementById('set-list');
-  if (setList) sidebar.insertBefore(section, setList);
+  if (slot) slot.replaceWith(section);
+  else if (setList) setList.parentElement.insertBefore(section, setList);
   else sidebar.appendChild(section);
   document.getElementById('podcast-all-episodes')?.addEventListener('click', openAllPodcastEpisodes);
   document.getElementById('podcast-explore')?.addEventListener('click', () => openPodcastDiscovery({

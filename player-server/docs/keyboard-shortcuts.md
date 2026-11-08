@@ -13,6 +13,13 @@ row; narrow cards scroll that row sideways. Touch opens the action menu.
 Press `o` for player controls. Roomy windows show these controls directly below
 the playback area; small windows keep them in the More controls menu.
 
+The Browse sidebar owns letters only while focus is inside it. With focus in
+the content, global keys such as `w`, `o`, `Q`, `/` and `?` keep working while
+the sidebar stays open. Sets show their `1`–`9` key, and the More options (`m`)
+menu shows each item's global key; inside the menu that same letter selects it.
+Help groups the shortcuts by task (move around, playback, queue, selected item,
+views and panels, player view and images).
+
 Global shortcuts are registered in `web/js/keyboard.js`; the shared audio player handles `v` on library, share and detached pages. They are **disabled** while the user is focused on an `INPUT`, `TEXTAREA`, `SELECT`, or `contentEditable` element (except `Escape` to blur).
 
 Audio/video players in the library and detached window have Save position and
@@ -53,7 +60,8 @@ fields and dialogs, then resumes folder/set navigation once the grid is shown.
 | `Esc` | Close dialog, exit fullscreen, then minimize audio/video or close image view to return to thumbnails |
 | `r` | Enable shuffle, or reshuffle the current filtered result set |
 | `s` | Generate a share link for the selected media |
-| `/` | Focus library quick search, or filter shortcuts while help is open |
+| `/` | Focus library quick search, or filter shortcuts while help is open (the header Search button does the same) |
+| `b` | Open / close the Browse sidebar (Music, Podcasts, Radio, Sets) with focus on the current destination; `j`/`k` move, `Enter` opens, underlined letters jump, `Esc` or `b` closes and returns focus to the content |
 | `g` | Toggle picture layout (also available in help) |
 | `+` / `=` / `-` | Larger / smaller library previews (saved); zoom the image when image view is open |
 | `0` | Reset library preview size; reset image zoom when image view is open |

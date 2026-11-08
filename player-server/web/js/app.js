@@ -66,7 +66,7 @@ import { closeAllModals } from './dom.js';
 import { toast } from './utils.js';
 import { initShareLinkFallback } from './share-link.js';
 import { showAdmin, triggerRescan } from './views/admin-status.js';
-import { closeSidebar, dismissSidebarAfterNav, focusHelpSearch, initHelp, showSearch, toggleHelp, toggleSidebar } from './views/help.js';
+import { closeSidebar, dismissSidebarAfterNav, focusHelpSearch, initHelp, isNarrowSidebar, showSearch, toggleHelp, toggleSidebar, toggleSidebarFromKeyboard } from './views/help.js';
 import {
   initMediaGrid,
   loadMedia,
@@ -327,6 +327,7 @@ async function initApp() {
     podcasts: openAllPodcastEpisodes,
     podcastAction: selectedPodcastEpisodeAction,
     radio: () => document.getElementById('radio-toggle')?.click(),
+    browse: toggleSidebarFromKeyboard,
     menu: () => headerMenu?.open(),
     togglePictureLayout: initPictureLayout(document.getElementById('media-grid')),
     ...initThumbnailSize(document.getElementById('media-grid')),
@@ -651,6 +652,14 @@ function openInProgress() {
   loadMedia();
 }
 
+function syncMusicNavActive() {
+  const music = state.music && !state.music.search ? state.music : null;
+  const current = !music ? '' : music.playlists || music.playlist ? 'playlists' : music.artists || music.artist ? 'artists' : 'albums';
+  for (const name of ['albums', 'artists', 'playlists']) {
+    document.getElementById(`music-${name}`)?.classList.toggle('active', current === name);
+  }
+}
+
 function syncChromeVirtualSets() {
   document.getElementById('in-progress-toggle')?.classList.toggle('active', state.virtualSet === 'in-progress');
   updatePodcastSidebarUI();
@@ -679,6 +688,24 @@ function initChrome() {
 
   document.getElementById('menu-close')?.addEventListener('click', () => {
     closeSidebar();
+  });
+
+  // Mark the current music destination in the sidebar like sets and podcasts.
+  document.addEventListener('library:navigated', syncMusicNavActive);
+
+  document.getElementById('sidebar-scrim')?.addEventListener('click', () => {
+    closeSidebar();
+    document.getElementById('sidebar-toggle')?.focus();
+  });
+
+  // Visible search entry point; / stays the keyboard path.
+  document.getElementById('header-search')?.addEventListener('click', () => showSearch());
+
+  // Both radios live together under Radio in the sidebar. The directory is
+  // a dialog, so a narrow overlay sidebar closes behind it.
+  document.getElementById('sidebar-web-radio')?.addEventListener('click', () => {
+    if (isNarrowSidebar()) closeSidebar();
+    document.getElementById('radio-toggle')?.click();
   });
 
   document.getElementById('logout-btn')?.addEventListener('click', async () => {

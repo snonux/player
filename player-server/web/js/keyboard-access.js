@@ -12,6 +12,9 @@ const preferred = {
   'btn-player-options': 'o', 'btn-cast': 'c', 'btn-zoom-in': 'z', 'btn-zoom-out': 'd',
   'btn-slideshow': 'w', 'btn-download': 'x',
   'admin-toggle': 'a', 'theme-toggle': 't', 'logout-btn': 'o', 'header-menu-toggle': 'm',
+  // Menu letters match the global vi keys shown beside them where possible.
+  'shuffle-toggle': 'r', 'radio-toggle': 'w', 'header-search': 's',
+  'sidebar-web-radio': 'w', 'menu-close': 'c',
   'notes-save': 's', 'notes-delete': 'd', 'notes-textarea': 'n',
 };
 
@@ -46,6 +49,14 @@ function visible(element) {
   const style = getComputedStyle(element);
   return element.getClientRects().length && style.visibility === 'visible' && style.opacity !== '0' && !element.matches(':disabled, [aria-disabled="true"]') && !element.closest('[inert], [aria-hidden="true"]');
 }
+// Letters come from what the user sees, so they can be underlined in place
+// ("Trash", not its accessible name "Open trash").
+function shortcutText(element) {
+  if (element.matches('input, select, textarea')) return name(element);
+  const own = [...element.childNodes].filter(node => !(node.nodeType === 1 && node.matches('kbd, [aria-hidden="true"]')))
+    .map(node => node.textContent).join('').replace(/[^\p{L}\p{N} ]/gu, '').trim();
+  return own || name(element);
+}
 function name(element) {
   return element.getAttribute('aria-label') || element.labels?.[0]?.textContent || element.getAttribute('title') || element.textContent.trim() || element.placeholder || element.name || element.tagName;
 }
@@ -78,7 +89,9 @@ export function initKeyboardAccess() {
     const popovers = [...document.querySelectorAll('[popover]:popover-open')];
     if (popovers.length) return popovers.at(-1);
     const dialogs = [...document.querySelectorAll('.modal-overlay.open')];
-    return document.activeElement?.closest('.modal-overlay.open') || dialogs.at(-1) || document.querySelector('.sidebar.open');
+    // The sidebar owns letters only while focus is inside it, so global vi
+    // keys (w, o, Q, /, ?...) keep working while it stays docked open.
+    return document.activeElement?.closest('.modal-overlay.open') || dialogs.at(-1) || document.activeElement?.closest('.sidebar.open');
   }
   function targets(root) {
     return [...root.querySelectorAll(controls)].filter(element => visible(element) &&
@@ -92,6 +105,7 @@ export function initKeyboardAccess() {
       element.removeAttribute('data-shortcut-key');
       element.removeAttribute('aria-keyshortcuts');
       if (decoration?.classList.contains('shortcut-field-hint')) decoration.remove();
+      else if (decoration?.classList.contains('shortcut-kbd')) decoration.classList.remove('shortcut-kbd');
       else if (decoration?.isConnected) decoration.replaceWith(document.createTextNode(decoration.textContent));
     }
     decorations.clear();
@@ -112,6 +126,13 @@ export function initKeyboardAccess() {
       badge.textContent = key;
       element.before(badge);
       decorations.set(element, badge);
+      return;
+    }
+    // A menu row whose key hint already shows this letter highlights it.
+    const hint = element.querySelector(':scope > .menu-kbd');
+    if (hint && hint.textContent === key) {
+      hint.classList.add('shortcut-kbd');
+      decorations.set(element, hint);
       return;
     }
     if (key.length === 1) {
@@ -147,7 +168,7 @@ export function initKeyboardAccess() {
     if (document.fullscreenElement && status.parentElement !== document.fullscreenElement) document.fullscreenElement.appendChild(status);
     else if (!document.fullscreenElement && status.parentElement !== document.body) document.body.appendChild(status);
     items = active || local ? targets(scope) : [];
-    const keys = assignShortcutKeys(items.map(name), items.map(element => preferred[element.id] || (element.matches('select[aria-label="Audio visualization"]') ? 'v' : element.matches('.lyrics-toggle') ? 'y' : '')));
+    const keys = assignShortcutKeys(items.map(shortcutText), items.map(element => preferred[element.id] || (element.matches('select[aria-label="Audio visualization"]') ? 'v' : element.matches('.lyrics-toggle') ? 'y' : '')));
     items = items.map((element, index) => ({ element, key: keys[index] }));
     for (const { element, key } of items) if (key.startsWith(prefix)) decorate(element, key);
     observer.takeRecords();
@@ -280,6 +301,13 @@ export function initKeyboardAccess() {
       event.preventDefault(); event.stopImmediatePropagation();
       local.hidePopover();
       if (local.id === 'player-options') document.getElementById('btn-player-options')?.focus();
+      return;
+    }
+    if (local?.matches('.sidebar') && (event.key === 'Escape' || (event.key === 'b' && !prefix)) && !active) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      document.getElementById('menu-close')?.click();
+      const card = document.querySelector('#media-grid .selected');
+      (card?.matches('[tabindex], button, a') ? card : card?.querySelector('button, [tabindex]') || document.getElementById('sidebar-toggle'))?.focus();
       return;
     }
     if (local?.matches('[popover]') && event.key === 'Tab') {
