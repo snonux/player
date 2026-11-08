@@ -38,15 +38,15 @@ for (const width of [390, 1280]) {
   test(`player controls, visual choices, range keys and notes are usable without a mouse at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
     await page.goto('/?set=1&folder=' + encodeURIComponent(album) + '&media=11');
-    await expect(page).toHaveTitle('Track 1.wav — Player');
-    await page.keyboard.press('o');
+    await expect(page).toHaveTitle('Track 1 — Player');
+    await page.keyboard.press('O');
     const volume = page.getByRole('slider', { name: 'Volume', exact: true });
     await keyFor(page, volume);
     await expect(volume).toBeFocused();
     await page.keyboard.press('ArrowLeft');
     await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.volume)).toBeLessThan(1);
-    if (width < 600) await page.keyboard.press('Escape');
-    await page.keyboard.press('o');
+    await page.keyboard.press('Escape'); // close the options popover; O reopens it below
+    await page.keyboard.press('O');
     await keyFor(page, page.getByRole('combobox', { name: 'Audio visualization' }));
     const choices = page.getByRole('group', { name: 'Audio visualization', exact: true });
     await expect(choices).toBeVisible();
@@ -55,7 +55,7 @@ for (const width of [390, 1280]) {
     if (width >= 600) await page.keyboard.press('Escape'); // release the inline native select's focus
     // Escape may minimize the player after leaving a native field.
     if (await page.locator('#player').evaluate(el => el.classList.contains('minimized'))) await page.locator('#btn-restore-player').press('Enter');
-    await page.keyboard.press('o');
+    await page.keyboard.press('O');
     await keyFor(page, page.locator('#btn-player-notes'));
     await expect(page.locator('#notes-modal')).toHaveClass(/open/);
     const area = page.getByRole('textbox');
@@ -83,7 +83,7 @@ test('every window keeps secondary player controls in one menu; resizing keeps t
   await page.setViewportSize({ width: 390, height: 800 });
   await expect(page.locator('#btn-player-options')).toBeVisible();
   await page.keyboard.press('Escape');
-  await page.keyboard.press('o');
+  await page.keyboard.press('O');
   await expect(page.locator('#volume-slider')).toHaveValue('0.4');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Tab');
@@ -99,23 +99,26 @@ test('thumbnail controls appear only on hover in one row; keyboard actions remai
   await expect(card).toBeVisible();
   await page.mouse.move(0, 0);
   await expect(actions).toBeHidden();
-  await card.focus();
+  await card.locator('.media-open').focus(); // cards are groups; their open button takes focus
   await page.keyboard.press(';');
   await expect(actions).toBeHidden();
   await page.keyboard.press('Escape');
   await card.hover();
   await expect(actions).toBeVisible();
-  const rows = await actions.locator('button').evaluateAll(buttons => buttons.map(button => Math.round(button.getBoundingClientRect().top)));
+  // Extra actions stay in the More menu; only the visible hover row counts.
+  const rows = await actions.locator('button:visible').evaluateAll(buttons => buttons.map(button => Math.round(button.getBoundingClientRect().top)));
   expect(new Set(rows).size).toBe(1);
   expect(await actions.evaluate(element => getComputedStyle(element).flexWrap)).toBe('nowrap');
   await page.mouse.move(0, 0);
   await expect(actions).toBeHidden();
-  await card.focus();
+  await card.locator('.media-open').focus(); // cards are groups; their open button takes focus
   await page.keyboard.press('a');
   const menu = page.getByRole('group', { name: 'Media actions', exact: true });
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('button', { name: 'Notes', exact: true }).locator('.shortcut-label')).toHaveText('Notes');
-  expect(await menu.getByRole('button').count()).toBe(await actions.locator('button').count());
+  // The keyboard menu offers every card action (plus queue actions) except the More toggle itself.
+  for (const label of await actions.locator('button:not([data-action="more"])').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label')!)))
+    await expect(menu.getByRole('button', { name: label, exact: true })).toHaveCount(1);
   await keyFor(page, menu.getByRole('button', { name: 'Notes', exact: true }));
   await expect(page.locator('#notes-modal')).toHaveClass(/open/);
   await expect(actions).toBeHidden();
@@ -123,7 +126,7 @@ test('thumbnail controls appear only on hover in one row; keyboard actions remai
 
 test('dialog letters stay scoped to help, tags and admin controls', async ({ page }) => {
   await page.goto('/?set=1&folder=' + encodeURIComponent(album));
-  await page.locator('[data-id="11"]').focus();
+  await page.locator('[data-id="11"] .media-open').focus();
   await page.keyboard.press('?');
   const help = page.locator('#help-modal');
   await expect(help).toHaveClass(/open/);

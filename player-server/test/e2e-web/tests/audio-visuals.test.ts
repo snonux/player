@@ -129,7 +129,7 @@ test('a delayed library response starts sound-reactive visuals from the original
   await page.getByRole('button', { name: 'Set Music', exact: true }).click();
   const detail = page.waitForResponse('**/api/media/1');
   await page.locator('.media-card').hover();
-  await page.locator('.media-card').getByRole('button', { name: '▶', exact: true }).click();
+  await page.locator('.media-card').getByRole('button', { name: 'Play', exact: true }).click();
   await detail;
   // Polling through browser evaluations while the fetch is pending can itself
   // renew user activation in automation. Let playback start before inspecting it.
@@ -176,8 +176,8 @@ test('audiobooks and video hide visuals; routing remains playable across tracks 
       playback.loadMediaDirect({ type: 'audio', file_name: name }, '/visual-test.wav', '/logo.svg');
     }, file_name);
     const book = file_name !== 'song.wav';
-    if (book) await expect(page.getByRole('combobox')).toBeDisabled();
-    else await expect(page.getByRole('combobox')).toBeEnabled();
+    if (book) await expect(page.getByRole('combobox', { name: 'Audio visualization' })).toBeDisabled();
+    else await expect(page.getByRole('combobox', { name: 'Audio visualization' })).toBeEnabled();
     if (book) await expect(page.locator('.audio-visual')).toBeHidden();
     await page.locator('#btn-play').click();
     await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(0);
@@ -188,7 +188,7 @@ test('audiobooks and video hide visuals; routing remains playable across tracks 
     const playback = await import('/js/playback.js');
     playback.loadMediaDirect({ type: 'video', file_name: 'video.mp4' }, '/visual-test.wav', '');
   });
-  await expect(page.getByRole('combobox')).toBeHidden();
+  await expect(page.getByRole('combobox', { name: 'Audio visualization' })).toBeHidden();
   await expect(page.locator('.audio-visual')).toBeHidden();
 });
 
@@ -200,7 +200,7 @@ test('unsupported Web Audio falls back to artwork and native audio', async ({ pa
     const playback = await import('/js/playback.js');
     playback.loadMediaDirect({ type: 'audio', file_name: 'song.wav' }, '/visual-test.wav', '/logo.svg');
   });
-  await expect(page.getByRole('combobox')).toBeDisabled();
+  await expect(page.getByRole('combobox', { name: 'Audio visualization' })).toBeDisabled();
   await expect(page.locator('.audio-visual')).toBeHidden();
   await expect(page.locator('#cover-art')).toBeVisible();
   await page.locator('#btn-play').click();
@@ -226,7 +226,7 @@ test('Firefox/runtime audio errors can be retried without reloading or stopping 
   });
   await observeAudioData(page);
   await page.locator('#btn-play').click();
-  await expect(page.getByRole('combobox')).toBeEnabled();
+  await expect(page.getByRole('combobox', { name: 'Audio visualization' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Retry visuals' })).toBeVisible();
   await expect(page.locator('.audio-visual-status')).toContainText('NotSupportedError');
   await expect(page.locator('#cover-art')).toBeVisible();
@@ -279,7 +279,7 @@ test('reduced motion starts Off; v respects typing and modal guards; minimized d
     const playback = await import('/js/playback.js');
     playback.loadMediaDirect({ type: 'audio', file_name: 'song.wav' }, '/visual-test.wav', '/logo.svg');
   });
-  const select = page.getByRole('combobox');
+  const select = page.getByRole('combobox', { name: 'Audio visualization' });
   await expect(select).toHaveValue('off');
   await page.locator('#btn-play').click();
   await page.keyboard.press('v');
@@ -337,11 +337,11 @@ test('a blocked context preserves native audio and lets the user retry', async (
     playback.loadMediaDirect({ type: 'audio', file_name: 'song.wav' }, '/visual-test.wav', '/logo.svg');
   });
   await page.locator('#btn-play').click();
-  await expect(page.getByRole('combobox')).toBeEnabled();
+  await expect(page.getByRole('combobox', { name: 'Audio visualization' })).toBeEnabled();
   await expect(page.locator('#cover-art')).toBeVisible();
   await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(0);
   await page.keyboard.press('v');
-  await expect(page.getByRole('combobox')).toBeEnabled();
+  await expect(page.getByRole('combobox', { name: 'Audio visualization' })).toBeEnabled();
   await expect(page.locator('.audio-visual')).toBeHidden();
 });
 
@@ -365,10 +365,10 @@ test('delayed resume after selecting Off never captures native audio', async ({ 
     playback.loadMediaDirect({ type: 'audio', file_name: 'song.wav' }, '/visual-test.wav', '/logo.svg');
   });
   await page.locator('#btn-play').click();
-  await page.getByRole('combobox').selectOption('off');
+  await page.getByRole('combobox', { name: 'Audio visualization' }).selectOption('off');
   await page.evaluate(() => (window as any).finishResume());
-  await expect(page.getByRole('combobox')).toBeEnabled();
-  await expect(page.getByRole('combobox')).toHaveValue('off');
+  await expect(page.getByRole('combobox', { name: 'Audio visualization' })).toBeEnabled();
+  await expect(page.getByRole('combobox', { name: 'Audio visualization' })).toHaveValue('off');
   await expect(page.locator('.audio-visual')).toBeHidden();
   await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(0);
 });
@@ -386,7 +386,7 @@ test('share viewing opens before audio loads and its player supports visuals and
   await expect.poll(() => pixels(page)).toBeGreaterThan(5);
   expect(requests[0]).toBe('view');
   expect(requests).toContain('audio');
-  await page.getByRole('combobox').selectOption('off');
+  await page.getByRole('combobox', { name: 'Audio visualization' }).selectOption('off');
   await expect(page.locator('#cover-art')).toBeVisible();
 });
 
@@ -407,7 +407,7 @@ test('library async playback preserves visuals, help modal guard and naming-base
   await page.getByRole('button', { name: 'Set Music', exact: true }).click();
   await expect(page.locator('.media-card')).toHaveCount(1);
   await page.locator('.media-card').hover();
-  await page.locator('.media-card').getByRole('button', { name: '▶', exact: true }).click();
+  await page.locator('.media-card').getByRole('button', { name: 'Play', exact: true }).click();
   await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentTime)).toBeGreaterThan(0);
   // A slow detail fetch may outlive transient activation; this starts it then.
   await page.locator('#btn-play').focus();
@@ -452,33 +452,24 @@ for (const width of [320, 1280]) {
     await page.goto('/');
     await page.getByRole('button', { name: 'Set Music', exact: true }).click();
     await page.locator('.media-card').hover();
-  await page.locator('.media-card').getByRole('button', { name: '▶', exact: true }).click();
+  await page.locator('.media-card').getByRole('button', { name: 'Play', exact: true }).click();
     await expect.poll(() => pixels(page)).toBeGreaterThan(5);
     const player = page.locator('#player');
     const stage = await player.locator('.stage').boundingBox();
     const controls = await player.locator('.controls').boundingBox();
-    expect(stage!.height).toBeGreaterThanOrEqual(160);
-    expect(controls!.height).toBeLessThan(width < 600 ? 80 : 200);
+    // The compact floating player keeps a usable visual stage above its controls.
+    expect(stage!.height).toBeGreaterThanOrEqual(120);
+    // At 320px the 44px touch targets wrap onto a second row.
+    expect(controls!.height).toBeLessThan(width < 600 ? 150 : 200);
     expect((await player.boundingBox())!.width).toBeLessThanOrEqual(width - 32);
     if (width >= 460) {
       expect((await player.boundingBox())!.width).toBeGreaterThanOrEqual(450);
-      expect(stage!.height).toBeGreaterThanOrEqual(250);
+      expect(stage!.height).toBeGreaterThanOrEqual(180);
     }
     await page.screenshot({ path: `/tmp/player-v073-floating-${browserName}-${width}.png` });
     const more = page.getByRole('button', { name: 'More player controls', exact: true });
     const panel = page.getByRole('group', { name: 'More player controls', exact: true });
-    if (width >= 600) {
-      await expect(more).toBeHidden();
-      await expect(panel).toBeVisible();
-      for (const id of ['btn-player-notes', 'btn-player-favorite', 'btn-bookmarks', 'btn-save-position', 'volume-slider']) await expect(panel.locator('#' + id)).toBeVisible();
-      await page.getByRole('combobox', { name: 'Audio visualization' }).selectOption('wave');
-      await expect(panel).toBeVisible();
-      await minimizePlayer(page);
-      await expect(player).toHaveClass(/minimized/);
-      await page.locator('#btn-restore-player').click();
-      await expect(panel).toBeVisible();
-      return;
-    }
+    // Every width keeps the secondary controls in the More player controls menu.
     await more.focus();
     await page.keyboard.press('Enter');
     await expect(panel).toBeVisible();
@@ -504,10 +495,9 @@ for (const width of [320, 1280]) {
     await expect(page.locator('#notes-modal')).toHaveClass(/open/);
     await expect(panel).toBeHidden();
     await page.keyboard.press('Escape');
-    await expect(page.locator('.media-card.selected')).toBeFocused();
-    await more.click();
-    await panel.getByRole('button', { name: 'Lyrics', exact: true }).click();
-    await expect(panel).toBeHidden();
+    await expect(page.locator('.media-card.selected .media-open')).toBeFocused();
+    // Lyrics is a direct toggle on the player bar.
+    await player.getByRole('button', { name: 'Lyrics', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Lyrics' })).toBeHidden();
     await page.keyboard.press('v');
     await expect(page.locator('select[aria-label="Audio visualization"]')).toHaveValue('radial');
@@ -534,12 +524,12 @@ for (const width of [320, 1280]) {
     expect((await player.boundingBox())!.height).toBeLessThan(64);
     await page.getByRole('button', { name: 'Restore player', exact: true }).click();
     await expect(player).not.toHaveClass(/minimized/);
-    expect((await player.locator('.stage').boundingBox())!.height).toBeGreaterThanOrEqual(160);
+    expect((await player.locator('.stage').boundingBox())!.height).toBeGreaterThanOrEqual(120);
     await (await headerItem(page, '#theme-toggle')).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await more.click();
     await expect(panel).toBeVisible();
-    await expect(panel.getByRole('combobox')).toBeEnabled();
+    await expect(panel.getByRole('combobox', { name: 'Audio visualization' })).toBeEnabled();
     const box = (await panel.boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(width);

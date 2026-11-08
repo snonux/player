@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { minimizePlayer, playerOptionsItem } from './helpers/player-options';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { bootstrap, waitForServer } from './helpers/server';
@@ -83,17 +84,24 @@ test('Backspace keeps text editing and folder navigation', async ({ page }) => {
   await search.press('Backspace');
   await expect(search).toHaveValue('ab');
   await search.fill('');
-  await page.evaluate(async () => {
-    const statePath = '/js/state.js';
-    const { state } = await import(statePath);
-    state.folderPath = 'one/two';
-  });
+  await search.press('Escape');
+  // Inside a folder, Backspace outside a text field goes up one level.
+  await page.getByRole('button', { name: 'Set audiobooks', exact: true }).click();
+  await page.getByRole('button', { name: 'Folder aesops-fables', exact: true }).click();
+  await expect(page.locator('#breadcrumb-bar')).toContainText('aesops-fables');
+  await page.keyboard.press('/');
+  await search.fill('xyz');
+  await search.press('Backspace');
+  await expect(search).toHaveValue('xy');
+  await expect(page.locator('#breadcrumb-bar')).toContainText('aesops-fables');
+  await search.fill('');
   await search.press('Escape');
   await page.keyboard.press('Backspace');
+  await expect(page.getByRole('button', { name: 'Folder aesops-fables', exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(async () => {
     const statePath = '/js/state.js';
     return (await import(statePath)).state.folderPath;
-  })).toBe('one');
+  })).toBe('');
 });
 
 test('Minimize (in options) and Restore work for audio, video, and image', async ({ page }) => {
@@ -104,7 +112,6 @@ test('Minimize (in options) and Restore work for audio, video, and image', async
   }]);
   await page.goto('/');
 
-  const { minimizePlayer, playerOptionsItem } = await import('./helpers/player-options');
   const player = page.locator('#player');
   const restore = page.locator('#btn-restore-player');
   for (const [type, fileName, url] of [
@@ -123,7 +130,8 @@ test('Minimize (in options) and Restore work for audio, video, and image', async
     await minimizePlayer(page);
     await expect(player).toHaveClass(/minimized/);
     await expect(restore).toBeVisible();
-    await expect(restore).toContainText(`Restore: ${fileName}`);
+    // Audio shows its display title, which drops the file extension.
+    await expect(restore).toContainText(`Restore: ${type === 'audio' ? fileName.replace(/\.[^.]+$/, '') : fileName}`);
     await restore.click();
     await expect(player).not.toHaveClass(/minimized/);
     await expect(await playerOptionsItem(page, '#btn-minimize')).toBeVisible();

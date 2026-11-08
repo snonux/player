@@ -23,7 +23,7 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole('button', { name: 'Set images', exact: true }).click();
   const card = page.locator('#media-grid .image-card').first();
   await expect(card).toBeVisible();
-  await card.focus();
+  await card.locator('.media-open').focus();
 });
 
 test('help filters rendered rows and keeps native typing, focus and library search', async ({ page }) => {
@@ -67,12 +67,14 @@ test('help filters rendered rows and keeps native typing, focus and library sear
   await expect(close).toBeFocused();
   await page.keyboard.press('Space');
   await expect(help).not.toHaveClass(/open/);
-  await expect(page.locator('#media-grid .image-card.selected')).toBeFocused();
+  await expect(page.locator('#media-grid .image-card.selected .media-open')).toBeFocused();
   await page.keyboard.press('/');
   await expect(page.locator('#search-input')).toBeFocused();
   await page.keyboard.type('?');
   await expect(help).not.toHaveClass(/open/);
   await page.keyboard.press('Escape');
+  // Escape clears the search; wait for the grid to re-render and refocus the card.
+  await expect(page.locator('#media-grid .image-card.selected .media-open')).toBeFocused();
   await page.keyboard.press('n');
   await expect(page.locator('#notes-modal')).toHaveClass(/open/);
   await page.locator('#notes-close').focus();

@@ -1,6 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { bootstrap, waitForServer } from './helpers/server';
 import { headerItem } from './helpers/header-menu';
+import { cardAction } from './helpers/card-actions';
 
 test.use({ serviceWorkers: 'block' });
 const baseURL = process.env.PLAYER_URL || 'http://localhost:8080';
@@ -48,25 +49,29 @@ async function boxes(page: Page) {
 test('preview keys clamp, preserve selection and persist; controls keep native Enter', async ({ page }) => {
   const grid = page.locator('#media-grid');
   const card = grid.locator('.image-card').first();
-  await card.focus();
+  await card.locator('.media-open').focus();
   const selected = await grid.locator('.selected').getAttribute('data-id');
   const original = (await card.boundingBox())!.width;
   await page.keyboard.press('+');
   await page.keyboard.press('=');
   await expect(grid).toHaveAttribute('data-thumbnail-size', '4');
   expect((await card.boundingBox())!.width).toBeGreaterThan(original);
-  await expect(card).toBeFocused();
+  await expect(card.locator('.media-open')).toBeFocused();
   await expect(grid.locator('.selected')).toHaveAttribute('data-id', selected!);
-  await expect(page.getByRole('button', { name: 'Larger previews', exact: true })).toBeDisabled();
+  await expect(await headerItem(page, '#thumbnail-larger')).toBeDisabled();
+  await page.keyboard.press('Escape'); // close the header menu again
+  await card.locator('.media-open').focus();
   await page.keyboard.press('+');
   await expect(grid).toHaveAttribute('data-thumbnail-size', '4');
   for (let i = 0; i < 8; i++) await page.keyboard.press('-');
   await expect(grid).toHaveAttribute('data-thumbnail-size', '0');
   expect((await card.boundingBox())!.width).toBeLessThan(original);
-  await expect(page.getByRole('button', { name: 'Smaller previews', exact: true })).toBeDisabled();
+  await expect(await headerItem(page, '#thumbnail-smaller')).toBeDisabled();
+  await page.keyboard.press('Escape');
+  // A reload restores the open set from the URL.
   await page.reload();
   await expect(grid).toHaveAttribute('data-thumbnail-size', '0');
-  await page.getByRole('button', { name: 'Set pictures', exact: true }).click();
+  await expect(page.locator('#media-grid .image-card')).toHaveCount(8);
   await (await headerItem(page, '#thumbnail-larger')).focus();
   await page.keyboard.press('Enter');
   await expect(grid).toHaveAttribute('data-thumbnail-size', '1');
@@ -113,8 +118,8 @@ test('preview buttons resize picture rows and fit narrow screens at every size',
   const before = await boxes(page);
   await (await headerItem(page, '#thumbnail-larger')).click();
   await expect.poll(async () => (await boxes(page))[1].height).toBeGreaterThan(before[1].height);
-  await page.reload();
-  await page.getByRole('button', { name: 'Set pictures', exact: true }).click();
+  await page.reload(); // restores the open set from the URL
+  await expect(page.locator('#media-grid .image-card')).toHaveCount(8);
   await expect(page.locator('#thumbnail-reset')).toHaveText('130%');
   await expect(page.locator('#media-grid')).toHaveClass(/picture-grid/);
   await page.setViewportSize({ width: 320, height: 640 });
@@ -122,8 +127,8 @@ test('preview buttons resize picture rows and fit narrow screens at every size',
     if (!picture) { await page.locator('#thumbnail-reset').focus(); await page.keyboard.press('g'); }
     for (let size = 0; size <= 4; size++) {
       await page.evaluate((index) => localStorage.setItem('kiss-thumbnail-size', String(index)), size);
-      await page.reload();
-      await page.getByRole('button', { name: 'Set pictures', exact: true }).click();
+      await page.reload(); // restores the open set from the URL
+      await expect(page.locator('#media-grid .image-card')).toHaveCount(8);
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
       await expect.poll(async () => (await boxes(page)).every(box => box.left + box.width <= 320)).toBe(true);
     }
@@ -160,7 +165,17 @@ test('every action stays inside and clickable on small regular and picture previ
       if (action) (window as any).clickedActions.push(action);
     }, true);
   });
-  const actions = ['play', 'favorite', 'notes', 'trash', 'mark-finished', 'mark-not-started', 'download', 'tags', 'regen-thumb'];
+  // Primary actions sit on the card; the rest live in its More actions menu.
+  const actions = ['play', 'favorite', 'more'];
+  const menuActions: [string, string][] = [['notes', 'Notes'], ['trash', 'Move to trash'], ['mark-finished', 'Mark as finished'],
+    ['mark-not-started', 'Mark as not started'], ['download', 'Download'], ['tags', 'Tags'], ['regen-thumb', 'Regenerate thumbnail']];
+  const closeDialog = async (action: string) => {
+    if (action === 'notes' || action === 'tags') {
+      await expect(page.locator(`#${action}-modal`)).toHaveClass(/open/);
+      await page.keyboard.press('Escape');
+      await expect(page.locator(`#${action}-modal`)).toBeHidden();
+    }
+  };
   for (const width of [1280, 320]) {
     await page.setViewportSize({ width, height: 800 });
     for (const picture of [false, true]) {
@@ -169,8 +184,11 @@ test('every action stays inside and clickable on small regular and picture previ
       for (let i = 0; i < 4; i++) await page.keyboard.press('-');
       const card = page.locator('#media-grid .image-card[data-id="2"]');
       for (const action of actions) {
+        await card.scrollIntoViewIfNeeded();
+        await card.hover();
         const button = card.locator(`[data-action="${action}"]`);
-        await button.scrollIntoViewIfNeeded();
+        await expect(button).toBeVisible();
+        await button.scrollIntoViewIfNeeded(); // narrow previews scroll the action row
         const bounds = await card.boundingBox();
         const target = (await button.boundingBox())!;
         expect(target.x).toBeGreaterThanOrEqual(bounds!.x);
@@ -183,15 +201,20 @@ test('every action stays inside and clickable on small regular and picture previ
         }), `${width}px ${picture ? 'picture' : 'regular'} ${action} hit target`).toBe(true);
         await button.click();
         await expect.poll(() => page.evaluate(() => (window as any).clickedActions.at(-1))).toBe(action);
-        if (action === 'notes' || action === 'tags') {
-          await expect(page.locator(`#${action}-modal`)).toHaveClass(/open/);
+        if (action === 'more') {
+          await expect(page.locator('.shortcut-picker[aria-label="Media actions"]')).toBeVisible();
           await page.keyboard.press('Escape');
-          await expect(page.locator(`#${action}-modal`)).toBeHidden();
         }
         if (action === 'play') {
           await expect(page.locator('#player')).toHaveClass(/open/);
           await page.keyboard.press('Escape');
         }
+      }
+      for (const [action, label] of menuActions) {
+        await card.scrollIntoViewIfNeeded();
+        await cardAction(page, card, label);
+        await expect.poll(() => page.evaluate(() => (window as any).clickedActions.at(-1)), `${width}px ${action} via menu`).toBe(action);
+        await closeDialog(action);
       }
     }
   }
@@ -200,11 +223,11 @@ test('every action stays inside and clickable on small regular and picture previ
 test('picture rows fit metadata, preserve order/selection and shortcut, and paginate mixed media', async ({ page }, testInfo) => {
   const cards = page.locator('#media-grid > .media-card');
   const before = await boxes(page);
-  await cards.nth(2).focus();
+  await cards.nth(2).locator('.media-open').focus();
   const selectedId = await page.locator('.media-card.selected').getAttribute('data-id');
   await page.keyboard.press('g');
   await expect(page.locator('#picture-layout-toggle')).toHaveAttribute('aria-pressed', 'true');
-  await expect(cards.nth(2)).toBeFocused();
+  await expect(cards.nth(2).locator('.media-open')).toBeFocused();
   await expect(page.locator('#media-grid')).toHaveClass(/picture-grid/);
   expect(await page.locator('.media-card.selected').getAttribute('data-id')).toBe(selectedId);
   const after = await boxes(page);
@@ -226,7 +249,7 @@ test('picture rows fit metadata, preserve order/selection and shortcut, and pagi
   const expected = after.filter(box => Math.abs(box.top - nextTop) < 1).sort((a, b) => Math.abs(a.left + a.width / 2 - center) - Math.abs(b.left + b.width / 2 - center))[0];
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('.media-card.selected')).toHaveAttribute('data-id', expected.id);
-  await cards.last().focus();
+  await cards.last().locator('.media-open').focus();
   await page.keyboard.press('ArrowDown');
   await expect(cards.last()).toHaveClass(/selected/);
 
@@ -242,7 +265,7 @@ test('picture rows fit metadata, preserve order/selection and shortcut, and pagi
 
 test('picture preference survives reload and narrow reflow has no overflow or lost keyboard cards', async ({ page }, testInfo) => {
   await page.keyboard.press('g');
-  await page.reload();
+  await page.goto('/'); // a fresh load of the set list
   await expect(page.locator('#picture-layout-toggle')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#media-grid')).not.toHaveClass(/picture-grid/); // Sets remain regular cards.
   await page.getByRole('button', { name: 'Set pictures', exact: true }).click();

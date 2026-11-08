@@ -72,7 +72,7 @@ test('closing Tags with Escape restores vi navigation and search', async ({ page
   await expect(page.locator('#tags-new')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.locator('#tags-modal')).not.toHaveClass(/open/);
-  await expect(card).toBeFocused();
+  await expect(card.locator('.media-open')).toBeFocused();
   // The fixture images fit in one grid row, so vi 'l' moves to the next card.
   await page.keyboard.press('l');
   await expect(page.locator('#media-grid .media-card.selected')).not.toHaveAttribute('data-id', (await card.getAttribute('data-id')) || '');
@@ -101,7 +101,7 @@ test('folder browsing and Backspace return to the set and set grid', async ({ pa
   await expect(page.locator('#breadcrumb-bar')).toContainText('aesops-fables');
   // Inside the folder, vi h/l move the selection between episode cards.
   const cards = page.locator('#media-grid .audio-card');
-  await cards.first().focus();
+  await cards.first().locator('.media-open').focus();
   await expect(cards.first()).toHaveClass(/selected/);
   await page.keyboard.press('l');
   await expect(cards.nth(1)).toHaveClass(/selected/);
@@ -111,7 +111,7 @@ test('folder browsing and Backspace return to the set and set grid', async ({ pa
   await page.keyboard.press('Backspace');
   await expect(folder).toBeVisible();
   const coverRequest = page.waitForRequest(request => request.method() === 'POST' && /\/api\/sets\/\d+\/cover/.test(request.url()));
-  await page.getByRole('button', { name: 'Regenerate cover for folder aesops-fables' }).click();
+  await cardAction(page, page.locator('#media-grid .folder-card').filter({ has: folder }), 'Regenerate cover for folder aesops-fables');
   await coverRequest;
   await expect(page.locator('#toast')).toContainText(/Folder cover regenerated|no media files available for cover/);
   await folder.focus();
@@ -143,7 +143,7 @@ test('open dialogs keep vi and admin shortcuts from acting behind them', async (
   expect(rescans).toBe(0);
   await page.keyboard.press('Escape');
   await expect(page.locator('#tags-modal')).not.toHaveClass(/open/);
-  await expect(card).toBeFocused();
+  await expect(card.locator('.media-open')).toBeFocused();
 });
 
 test('a focused toolbar button keeps / search and Enter activation', async ({ page }) => {
@@ -154,6 +154,9 @@ test('a focused toolbar button keeps / search and Enter activation', async ({ pa
   await (await headerItem(page, '#help-toggle')).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#help-modal')).toHaveClass(/open/);
+  // Help opens with its filter focused, where ? is typed literally.
+  await expect(page.locator('#help-search')).toBeFocused();
+  await page.locator('#help-close').focus();
   // With help as the only dialog, ? closes it again.
   await page.keyboard.press('?');
   await expect(page.locator('#help-modal')).not.toHaveClass(/open/);
@@ -178,13 +181,14 @@ test('Space toggles a focused set row but not sidebar buttons', async ({ page })
   await page.keyboard.press(' ');
   await expect.poll(() => item.evaluate(el => el.classList.contains('selected'))).toBe(before);
 
-  // The row's cover button and the Close button are not set rows: Space must
-  // not toggle the set (it is play/pause, a no-op with nothing loaded).
+  // The Close button is not a set row: Space must not toggle the set (it is
+  // play/pause, a no-op with nothing loaded). Set rows no longer carry a cover
+  // button; cover regeneration lives in the set card's More actions menu.
   let coverPosts = 0;
   page.on('request', request => {
     if (request.method() === 'POST' && /\/cover/.test(request.url())) coverPosts++;
   });
-  for (const button of [row.locator('[data-cover-set]'), page.locator('#menu-close')]) {
+  for (const button of [page.locator('#menu-close')]) {
     await button.focus();
     await page.keyboard.press(' ');
     expect(await item.evaluate(el => el.classList.contains('selected'))).toBe(before);
@@ -220,7 +224,8 @@ test('dialogs take focus, keep Tab inside, and return focus on close', async ({ 
   await page.keyboard.press('Enter');
   const panel = page.locator('#admin-modal');
   await expect(panel).toHaveClass(/open/);
-  await expect(panel.getByPlaceholder('Username')).toBeFocused();
+  // The section picker is the dialog's first control.
+  await expect(panel.locator('#admin-section-select')).toBeFocused();
 
   // Tab and Shift+Tab never leave the open dialog.
   for (let i = 0; i < 25; i++) {
@@ -236,7 +241,7 @@ test('dialogs take focus, keep Tab inside, and return focus on close', async ({ 
   // A shortcut-opened dialog (notes via n) returns focus to the card.
   await page.getByRole('button', { name: 'Set images' }).click();
   const card = page.locator('#media-grid .image-card').first();
-  await card.focus();
+  await card.locator('.media-open').focus();
   await page.keyboard.press('n');
   await expect(page.locator('#notes-modal')).toHaveClass(/open/);
   await expect(page.locator('#notes-textarea')).toBeFocused();
@@ -244,7 +249,7 @@ test('dialogs take focus, keep Tab inside, and return focus on close', async ({ 
   // keeps both focus and its selection.
   await page.keyboard.press('Escape');
   await expect(page.locator('#notes-modal')).not.toHaveClass(/open/);
-  await expect(card).toBeFocused();
+  await expect(card.locator('.media-open')).toBeFocused();
   await expect(card).toHaveClass(/selected/);
 });
 
@@ -268,13 +273,13 @@ test('theme toggle switches by keyboard and survives a reload', async ({ page })
 test('t, F and A reach tags, favorites and the admin panel from the keyboard', async ({ page }) => {
   await page.getByRole('button', { name: 'Set images' }).click();
   const card = page.locator('#media-grid .image-card').nth(2);
-  await card.focus();
+  await card.locator('.media-open').focus();
   const id = await card.getAttribute('data-id');
 
   await page.keyboard.press('t');
   await expect(page.locator('#tags-modal')).toHaveClass(/open/);
   await page.keyboard.press('Escape');
-  await expect(card).toBeFocused();
+  await expect(card.locator('.media-open')).toBeFocused();
 
   const heart = card.locator('[data-action="favorite"]');
   const wasFavorite = await heart.evaluate(el => el.classList.contains('active'));

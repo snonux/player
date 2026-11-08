@@ -194,14 +194,14 @@ test('clearing the search input restores the full grid', async ({ page }) => {
   await openSearchOverlay(page);
   await page.locator('#search-clear').click();
 
-  // Wait for the debounce + reload to finish.
-  await page.waitForTimeout(800);
+  // An empty query keeps the search page open with its prompt; Back returns
+  // to the set grid the search started from.
+  await expect(page.locator('#search-input')).toHaveValue('');
+  await expect(grid.getByRole('status')).toHaveText('Search songs, albums and artists.');
+  await grid.locator('[data-search-back]').click();
   await expect(grid.locator('text=Loading...')).toHaveCount(0, { timeout: 10_000 });
-
-  const afterClearCount = await grid.locator('.media-card, .media-row, .folder-card').count();
-  // After clearing the count should match the baseline (or be at least as large,
-  // accounting for any items that may have been refreshed by an in-flight scan).
-  expect(afterClearCount).toBeGreaterThanOrEqual(baselineCount);
+  await expect.poll(() => grid.locator('.media-card, .media-row, .folder-card').count()).toBeGreaterThanOrEqual(baselineCount);
+  expect(baselineCount).toBeGreaterThan(0);
 });
 
 // Silence unused-import warnings for type-only imports.

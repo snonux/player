@@ -215,7 +215,7 @@ export function initPlayer(options = {}) {
       return next && (next.media?.is_podcast || next.media?.podcast_episode || state.sets.some(set => set.id === next.media?.set_id && set.is_podcast)) ? null : next;
     }, available: () => queueState().active && !isDetached() && !isCasting() && reportProgress,
     boundary: adoptGaplessBoundary, fallback: returnToStreaming });
- if (!deviceLibraryMode()) initStreamQuality(e.player);
+  if (!deviceLibraryMode() && options.streamQuality !== false) initStreamQuality(e.player);
   lyrics = initLyrics({ ...e, audio: audioTransport, getPosition: () => isCasting() ? castPosition() : audioTransport.currentTime, onSeek: seconds => {
     if (isCasting()) {
       const duration = castDuration() || effectiveDuration();
