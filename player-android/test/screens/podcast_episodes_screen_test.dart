@@ -77,8 +77,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(repository.queries.last, (null, 'uncompleted', 40));
     expect(list.controller!.offset, before);
-    expect(tester.widget<ChoiceChip>(
-        find.widgetWithText(ChoiceChip, 'Uncompleted')).selected, isTrue);
+    expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Uncompleted'))
+            .selected,
+        isTrue);
   });
   testWidgets(
       'completed episodes leave the default overview and remain recoverable through filters',

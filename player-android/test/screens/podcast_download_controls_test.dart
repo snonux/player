@@ -100,36 +100,50 @@ void main() {
     await tester.tap(find.text('Podcast'));
     await tester.pumpAndSettle();
     expect(find.text('Episode one'), findsOneWidget);
-    await tester.tap(find.text('Download'));
+    // The row offers download state, Play and the episode sheet.
+    await tester.tap(find.byTooltip('Download'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Cancel download'), findsOneWidget);
+    expect(
+        tester
+            .widget<IconButton>(
+                find.widgetWithIcon(IconButton, Icons.play_arrow))
+            .onPressed,
+        isNotNull,
+        reason: 'A download must not disable streaming playback.');
+    await tester.tap(find.byTooltip('More episode actions'));
     await tester.pumpAndSettle();
     expect(find.text('Download pending'), findsOneWidget);
     expect(
         tester
             .widget<FilledButton>(find.widgetWithText(FilledButton, 'Play'))
             .onPressed,
-        isNotNull,
-        reason: 'A download must not disable streaming playback.');
+        isNotNull);
     await tester.tap(find.text('Cancel download'));
     await tester.pumpAndSettle();
-    expect(find.text('Download'), findsOneWidget);
-    await tester.tap(find.text('Download'));
+    expect(find.widgetWithText(OutlinedButton, 'Download'), findsOneWidget);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Download'));
     await tester.pumpAndSettle();
     downloads.finish('failed');
     await tester.pumpAndSettle();
-    expect(find.text('Retry download'), findsOneWidget);
-    await tester.tap(find.text('Retry download'));
+    expect(find.text('Publisher unavailable. Retry download.'), findsOneWidget);
+    expect(find.byTooltip('Retry download'), findsOneWidget);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Retry download'));
     await tester.pumpAndSettle();
     downloads.finish('available');
     await tester.pumpAndSettle();
     expect(find.text('Available on this device'), findsOneWidget);
+    expect(find.byTooltip('Available on this device'), findsOneWidget);
     expect(find.text('Play'), findsOneWidget);
-    await tester.tap(find.byTooltip('More episode actions'));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('Delete downloaded file'));
     await tester.pumpAndSettle();
-    expect(find.text('Download'), findsOneWidget);
-    expect(find.text('Episode one'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Download'), findsOneWidget);
     expect(downloads.attempts, 3);
+    Navigator.of(tester.element(find.text('Episode one').last),
+            rootNavigator: true)
+        .pop();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Download'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(find.text('Podcasts on this device'), findsOneWidget);
@@ -149,14 +163,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Podcast'));
     await tester.pumpAndSettle();
-    final download = find.widgetWithText(TextButton, 'Download');
-    expect(tester.widget<TextButton>(download).onPressed, isNotNull);
+    final download = find.widgetWithIcon(IconButton, Icons.download_outlined);
+    expect(tester.widget<IconButton>(download).onPressed, isNotNull);
     // Spurious provider notifies must not restart copy() into a permanent
     // waiting FutureBuilder that greys out Download.
     downloads.notifyListeners();
     await tester.pump();
     downloads.notifyListeners();
     await tester.pump();
-    expect(tester.widget<TextButton>(download).onPressed, isNotNull);
+    expect(tester.widget<IconButton>(download).onPressed, isNotNull);
   });
 }

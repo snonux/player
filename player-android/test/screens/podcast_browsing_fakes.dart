@@ -163,3 +163,21 @@ Widget podcastRoutingApp(Widget screen) {
   addTearDown(router.dispose);
   return MaterialApp.router(routerConfig: router);
 }
+
+/// Switches the episode or podcast list layout through the screen menu.
+Future<void> showPodcastLayout(WidgetTester tester,
+    {required bool grid}) async {
+  final views = find.byTooltip('Podcast views');
+  await tester.tap(
+      views.evaluate().isNotEmpty ? views : find.byTooltip('Podcast options'));
+  await tester.pumpAndSettle();
+  final label = grid ? 'Show as grid' : 'Show as list';
+  if (find.text(label).evaluate().isEmpty) {
+    // Already in the requested layout; close the menu.
+    await tester.tapAt(Offset.zero);
+    await tester.pumpAndSettle();
+    return;
+  }
+  await tester.tap(find.text(label));
+  await tester.pumpAndSettle();
+}

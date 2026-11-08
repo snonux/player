@@ -17,8 +17,12 @@ class PodcastArtwork extends StatelessWidget {
   final BoxFit fit;
   final Widget? unavailable;
 
-  Widget placeholder() => const ColoredBox(
-      color: Colors.transparent, child: Center(child: Icon(Icons.podcasts)));
+  Widget placeholder() => Builder(
+      builder: (context) => ColoredBox(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: Center(
+              child: Icon(Icons.podcasts,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant))));
 
   Widget image(String url, String fallback) => CachedNetworkImage(
       imageUrl: url,
