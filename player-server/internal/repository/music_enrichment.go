@@ -1,12 +1,12 @@
 package repository
 
 import (
-	"github.com/snonux/player/internal/model"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/snonux/player/internal/model"
 )
 
 // MusicEnrichmentRepo caches optional provider descriptions by catalog identity.

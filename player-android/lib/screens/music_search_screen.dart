@@ -52,12 +52,9 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
   }
 
   bool _ratedOnly = false, _highestRated = false;
-  Widget _rating(String kind, Map<String, dynamic> entity) => MusicRatingButton(
-      key: ValueKey(
-          'rating-$kind-${entity[kind == 'song' ? 'id' : '${kind}_key']}'),
-      kind: kind,
-      entity: entity,
-      onChanged: () => setState(() {}));
+  Widget _rating(String kind, Map<String, dynamic> entity) =>
+      MusicRatingButton.keyed(
+          kind: kind, entity: entity, onChanged: () => setState(() {}));
   bool _loading = false;
   String? _error;
   String _group = 'All';

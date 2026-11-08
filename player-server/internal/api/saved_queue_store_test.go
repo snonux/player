@@ -1,12 +1,12 @@
 package api
 
 import (
+	"context"
 	"github.com/snonux/player/internal"
 	"github.com/snonux/player/internal/auth"
 	"github.com/snonux/player/internal/clock"
 	"github.com/snonux/player/internal/model"
 	"github.com/snonux/player/internal/repository"
-	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"

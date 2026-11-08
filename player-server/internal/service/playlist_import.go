@@ -281,7 +281,7 @@ func resolveM3UPath(source, base, text string) (string, bool) {
 	if !strings.HasPrefix(text, "./") && strings.Contains(strings.Split(text, "/")[0], ":") {
 		return "", false
 	}
-	rel := text
+	var rel string
 	if base == "folder" {
 		rel = path.Join(path.Dir(source), text)
 	} else {

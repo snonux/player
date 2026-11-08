@@ -127,6 +127,9 @@ func scanMedia(row sqlScanner, extra ...any) (*model.Media, error) {
 	return &m, nil
 }
 
+// scanMediaRow is scanMedia without extra columns, for queryList.
+func scanMediaRow(row sqlScanner) (*model.Media, error) { return scanMedia(row) }
+
 // GetMediaByID retrieves a media by ID.
 func (s *SQLite) GetMediaByID(ctx context.Context, id int64) (*model.Media, error) {
 	row := s.db.QueryRowContext(ctx,
@@ -351,21 +354,7 @@ func mediaOrderBy(value string) string {
 
 // queryMedia runs a query selecting mediaListColumns and scans every row.
 func (s *SQLite) queryMedia(ctx context.Context, query string, args []any) ([]model.Media, error) {
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("list media: %w", err)
-	}
-	defer rows.Close()
-
-	var media []model.Media
-	for rows.Next() {
-		m, err := scanMedia(rows)
-		if err != nil {
-			return nil, err
-		}
-		media = append(media, *m)
-	}
-	return media, rows.Err()
+	return queryList(ctx, s.db, "list media", byValue(scanMediaRow), query, args...)
 }
 
 // anySlice converts typed values to database/sql bind arguments.
@@ -379,21 +368,8 @@ func anySlice[T any](values []T) []any {
 
 // ListDeletedMedia returns all soft-deleted media.
 func (s *SQLite) ListDeletedMedia(ctx context.Context) ([]model.Media, error) {
-	rows, err := s.db.QueryContext(ctx,
+	return queryList(ctx, s.db, "list deleted media", byValue(scanMediaRow),
 		`SELECT id, set_id, rel_path, file_name, abs_path, type, duration, codec, resolution, bitrate, file_size_bytes, width, height, exif_camera, exif_lens, exif_date, exif_iso, exif_f_number, exif_exposure, exif_focal_length, thumbnail_path, play_count, deleted_at, created_at, music, `+podcastMediaColumn+` FROM media WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`)
-	if err != nil {
-		return nil, fmt.Errorf("list deleted media: %w", err)
-	}
-	defer rows.Close()
-	var media []model.Media
-	for rows.Next() {
-		m, err := scanMedia(rows)
-		if err != nil {
-			return nil, err
-		}
-		media = append(media, *m)
-	}
-	return media, rows.Err()
 }
 
 // IncrementPlayCount increments the play_count of a media by 1.

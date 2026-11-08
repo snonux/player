@@ -7,6 +7,7 @@ import '../app_routes.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../widgets/authenticated_network_image.dart';
+import '../widgets/state_views.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
 
@@ -120,7 +121,7 @@ class _ContinueWatchingScreenState
 
     // Show an error view with a retry button if the load failed.
     if (_error != null) {
-      return _ErrorView(message: _error!, onRetry: _load);
+      return ErrorRetryView(keyPrefix: 'continue_watching', message: _error!, onRetry: _load);
     }
 
     // [RefreshIndicator] wraps the scrollable content so pull-to-refresh
@@ -131,7 +132,7 @@ class _ContinueWatchingScreenState
     return RefreshIndicator(
       onRefresh: _load,
       child: _items == null || _items!.isEmpty
-          ? const _EmptyView()
+          ? const EmptyStateView(icon: Icons.play_circle_outline, title: 'Nothing in progress', titleKey: Key('continue_watching_empty'), message: 'Start playing something and it will appear here.')
           : _ResumeList(items: _items!, client: client, onTap: _onCardTap),
     );
   }
@@ -420,92 +421,6 @@ class _TypeIcon extends StatelessWidget {
       icon,
       size: 18,
       color: Theme.of(context).colorScheme.primary,
-    );
-  }
-}
-
-/// Full-screen empty-state view shown when [listInProgress] returns an empty list.
-///
-/// Wrapped in a [ListView] with [AlwaysScrollableScrollPhysics] so the
-/// [RefreshIndicator] can still trigger pull-to-refresh with no content.
-class _EmptyView extends StatelessWidget {
-  const _EmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        SizedBox(
-          height: MediaQuery.of(context).size.height * 0.6,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.play_circle_outline,
-                size: 72,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Nothing in progress',
-                key: const Key('continue_watching_empty'),
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Start playing something and it will appear here.',
-                style: Theme.of(context).textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Full-screen error view with a retry button.
-///
-/// Shown when [listInProgress] throws (network error, server error, etc.).
-/// The [message] comes from [continueWatchingErrorMessage].
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 56,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('continue_watching_error'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              key: const Key('continue_watching_retry'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

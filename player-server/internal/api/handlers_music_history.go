@@ -1,10 +1,10 @@
 package api
 
 import (
+	"encoding/json"
 	"github.com/snonux/player/internal/model"
 	"github.com/snonux/player/internal/repository"
 	"github.com/snonux/player/internal/service"
-	"encoding/json"
 	"net/http"
 	"strconv"
 )

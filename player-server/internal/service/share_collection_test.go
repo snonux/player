@@ -1,10 +1,10 @@
 package service
 
 import (
-	"github.com/snonux/player/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/snonux/player/internal/model"
 	"strings"
 	"testing"
 	"time"

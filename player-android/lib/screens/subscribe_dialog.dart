@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/player_api_client.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/state_views.dart';
 
 // ---------------------------------------------------------------------------
 // showSubscribeDialog — public entry point
@@ -165,7 +166,7 @@ class _SubscribeDialogState extends State<_SubscribeDialog> {
         _SetNameField(controller: _setNameController),
         if (_error != null) ...[
           const SizedBox(height: 12),
-          _ErrorText(message: _error!),
+          InlineErrorText(_error!, key: const Key('subscribe_error')),
         ],
       ],
     );
@@ -258,25 +259,3 @@ class _SetNameField extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // _ErrorText
 // ---------------------------------------------------------------------------
-
-/// Inline error message shown when the subscribePodcast API call fails.
-///
-/// Uses the error colour from [ColorScheme] for semantic consistency with
-/// other error states in the app.
-class _ErrorText extends StatelessWidget {
-  const _ErrorText({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      message,
-      key: const Key('subscribe_error'),
-      style: Theme.of(context)
-          .textTheme
-          .bodySmall
-          ?.copyWith(color: Theme.of(context).colorScheme.error),
-    );
-  }
-}

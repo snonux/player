@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v101';
+const CACHE = 'kiss-v102';
 const ASSETS = [
   '/',
   '/index.html',
@@ -18,6 +18,7 @@ const ASSETS = [
   '/js/global-sync-view.js',
   '/js/global-sync.js',
   '/js/header-menu.js',
+  '/js/idb.js',
   '/js/local-files-store.js',
   '/js/local-files.js',
   '/js/local-podcast-state.js',

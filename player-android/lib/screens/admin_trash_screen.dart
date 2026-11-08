@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/state_views.dart';
 
 /// Admin-only screen that lists soft-deleted media items (the trash).
 ///
@@ -228,13 +229,13 @@ class _AdminTrashScreenState extends ConsumerState<AdminTrashScreen> {
     }
 
     if (_error != null) {
-      return _ErrorView(message: _error!, onRetry: _load);
+      return ErrorRetryView(keyPrefix: 'admin_trash', message: _error!, onRetry: _load);
     }
 
     return RefreshIndicator(
       onRefresh: _load,
       child: _items == null || _items!.isEmpty
-          ? const _EmptyView()
+          ? const EmptyStateView(icon: Icons.delete_outline, title: 'Trash is empty', titleKey: Key('admin_trash_empty'))
           : _TrashList(
               items: _items!,
               onRestore: _restore,
@@ -347,85 +348,6 @@ class _TypeIcon extends StatelessWidget {
     return Icon(
       isAudio ? Icons.audio_file_outlined : Icons.video_file_outlined,
       color: Theme.of(context).colorScheme.onSurfaceVariant,
-    );
-  }
-}
-
-/// Full-screen empty-state shown when trash is empty.
-///
-/// Wrapped in a scrollable so the parent [RefreshIndicator] can trigger
-/// pull-to-refresh even when no content is present.
-class _EmptyView extends StatelessWidget {
-  const _EmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: SizedBox(
-          height: constraints.maxHeight,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.delete_outline,
-                  size: 72,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Trash is empty',
-                  key: const Key('admin_trash_empty'),
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Full-screen error view with a retry button.
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 56,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('admin_trash_error'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              key: const Key('admin_trash_retry'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

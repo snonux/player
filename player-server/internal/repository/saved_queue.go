@@ -1,11 +1,11 @@
 package repository
 
 import (
-	"github.com/snonux/player/internal/model"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/snonux/player/internal/model"
 )
 
 // SavedQueueRepo persists portable sessions using optimistic concurrency.

@@ -405,7 +405,9 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
+// mediaWriteAction runs one Write-service mutation on the {id} media item and
+// answers {"status":"ok"}. Missing and forbidden items map to 404 and 403.
+func (s *Server) mediaWriteAction(w http.ResponseWriter, r *http.Request, action func(ctx context.Context, id, userID int64) error) {
 	if !requireService(w, s.media.Write) {
 		return
 	}
@@ -414,7 +416,7 @@ func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	if err := s.media.Write.SoftDeleteMedia(r.Context(), id, userIDFromContext(r)); err != nil {
+	if err := action(r.Context(), id, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			notFound(w)
 			return
@@ -429,28 +431,16 @@ func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func (s *Server) handleSoftDelete(w http.ResponseWriter, r *http.Request) {
+	s.mediaWriteAction(w, r, func(ctx context.Context, id, userID int64) error {
+		return s.media.Write.SoftDeleteMedia(ctx, id, userID)
+	})
+}
+
 func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.media.Write) {
-		return
-	}
-	id, err := pathID(r, "id")
-	if err != nil || id == 0 {
-		badRequest(w, "invalid media id")
-		return
-	}
-	if err := s.media.Write.RestoreMedia(r.Context(), id, userIDFromContext(r)); err != nil {
-		if errors.Is(err, service.ErrNotFound) {
-			notFound(w)
-			return
-		}
-		if errors.Is(err, service.ErrForbidden) {
-			forbidden(w, "forbidden")
-			return
-		}
-		handleError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	s.mediaWriteAction(w, r, func(ctx context.Context, id, userID int64) error {
+		return s.media.Write.RestoreMedia(ctx, id, userID)
+	})
 }
 
 // ------------------------------------------------------------------

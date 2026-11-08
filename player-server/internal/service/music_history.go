@@ -1,10 +1,10 @@
 package service
 
 import (
-	"github.com/snonux/player/internal/model"
-	"github.com/snonux/player/internal/repository"
 	"context"
 	"fmt"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
 )
 
 // MusicHistoryResult includes the next cursor only when another page may exist.

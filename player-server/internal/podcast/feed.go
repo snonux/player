@@ -148,22 +148,18 @@ func extractImageURL(feed *gofeed.Feed) string {
 	return ""
 }
 
-// parseDuration converts an iTunes duration string (HH:MM:SS or MM:SS) to seconds.
+// parseDuration converts an iTunes duration string (HH:MM:SS, MM:SS or
+// plain seconds) to seconds. Unparsable parts count as zero.
 func parseDuration(s string) float64 {
 	parts := strings.Split(s, ":")
-	var hours, minutes, seconds int
-
-	switch len(parts) {
-	case 3:
-		fmt.Sscanf(parts[0], "%d", &hours)
-		fmt.Sscanf(parts[1], "%d", &minutes)
-		fmt.Sscanf(parts[2], "%d", &seconds)
-	case 2:
-		fmt.Sscanf(parts[0], "%d", &minutes)
-		fmt.Sscanf(parts[1], "%d", &seconds)
-	case 1:
-		fmt.Sscanf(parts[0], "%d", &seconds)
+	if len(parts) > 3 {
+		return 0
 	}
-
-	return float64(hours*3600 + minutes*60 + seconds)
+	total := 0
+	for _, part := range parts {
+		var n int
+		_, _ = fmt.Sscanf(part, "%d", &n) // leading integer, as in "12.5"
+		total = total*60 + n
+	}
+	return float64(total)
 }

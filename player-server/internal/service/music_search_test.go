@@ -1,8 +1,8 @@
 package service
 
 import (
-	"github.com/snonux/player/internal/model"
 	"context"
+	"github.com/snonux/player/internal/model"
 	"reflect"
 	"testing"
 )

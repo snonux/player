@@ -1,10 +1,10 @@
 package repository
 
 import (
-	"github.com/snonux/player/internal/model"
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/snonux/player/internal/model"
 )
 
 // AddPlaylistSongs appends all targets atomically. Duplicate decisions are made

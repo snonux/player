@@ -55,21 +55,8 @@ func (s *SQLite) GetMusicLibrary(ctx context.Context, id int64) (*model.MusicLib
 
 // ListMusicLibraries returns all libraries ordered by name.
 func (s *SQLite) ListMusicLibraries(ctx context.Context) ([]model.MusicLibrary, error) {
-	rows, err := s.db.QueryContext(ctx,
+	return queryList(ctx, s.db, "list music libraries", byValue(scanMusicLibrary),
 		`SELECT id, name, root_path, created_at FROM music_libraries ORDER BY name`)
-	if err != nil {
-		return nil, fmt.Errorf("list music libraries: %w", err)
-	}
-	defer rows.Close()
-	var out []model.MusicLibrary
-	for rows.Next() {
-		lib, err := scanMusicLibrary(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *lib)
-	}
-	return out, rows.Err()
 }
 
 // UpdateMusicLibrary renames a library (root_path is immutable after create).

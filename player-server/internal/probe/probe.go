@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rwcarlsen/goexif/exif"
 	"github.com/snonux/player/internal/ffsafe"
 	"github.com/snonux/player/internal/mediatype"
 	"github.com/snonux/player/internal/model"
-	"github.com/rwcarlsen/goexif/exif"
 )
 
 const (

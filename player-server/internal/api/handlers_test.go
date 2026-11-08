@@ -21,10 +21,6 @@ import (
 	"github.com/snonux/player/internal/service"
 )
 
-type memFS struct {
-	http.FileSystem
-}
-
 func newTestFS(files map[string]string) http.FileSystem {
 	fsys := fstest.MapFS{}
 	for name, data := range files {
@@ -1958,12 +1954,6 @@ func buildCountStore(count int) *repository.MockStore {
 			},
 		},
 	}
-}
-
-func addSessionCookieStore(t *testing.T, sm auth.SessionManager, userID int64) *http.Cookie {
-	t.Helper()
-	id, _ := sm.CreateSession(context.Background(), userID)
-	return &http.Cookie{Name: "session", Value: id}
 }
 
 // mockPingStore wraps a Store and adds Ping capability.

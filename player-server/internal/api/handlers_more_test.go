@@ -2009,15 +2009,6 @@ func TestServer_AdminRevokePermission(t *testing.T) {
 }
 
 // ------------------------------------------------------------------
-// Custom hasher for error injection
-// ------------------------------------------------------------------
-
-type errHasher struct{}
-
-func (e *errHasher) Hash(password string) (string, error) { return "", errors.New("hash err") }
-func (e *errHasher) Compare(hash, password string) error  { return errors.New("compare err") }
-
-// ------------------------------------------------------------------
 // parseMediaListQuery
 // ------------------------------------------------------------------
 

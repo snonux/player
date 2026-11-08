@@ -52,14 +52,14 @@ func TestUserAdminService_CreateUser(t *testing.T) {
 			wantErr:   true,
 		},
 		{
-			name:    "empty password rejected",
+			name:     "empty password rejected",
 			password: "",
-			wantErr: true,
+			wantErr:  true,
 		},
 		{
-			name:    "short password rejected",
+			name:     "short password rejected",
 			password: "short",
-			wantErr: true,
+			wantErr:  true,
 		},
 	}
 

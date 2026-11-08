@@ -1,10 +1,10 @@
 import { podcastStreamMedia } from './podcast-playback.js';
 import { podcastDownloading, downloadPodcastEpisode, cancelPodcastDownload } from './podcast-downloads.js';
-import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from './podcast-metadata.js';
+import { bindPodcastMetadata, episodeCardMarkup } from './podcast-metadata.js';
 // podcastUI.js — Podcast feed manager + episode rendering.
 import { API } from './api.js';
 import { state, setMedia } from './state.js';
-import { escapeHtml, fmtDur, toast } from './utils.js';
+import { escapeHtml, toast } from './utils.js';
 import { renderSets } from './views/sets.js';
 import { setSubscribed } from './podcast-subscriptions.js';
 import { setEpisodeCompleted, podcastSyncStatus } from './podcast-episode-state.js';
@@ -257,47 +257,12 @@ async function downloadEpisode(card, ep) {
   }
 }
 
-// Compact set-folder episode card: matches subscription cards — title/status,
-// Play/Download (+ Cancel while transferring), More for completion (and
-// restart/delete once downloaded), expandable description.
+// Set-folder episode card (see episodeCardMarkup).
 export function episodeSetFolderCardHtml(ep, { downloading = false } = {}) {
-  const completed = Boolean(ep.is_completed);
-  const downloaded = Boolean(ep.is_downloaded);
-  const dateStr = publicationDate(ep.published_at);
-  const duration = ep.duration_seconds ? fmtDur(ep.duration_seconds) : '';
-  const hasProgress = Number(ep.position_seconds) > 0;
-  const canResume = downloaded && hasProgress;
-  const position = hasProgress
-    ? (canResume ? `Resume ${fmtDur(ep.position_seconds)}` : `In progress · ${fmtDur(ep.position_seconds)}`)
-    : '';
-  const downloadState = downloading
-    ? 'Downloading…'
-    : downloaded ? 'Downloaded on server' : 'Not downloaded';
-  const completeLabel = completed ? 'Mark uncompleted' : 'Mark completed';
-  const metaBits = [dateStr, duration, position, downloadState].filter(Boolean).join(' · ');
-  const playLabel = hasProgress ? 'Resume' : 'Play';
-  const descriptionBlock = showNotesHTML(ep.description);
-  const primary = `${downloading
-    ? '<button type="button" class="icon-btn btn-sm" data-action="cancel-download" title="Cancel download" aria-label="Cancel download">✕</button>'
-    : downloaded ? '' : '<button type="button" class="icon-btn btn-sm btn-download-episode" data-action="download-episode" title="Download episode" aria-label="Download episode">↓</button>'}
-    <button type="button" class="icon-btn btn-sm" data-action="play" title="${playLabel}" aria-label="${playLabel} episode">▶</button>`;
-  const extras = `
-        <button type="button" class="icon-btn btn-sm card-action-extra btn-complete${completed ? ' active' : ''}" data-action="complete"
-          title="${completeLabel}" aria-label="${completeLabel}" aria-pressed="${completed}">✓</button>
-        ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="play-beginning" title="Play from beginning" aria-label="Play from beginning">↺</button>' : ''}
-        ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="delete-download" title="Delete downloaded file" aria-label="Delete downloaded file">🗑</button>' : ''}`;
-  return `
-    <div class="thumb-wrap">
-      ${episodeArtworkHTML(ep)}
-      <span class="badge">${escapeHtml(metaBits)}</span>
-      <div class="card-actions">
-        ${primary}
-        <button type="button" class="icon-btn btn-sm card-more" data-action="more" title="More episode actions" aria-label="More episode actions" aria-haspopup="menu">☰</button>
-        ${extras}
-      </div>
-    </div>
-    <div class="meta">
-      <div class="title" title="${escapeHtml(ep.title || 'Untitled')}">${escapeHtml(ep.title || 'Untitled')}</div>
-      ${descriptionBlock}
-    </div>`;
+  return episodeCardMarkup(ep, {
+    completed: Boolean(ep.is_completed),
+    downloaded: Boolean(ep.is_downloaded),
+    downloading,
+    downloadLabel: { title: 'Download episode', aria: 'Download episode' },
+  });
 }

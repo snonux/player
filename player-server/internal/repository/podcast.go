@@ -157,40 +157,14 @@ func (s *SQLite) GetFeedBySetID(ctx context.Context, setID int64) (*model.Podcas
 
 // ListFeedsBySetID returns all podcast feeds linked to a set.
 func (s *SQLite) ListFeedsBySetID(ctx context.Context, setID int64) ([]model.PodcastFeed, error) {
-	rows, err := s.db.QueryContext(ctx,
+	return queryList(ctx, s.db, "list podcast feeds by set", byValue(scanFeed),
 		`SELECT `+feedColumns+` FROM podcast_feeds WHERE set_id = ? ORDER BY title, created_at`, setID)
-	if err != nil {
-		return nil, fmt.Errorf("list podcast feeds by set: %w", err)
-	}
-	defer rows.Close()
-	var feeds []model.PodcastFeed
-	for rows.Next() {
-		f, err := scanFeed(rows)
-		if err != nil {
-			return nil, err
-		}
-		feeds = append(feeds, *f)
-	}
-	return feeds, rows.Err()
 }
 
 // ListFeeds returns all catalog feeds; rows merged into another are left out.
 func (s *SQLite) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
-	rows, err := s.db.QueryContext(ctx,
+	return queryList(ctx, s.db, "list podcast feeds", byValue(scanFeed),
 		`SELECT `+feedColumns+` FROM podcast_feeds WHERE merged_into IS NULL ORDER BY created_at DESC`)
-	if err != nil {
-		return nil, fmt.Errorf("list podcast feeds: %w", err)
-	}
-	defer rows.Close()
-	var feeds []model.PodcastFeed
-	for rows.Next() {
-		f, err := scanFeed(rows)
-		if err != nil {
-			return nil, err
-		}
-		feeds = append(feeds, *f)
-	}
-	return feeds, rows.Err()
 }
 
 // ListFeedsNeedingCheck returns feeds eligible for a background check:
@@ -200,26 +174,13 @@ func (s *SQLite) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
 // subscription kept under a key that only later became an alias). A feed
 // nobody listens to any more is not fetched (contract §7.3).
 func (s *SQLite) ListFeedsNeedingCheck(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
-	rows, err := s.db.QueryContext(ctx,
+	return queryList(ctx, s.db, "list feeds needing check", byValue(scanFeed),
 		`SELECT `+feedColumns+` FROM podcast_feeds
 		WHERE (next_check_at IS NULL OR next_check_at <= ?) AND (last_checked_at IS NULL OR last_checked_at < ?)
 		AND merged_into IS NULL
 		AND EXISTS (SELECT 1 FROM podcast_subscriptions s WHERE s.subscribed = 1 AND (s.feed_key = podcast_feeds.feed_key
 			OR s.feed_key IN (SELECT alias_key FROM podcast_feed_aliases a WHERE a.feed_key = podcast_feeds.feed_key)))
 		ORDER BY last_checked_at ASC`, now, before)
-	if err != nil {
-		return nil, fmt.Errorf("list feeds needing check: %w", err)
-	}
-	defer rows.Close()
-	var feeds []model.PodcastFeed
-	for rows.Next() {
-		f, err := scanFeed(rows)
-		if err != nil {
-			return nil, err
-		}
-		feeds = append(feeds, *f)
-	}
-	return feeds, rows.Err()
 }
 
 // ------------------------------------------------------------------
@@ -329,22 +290,9 @@ func (s *SQLite) GetEpisodeByGUID(ctx context.Context, feedID int64, guid string
 
 // ListEpisodesByFeed returns episodes for a feed with pagination.
 func (s *SQLite) ListEpisodesByFeed(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error) {
-	rows, err := s.db.QueryContext(ctx,
+	return queryList(ctx, s.db, "list podcast episodes", byValue(scanEpisode),
 		`SELECT `+episodeColumns+` FROM podcast_episodes WHERE feed_id = ? ORDER BY published_at DESC LIMIT ? OFFSET ?`,
 		feedID, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("list podcast episodes: %w", err)
-	}
-	defer rows.Close()
-	var episodes []model.PodcastEpisode
-	for rows.Next() {
-		e, err := scanEpisode(rows)
-		if err != nil {
-			return nil, err
-		}
-		episodes = append(episodes, *e)
-	}
-	return episodes, rows.Err()
 }
 
 // ListEpisodeMediaIDs returns the media IDs linked to downloaded episodes of
@@ -474,23 +422,11 @@ func scanEpisodeWithStatus(rows *sql.Rows) (model.PodcastEpisodeWithStatus, erro
 // ListEpisodesWithStatus returns a feed's episodes with the user's
 // completion and position registers.
 func (s *SQLite) ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
-	rows, err := s.db.QueryContext(ctx, episodeWithStatusSelect+`
+	return queryList(ctx, s.db, "list episodes with status", scanEpisodeWithStatus,
+		episodeWithStatusSelect+`
 WHERE e.feed_id = ? AND COALESCE(s.deleted, 0) = 0
 ORDER BY e.published_at DESC
 LIMIT ? OFFSET ?`, userID, feedID, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("list episodes with status: %w", err)
-	}
-	defer rows.Close()
-	var episodes []model.PodcastEpisodeWithStatus
-	for rows.Next() {
-		e, err := scanEpisodeWithStatus(rows)
-		if err != nil {
-			return nil, err
-		}
-		episodes = append(episodes, e)
-	}
-	return episodes, rows.Err()
 }
 
 // ListEpisodesByFeedIDsWithStatus returns the episodes of several feeds
@@ -515,18 +451,6 @@ WHERE e.feed_id IN (%s) AND COALESCE(s.deleted, 0) = 0
 ORDER BY e.published_at DESC
 LIMIT ? OFFSET ?`, strings.Join(placeholders, ", "))
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("list episodes by feed ids with status: %w", err)
-	}
-	defer rows.Close()
-	var episodes []model.PodcastEpisodeWithStatus
-	for rows.Next() {
-		e, err := scanEpisodeWithStatus(rows)
-		if err != nil {
-			return nil, err
-		}
-		episodes = append(episodes, e)
-	}
-	return episodes, rows.Err()
+	return queryList(ctx, s.db, "list episodes by feed ids with status", scanEpisodeWithStatus,
+		query, args...)
 }

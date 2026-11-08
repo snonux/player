@@ -1,8 +1,8 @@
 package repository
 
 import (
-	"github.com/snonux/player/internal/model"
 	"context"
+	"github.com/snonux/player/internal/model"
 )
 
 // ListPlaylists is the empty default for tests unrelated to playlists.

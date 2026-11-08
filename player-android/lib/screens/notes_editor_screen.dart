@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../providers/personal_media_provider.dart';
 import '../services/personal_media_store.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/state_views.dart';
 
 // ---------------------------------------------------------------------------
 // NotesEditorScreen
@@ -365,7 +366,7 @@ class _NotesEditorScreenState extends ConsumerState<NotesEditorScreen> {
     }
 
     if (_error != null) {
-      return _ErrorView(
+      return ErrorRetryView(keyPrefix: 'notes', 
         message: _error!,
         onRetry: _load,
       );
@@ -432,54 +433,6 @@ class _NoteEditor extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
         ),
         style: Theme.of(context).textTheme.bodyLarge,
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _ErrorView
-// ---------------------------------------------------------------------------
-
-/// Full-screen error view with a retry button.
-///
-/// Shown when [getNote] throws on initial load.  [message] comes from
-/// [notesErrorMessage]; [onRetry] triggers a fresh [_load] call.
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 56,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('notes_error'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              key: const Key('notes_retry'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
       ),
     );
   }

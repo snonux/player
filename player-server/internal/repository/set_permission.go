@@ -54,34 +54,12 @@ func (s *SQLite) GetPermission(ctx context.Context, setID, userID int64) (*model
 
 // ListPermissionsBySet returns all permissions for a set.
 func (s *SQLite) ListPermissionsBySet(ctx context.Context, setID int64) ([]model.SetPermission, error) {
-	rows, err := s.db.QueryContext(ctx,
+	return queryList(ctx, s.db, "list permissions by set", byValue(scanPermission),
 		`SELECT set_id, user_id, role, created_at FROM set_permissions WHERE set_id = ?`, setID)
-	if err != nil {
-		return nil, fmt.Errorf("list permissions by set: %w", err)
-	}
-	defer rows.Close()
-	return scanPermissions(rows)
 }
 
 // ListPermissionsByUser returns all permissions for a user.
 func (s *SQLite) ListPermissionsByUser(ctx context.Context, userID int64) ([]model.SetPermission, error) {
-	rows, err := s.db.QueryContext(ctx,
+	return queryList(ctx, s.db, "list permissions by user", byValue(scanPermission),
 		`SELECT set_id, user_id, role, created_at FROM set_permissions WHERE user_id = ?`, userID)
-	if err != nil {
-		return nil, fmt.Errorf("list permissions by user: %w", err)
-	}
-	defer rows.Close()
-	return scanPermissions(rows)
-}
-
-func scanPermissions(rows *sql.Rows) ([]model.SetPermission, error) {
-	var perms []model.SetPermission
-	for rows.Next() {
-		p, err := scanPermission(rows)
-		if err != nil {
-			return nil, err
-		}
-		perms = append(perms, *p)
-	}
-	return perms, rows.Err()
 }

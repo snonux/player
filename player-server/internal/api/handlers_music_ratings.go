@@ -1,9 +1,9 @@
 package api
 
 import (
-	"github.com/snonux/player/internal/service"
 	"context"
 	"encoding/json"
+	"github.com/snonux/player/internal/service"
 	"net/http"
 	"sort"
 	"strconv"
@@ -61,26 +61,22 @@ func (s *Server) rateMusic(ctx context.Context, user int64, albums []service.Alb
 	return artists, nil
 }
 func ratedAlbums(items []service.Album, r *http.Request) []service.Album {
-	result := make([]service.Album, 0, len(items))
-	for _, item := range items {
-		if r.URL.Query().Get("rated") != "true" || item.Rating > 0 {
-			result = append(result, item)
-		}
-	}
-	if r.URL.Query().Get("sort") == "rating" {
-		sort.SliceStable(result, func(i, j int) bool { return result[i].Rating > result[j].Rating })
-	}
-	return result
+	return ratedItems(items, func(a service.Album) int { return a.Rating }, r)
 }
 func ratedArtists(items []service.Artist, r *http.Request) []service.Artist {
-	result := make([]service.Artist, 0, len(items))
+	return ratedItems(items, func(a service.Artist) int { return a.Rating }, r)
+}
+
+// ratedItems applies the ?rated=true filter and the ?sort=rating order.
+func ratedItems[T any](items []T, rating func(T) int, r *http.Request) []T {
+	result := make([]T, 0, len(items))
 	for _, item := range items {
-		if r.URL.Query().Get("rated") != "true" || item.Rating > 0 {
+		if r.URL.Query().Get("rated") != "true" || rating(item) > 0 {
 			result = append(result, item)
 		}
 	}
 	if r.URL.Query().Get("sort") == "rating" {
-		sort.SliceStable(result, func(i, j int) bool { return result[i].Rating > result[j].Rating })
+		sort.SliceStable(result, func(i, j int) bool { return rating(result[i]) > rating(result[j]) })
 	}
 	return result
 }

@@ -272,14 +272,17 @@ export function initKeyboard(handlers) {
         break;
       // Navigation
       case 'ArrowUp':
+      case 'k': // Vim-style
         e.preventDefault();
         handlers.navUp?.(e);
         break;
       case 'ArrowDown':
+      case 'j': // Vim-style
         e.preventDefault();
         handlers.navDown?.(e);
         break;
       case 'ArrowLeft':
+      case 'h': // Vim-style
         if (handlers.seekBackward?.(e)) {
           e.preventDefault();
           break;
@@ -287,29 +290,7 @@ export function initKeyboard(handlers) {
         handlers.navLeft?.(e);
         break;
       case 'ArrowRight':
-        if (handlers.seekForward?.(e)) {
-          e.preventDefault();
-          break;
-        }
-        handlers.navRight?.(e);
-        break;
-      // Vim-style navigation
-      case 'k':
-        e.preventDefault();
-        handlers.navUp?.(e);
-        break;
-      case 'j':
-        e.preventDefault();
-        handlers.navDown?.(e);
-        break;
-      case 'h':
-        if (handlers.seekBackward?.(e)) {
-          e.preventDefault();
-          break;
-        }
-        handlers.navLeft?.(e);
-        break;
-      case 'l':
+      case 'l': // Vim-style
         if (handlers.seekForward?.(e)) {
           e.preventDefault();
           break;

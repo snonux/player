@@ -176,17 +176,25 @@ func (s *Server) handleDownloadEpisode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleToggleComplete(w http.ResponseWriter, r *http.Request) {
+	s.podcastAction(w, r, "episode_id", "episode", "toggle complete", "failed to toggle completion",
+		func(ctx context.Context, id, userID int64) error {
+			return s.podcastSvc.ToggleEpisodeComplete(ctx, id, userID)
+		})
+}
+
+// podcastAction runs one podcast mutation on the id in path variable param and
+// answers 204. Access errors map to 403/404; anything else is logged as
+// logMsg and answered wrapped in failMsg.
+func (s *Server) podcastAction(w http.ResponseWriter, r *http.Request, param, label, logMsg, failMsg string, action func(ctx context.Context, id, userID int64) error) {
 	if !requireService(w, s.podcastSvc) {
 		return
 	}
-
-	episodeID, err := pathID(r, "episode_id")
-	if err != nil || episodeID == 0 {
-		badRequest(w, "invalid episode id")
+	id, err := pathID(r, param)
+	if err != nil || id == 0 {
+		badRequest(w, "invalid "+label+" id")
 		return
 	}
-
-	if err := s.podcastSvc.ToggleEpisodeComplete(r.Context(), episodeID, userIDFromContext(r)); err != nil {
+	if err := action(r.Context(), id, userIDFromContext(r)); err != nil {
 		if errors.Is(err, service.ErrForbidden) {
 			forbidden(w, "access denied")
 			return
@@ -195,42 +203,20 @@ func (s *Server) handleToggleComplete(w http.ResponseWriter, r *http.Request) {
 			notFound(w)
 			return
 		}
-		s.logger.Error("toggle complete", "err", err)
-		handleError(w, fmt.Errorf("failed to toggle completion: %w", err))
+		s.logger.Error(logMsg, "err", err)
+		handleError(w, fmt.Errorf("%s: %w", failMsg, err))
 		return
 	}
-
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleUnsubscribePodcast removes a feed together with its downloaded
 // episode media and folder. Admin only, like subscribing.
 func (s *Server) handleUnsubscribePodcast(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.podcastSvc) {
-		return
-	}
-
-	feedID, err := pathID(r, "id")
-	if err != nil || feedID == 0 {
-		badRequest(w, "invalid feed id")
-		return
-	}
-
-	if err := s.podcastSvc.UnsubscribeFeed(r.Context(), feedID, userIDFromContext(r)); err != nil {
-		if errors.Is(err, service.ErrForbidden) {
-			forbidden(w, "access denied")
-			return
-		}
-		if errors.Is(err, service.ErrNotFound) {
-			notFound(w)
-			return
-		}
-		s.logger.Error("unsubscribe podcast", "err", err)
-		handleError(w, fmt.Errorf("failed to unsubscribe: %w", err))
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	s.podcastAction(w, r, "id", "feed", "unsubscribe podcast", "failed to unsubscribe",
+		func(ctx context.Context, id, userID int64) error {
+			return s.podcastSvc.UnsubscribeFeed(ctx, id, userID)
+		})
 }
 
 // handleStreamPodcastEpisode proxies publisher bytes independently of a saved
