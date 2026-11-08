@@ -1,1 +1,1 @@
-Same-version release with the web UI revamp: the web player gets a grouped Browse sidebar (Music, Podcasts, Radio, Sets) with a b shortcut, a visible Search button, a grouped menu showing each item's key, tidier album and podcast screens, and grouped keyboard help. The Android app is unchanged since 0.15.0.
+Code quality release: a codebase audit removed duplicated code across the server, web UI and Android app. Android screens now share one consistent error and empty-state view with a Retry button. No features were removed or changed.
