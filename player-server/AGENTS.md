@@ -151,6 +151,7 @@ Global shortcuts are registered in `web/js/keyboard.js`. They are **disabled** w
 | `u` | Upload to the current set |
 | `o` | Open All podcast episodes, newest first |
 | `v` / `Delete` | Selected podcast episode: toggle listened / delete with confirmation |
+| `b` | Open / close the Browse sidebar (Music, Podcasts, Radio, Sets) and move focus into it; inside it `j`/`k` move, `Enter` opens, underlined letters jump, `Esc` or `b` closes and returns focus to the content. While focus is outside the open sidebar, every global key keeps working |
 | `w` | Open web radio (explore, auto explore, bookmarks); inside it `j`/`k`/arrows move between stations, `Enter` plays, `Esc` closes while the station keeps playing |
 
 ---

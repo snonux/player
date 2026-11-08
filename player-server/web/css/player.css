@@ -627,3 +627,36 @@
 .player-show-notes .subtitle { color: var(--text-secondary); }
 .player:has(.player-show-notes) .player-music-identity { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .player:has(.player-show-notes) .stage { flex: 0 1 100px; min-height: 48px; }
+
+/* Audio with nothing to show (no artwork, visualizer off, lyrics closed):
+   collapse the empty black stage to a slim artwork strip so the floating
+   player stops covering the list it plays from. */
+.player.open:not(.minimized):not(.has-video):not(.has-image):not(.is-fullscreen):not(.detached):has(#cover-art.hidden):has(.audio-visual.hidden):not(:has(#audio-lyrics:not(.hidden))) {
+  height: auto;
+}
+.player.open:not(.minimized):not(.has-video):not(.has-image):not(.is-fullscreen):not(.detached):has(#cover-art.hidden):has(.audio-visual.hidden):not(:has(#audio-lyrics:not(.hidden))) .stage {
+  flex: 0 0 4.5rem;
+  display: grid;
+  place-items: center;
+}
+.player.open:not(.minimized):not(.has-video):not(.has-image):not(.is-fullscreen):not(.detached):has(#cover-art.hidden):has(.audio-visual.hidden):not(:has(#audio-lyrics:not(.hidden))) .stage::before {
+  content: '♫';
+  font-size: 1.75rem;
+  color: var(--text-muted);
+}
+.player.open:not(.minimized):not(.has-video):not(.has-image):not(.is-fullscreen):not(.detached):has(#cover-art.hidden):has(.audio-visual.hidden):not(:has(#audio-lyrics:not(.hidden))) #media-video {
+  display: none;
+}
+
+/* Phones: audio keeps a short artwork/visualizer strip so the floating
+   player leaves most of the list visible. Video, images, fullscreen and the
+   detached window keep their full stage. */
+@media (max-width: 699px) {
+  .player.open:not(.minimized):not(.has-video):not(.has-image):not(.is-fullscreen):not(.detached):not(:has(#audio-lyrics:not(.hidden))) {
+    height: auto;
+  }
+  .player.open:not(.minimized):not(.has-video):not(.has-image):not(.is-fullscreen):not(.detached):not(:has(#audio-lyrics:not(.hidden))) .stage {
+    flex: 0 0 auto;
+    height: min(22vh, 9rem);
+  }
+}

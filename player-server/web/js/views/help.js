@@ -14,6 +14,7 @@ export function closeSidebar() {
   const wasOpen = sidebar.classList.contains('open');
   sidebar.classList.remove('open');
   document.querySelector('.page')?.classList.remove('has-sidebar');
+  document.getElementById('sidebar-toggle')?.setAttribute('aria-expanded', 'false');
   return wasOpen;
 }
 
@@ -77,6 +78,27 @@ export function toggleSidebar() {
   if (!sidebar) return;
   sidebar.classList.toggle('open');
   page?.classList.toggle('has-sidebar', sidebar.classList.contains('open'));
+  document.getElementById('sidebar-toggle')?.setAttribute('aria-expanded', String(sidebar.classList.contains('open')));
+}
+
+/**
+ * Keyboard path for the browse sidebar (b). Opening moves focus to the
+ * current destination so j/k, Enter and the underlined letters work right
+ * away; closing (b again or Esc inside it) returns focus to the content.
+ */
+export function toggleSidebarFromKeyboard() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  if (sidebar.classList.contains('open') && sidebar.contains(document.activeElement)) {
+    closeSidebar();
+    if (!focusSelectedCard()) document.getElementById('sidebar-toggle')?.focus();
+    return;
+  }
+  if (!sidebar.classList.contains('open')) toggleSidebar();
+  const visible = el => el && el.offsetParent !== null && !el.hidden;
+  const target = [...sidebar.querySelectorAll('.nav-item.active, .set-item.active')].map(el => el.closest('.set-row') || el).find(visible)
+    || [...sidebar.querySelectorAll('.nav-item, .set-row')].find(visible);
+  target?.focus();
 }
 
 export function toggleHelp() {
@@ -108,9 +130,17 @@ function filterHelp() {
   if (!modal) return;
   const query = (document.getElementById('help-search')?.value || '').trim().toLowerCase();
   let matches = 0;
+  const shownSections = new Set();
   modal.querySelectorAll('.help-row').forEach((row) => {
     row.hidden = !row.textContent.toLowerCase().includes(query);
-    if (!row.hidden) matches++;
+    if (!row.hidden) {
+      matches++;
+      shownSections.add(row.closest?.('.help-section'));
+    }
+  });
+  // A group heading hides with its last matching row.
+  modal.querySelectorAll('.help-section').forEach((section) => {
+    if (section.matches?.('.help-section')) section.hidden = !shownSections.has(section);
   });
   const empty = document.getElementById('help-no-results');
   if (empty) empty.hidden = matches !== 0;

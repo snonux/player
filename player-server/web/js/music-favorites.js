@@ -2,8 +2,10 @@ import { API } from './api.js';
 import { state } from './state.js';
 import { escapeHtml as esc, toast } from './utils.js';
 
+// The heart is the icon; compact cards hide the word visually (the button
+// keeps its aria-label), detail views show both.
 function entityFavoriteLabel(favorite) {
- return `${favorite ? '♥' : '♡'} ${favorite ? 'Favorited' : 'Favorite'}`;
+ return `<span class="fav-heart" aria-hidden="true">${favorite ? '♥' : '♡'}</span> <span class="fav-text">${favorite ? 'Favorited' : 'Favorite'}</span>`;
 }
 export function favoriteButton(kind,key,item) {
  const favorite = Boolean(item.is_favorite);
@@ -18,7 +20,7 @@ export function bindFavorites(grid,current) {
    if(!current()||!button.isConnected)return;
    button.setAttribute('aria-pressed',String(next));
    button.setAttribute('aria-label',`${next?'Unfavorite':'Favorite'} ${button.dataset.kind}`);
-   button.textContent=entityFavoriteLabel(next);
+   button.innerHTML=entityFavoriteLabel(next);
    toast(next?'Added to favorites.':'Removed from favorites.','success');
    if(!next && grid.querySelector('[data-favorites-only]')?.checked)document.dispatchEvent(new Event('music:favorite-refresh'));
   }catch(error){if(current())toast(error.message||'Could not save favorite. Check your connection and retry.','error');}

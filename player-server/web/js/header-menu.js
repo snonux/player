@@ -13,7 +13,9 @@ export function initHeaderMenu() {
   menu.addEventListener('toggle', event => {
     const open = event.newState === 'open';
     toggle.setAttribute('aria-expanded', String(open));
-    if (open) items()[0]?.focus();
+    // Keep focus that already moved into the menu (a click or script that
+    // targeted one item); otherwise start on the first item.
+    if (open) { if (!menu.contains(document.activeElement)) items()[0]?.focus(); }
     // Escape or light dismiss can drop focus to <body>; dialogs opened from
     // an item have already taken focus by now and keep it.
     else if (document.activeElement === document.body || menu.contains(document.activeElement)) toggle.focus();

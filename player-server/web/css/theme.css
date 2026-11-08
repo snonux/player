@@ -135,3 +135,5 @@
 .appearance-controls { display: grid; gap: var(--gap); }
 .appearance-controls label { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gap); }
 .appearance-controls select { max-width: 100%; min-height: var(--control-height); }
+.appearance-controls label:has(> input[type="checkbox"]) { justify-content: flex-start; min-height: 2.75rem; }
+.appearance-controls input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--accent); }
