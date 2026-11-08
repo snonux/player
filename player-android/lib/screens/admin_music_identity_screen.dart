@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/state_views.dart';
 
 /// Admin-only screen for ambiguous music identity conflicts.
 ///
@@ -125,13 +126,13 @@ class _AdminMusicIdentityScreenState
       );
     }
     if (_error != null) {
-      return _ErrorView(message: _error!, onRetry: _load);
+      return ErrorRetryView(keyPrefix: 'admin_identity', message: _error!, onRetry: _load);
     }
     final conflicts = _conflicts ?? const <MusicIdentityConflict>[];
     return RefreshIndicator(
       onRefresh: _load,
       child: conflicts.isEmpty
-          ? const _EmptyView()
+          ? const EmptyStateView(icon: Icons.fingerprint_outlined, title: 'No identity conflicts', titleKey: Key('admin_identity_empty'), message: 'Moved songs keep playlists and history automatically. Only ambiguous matches appear here.')
           : ListView.separated(
               key: const Key('admin_identity_list'),
               itemCount: conflicts.length,
@@ -206,83 +207,6 @@ class _AdminMusicIdentityScreenState
                 );
               },
             ),
-    );
-  }
-}
-
-class _EmptyView extends StatelessWidget {
-  const _EmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: SizedBox(
-          height: constraints.maxHeight,
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.fingerprint_outlined,
-                    size: 72,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No identity conflicts',
-                    key: const Key('admin_identity_empty'),
-                    style: Theme.of(context).textTheme.titleMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Moved songs keep playlists and history automatically. '
-                    'Only ambiguous matches appear here.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              message,
-              key: const Key('admin_identity_error'),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              key: const Key('admin_identity_retry'),
-              onPressed: onRetry,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

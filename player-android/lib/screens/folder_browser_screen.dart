@@ -13,6 +13,7 @@ import '../providers/api_client_provider.dart';
 import '../widgets/authenticated_network_image.dart';
 import '../widgets/overflow_menu.dart';
 import '../widgets/thumbnail_zoom.dart';
+import '../widgets/state_views.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
 import 'media_playback_navigation.dart';
@@ -374,7 +375,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
 
     // Error view with a retry button.
     if (_error != null) {
-      return _ErrorView(message: _error!, onRetry: _load);
+      return ErrorRetryView(keyPrefix: 'folder', message: _error!, onRetry: _load);
     }
 
     return ThumbnailZoom(
@@ -406,7 +407,7 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         if (result == null || (result.folders.isEmpty && result.media.isEmpty))
           const SliverFillRemaining(
             hasScrollBody: false,
-            child: _EmptyView(),
+            child: EmptyStateView(icon: Icons.folder_open_outlined, title: 'This folder is empty', titleKey: Key('folder_empty'), message: 'Pull down to refresh.', scrollable: false),
           )
         else ...[
           // Subfolder tiles shown before media items.
@@ -808,84 +809,4 @@ class _MediaThumbnail extends StatelessWidget {
           ),
         ),
       );
-}
-
-/// Full-screen empty-state view shown when the current folder is empty.
-///
-/// Wrapped in a layout that fills the sliver so pull-to-refresh gestures are
-/// still captured by [RefreshIndicator].
-class _EmptyView extends StatelessWidget {
-  const _EmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.folder_open_outlined,
-            size: 72,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'This folder is empty',
-            key: const Key('folder_empty'),
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Pull down to refresh.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Full-screen error view with a retry button.
-///
-/// Shown when [browseSet] throws (network error, server error, etc.).
-/// The [message] comes from [folderErrorMessage], which maps exceptions to
-/// human-readable strings without exposing Dio to the screen layer.
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 56,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('folder_error'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              key: const Key('folder_retry'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

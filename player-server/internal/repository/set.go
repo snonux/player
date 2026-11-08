@@ -56,21 +56,8 @@ func (s *SQLite) GetSetByID(ctx context.Context, id int64) (*model.Set, error) {
 
 // ListSets returns all sets ordered by name.
 func (s *SQLite) ListSets(ctx context.Context) ([]model.Set, error) {
-	rows, err := s.db.QueryContext(ctx,
+	return queryList(ctx, s.db, "list sets", byValue(scanSet),
 		`SELECT `+setSelectCols+` FROM sets ORDER BY name`)
-	if err != nil {
-		return nil, fmt.Errorf("list sets: %w", err)
-	}
-	defer rows.Close()
-	var sets []model.Set
-	for rows.Next() {
-		st, err := scanSet(rows)
-		if err != nil {
-			return nil, err
-		}
-		sets = append(sets, *st)
-	}
-	return sets, rows.Err()
 }
 
 // UpdateSet modifies a set's fields.

@@ -393,11 +393,11 @@ void main() {
           unpairedServerEndpointOverride(),
           apiClientProvider.overrideWithValue(_Api()),
         ],
-        child: MaterialApp(
+        child: const MaterialApp(
             home: Scaffold(
                 body: MusicCollectionActions(
                     compact: true,
-                    collections: const [MusicCollection('album', 'album')],
+                    collections: [MusicCollection('album', 'album')],
                     playLabel: 'Play',
                     sourceLabel: 'Album')))));
     await tester.pumpAndSettle();

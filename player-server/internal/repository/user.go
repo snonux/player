@@ -52,26 +52,8 @@ func (s *SQLite) GetUserByUsername(ctx context.Context, username string) (*model
 
 // ListUsers returns all users ordered by username.
 func (s *SQLite) ListUsers(ctx context.Context) ([]model.User, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, username, password_hash, is_admin, created_at FROM users ORDER BY username`,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list users: %w", err)
-	}
-	defer rows.Close()
-	return scanUsers(rows)
-}
-
-func scanUsers(rows *sql.Rows) ([]model.User, error) {
-	var users []model.User
-	for rows.Next() {
-		u, err := scanUser(rows)
-		if err != nil {
-			return nil, err
-		}
-		users = append(users, *u)
-	}
-	return users, rows.Err()
+	return queryList(ctx, s.db, "list users", byValue(scanUser),
+		`SELECT id, username, password_hash, is_admin, created_at FROM users ORDER BY username`)
 }
 
 // DeleteUser removes a user by ID together with everything the user owns

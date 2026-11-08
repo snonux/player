@@ -1,8 +1,8 @@
 package service
 
 import (
-	"github.com/snonux/player/internal/model"
 	"context"
+	"github.com/snonux/player/internal/model"
 )
 
 // Membership returns caller-readable lists with caller-visible song identities.

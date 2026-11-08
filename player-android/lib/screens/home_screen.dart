@@ -20,6 +20,7 @@ import '../widgets/library_navigation_drawer.dart';
 import '../widgets/network_svg_image.dart';
 import '../widgets/server_switch_button.dart';
 import '../widgets/thumbnail_zoom.dart';
+import '../widgets/state_views.dart';
 import '../utils/error_mappers.dart';
 
 /// HTTP header map type used to authenticate cover-image requests against the
@@ -276,7 +277,7 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
 
     // Show an error view with a retry button if the load failed.
     if (_error != null) {
-      return _ErrorView(
+      return ErrorRetryView(keyPrefix: 'sets', 
         message: _error!,
         onRetry: _load,
       );
@@ -287,7 +288,7 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: _sets == null || _sets!.isEmpty
-          ? const _EmptyView()
+          ? const EmptyStateView(icon: Icons.video_library_outlined, title: 'No sets found', titleKey: Key('sets_empty'), message: 'Pull down to refresh.')
           : _SetsGrid(sets: _sets!, coverHeaders: _coverHeaders),
     );
   }
@@ -546,93 +547,6 @@ class _NameRow extends StatelessWidget {
             ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-      ),
-    );
-  }
-}
-
-/// Full-screen empty-state view, shown when [listSets] returns an empty list.
-///
-/// Wrapped in a [ListView] with [AlwaysScrollableScrollPhysics] so the
-/// [RefreshIndicator] parent can still trigger a pull-to-refresh gesture even
-/// when there is no scrollable content.
-class _EmptyView extends StatelessWidget {
-  const _EmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        SizedBox(
-          height: MediaQuery.of(context).size.height * 0.6,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.video_library_outlined,
-                size: 72,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No sets found',
-                key: const Key('sets_empty'),
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Pull down to refresh.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Full-screen error view with a retry button.
-///
-/// Shown when [listSets] throws (network error, server error, etc.).
-/// The [message] comes from [setsErrorMessage], which maps exceptions to
-/// human-readable strings.
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 56,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('sets_error'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              key: const Key('sets_retry'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: Text(context.tr('Retry')),
-            ),
-          ],
-        ),
       ),
     );
   }

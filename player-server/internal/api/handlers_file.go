@@ -85,25 +85,7 @@ func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRegenThumbnail(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.media.Write) {
-		return
-	}
-	id, err := pathID(r, "id")
-	if err != nil || id == 0 {
-		badRequest(w, "invalid media id")
-		return
-	}
-	if err := s.media.Write.RegenerateThumbnail(r.Context(), id, userIDFromContext(r)); err != nil {
-		if errors.Is(err, service.ErrNotFound) {
-			notFound(w)
-			return
-		}
-		if errors.Is(err, service.ErrForbidden) {
-			forbidden(w, "forbidden")
-			return
-		}
-		handleError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	s.mediaWriteAction(w, r, func(ctx context.Context, id, userID int64) error {
+		return s.media.Write.RegenerateThumbnail(ctx, id, userID)
+	})
 }

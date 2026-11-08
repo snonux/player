@@ -13,6 +13,7 @@ import '../providers/public_api_client_provider.dart';
 import '../utils/duration_formatter.dart';
 import '../utils/error_mappers.dart';
 import '../widgets/public_network_image.dart';
+import '../widgets/state_views.dart';
 
 // ---------------------------------------------------------------------------
 // Share page metadata model
@@ -272,7 +273,7 @@ class _ShareViewerScreenState extends ConsumerState<ShareViewerScreen> {
     }
 
     if (_error != null) {
-      return _ErrorView(message: _error!, onRetry: _load);
+      return ErrorRetryView(keyPrefix: 'share_viewer', icon: Icons.link_off, message: _error!, onRetry: _load);
     }
 
     if (_page == null) {
@@ -468,49 +469,4 @@ class _MetadataRow extends StatelessWidget {
   /// Returns [s] with its first character uppercased.
   static String _capitalise(String s) =>
       s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
-}
-
-/// Full-screen error view with a retry button.
-///
-/// Shown when [getSharedMediaPage] throws — e.g. 404 (invalid token),
-/// 410 (expired link), or a network failure.  The [message] comes from
-/// [shareViewerErrorMessage], which maps exceptions to human-readable strings.
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.link_off,
-              size: 56,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('share_viewer_error'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              key: const Key('share_viewer_retry'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

@@ -41,20 +41,8 @@ func (s *SQLite) GetTagByName(ctx context.Context, name string) (*model.Tag, err
 
 // ListTags returns all tags ordered by name.
 func (s *SQLite) ListTags(ctx context.Context) ([]model.Tag, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name FROM tags ORDER BY name`)
-	if err != nil {
-		return nil, fmt.Errorf("list tags: %w", err)
-	}
-	defer rows.Close()
-	var tags []model.Tag
-	for rows.Next() {
-		t, err := scanTag(rows)
-		if err != nil {
-			return nil, err
-		}
-		tags = append(tags, *t)
-	}
-	return tags, rows.Err()
+	return queryList(ctx, s.db, "list tags", byValue(scanTag),
+		`SELECT id, name FROM tags ORDER BY name`)
 }
 
 // DeleteTag removes a tag.
@@ -86,23 +74,9 @@ func (s *SQLite) RemoveTag(ctx context.Context, mediaID, tagID int64) error {
 
 // ListTagsByMedia returns tags assigned to a media item.
 func (s *SQLite) ListTagsByMedia(ctx context.Context, mediaID int64) ([]model.Tag, error) {
-	rows, err := s.db.QueryContext(ctx,
+	return queryList(ctx, s.db, "list tags by media", byValue(scanTag),
 		`SELECT t.id, t.name FROM tags t INNER JOIN media_tags mt ON mt.tag_id = t.id WHERE mt.media_id = ? ORDER BY t.name`,
-		mediaID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list tags by media: %w", err)
-	}
-	defer rows.Close()
-	var tags []model.Tag
-	for rows.Next() {
-		t, err := scanTag(rows)
-		if err != nil {
-			return nil, err
-		}
-		tags = append(tags, *t)
-	}
-	return tags, rows.Err()
+		mediaID)
 }
 
 func sqlNullString(s string) sql.NullString {

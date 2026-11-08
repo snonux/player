@@ -1,12 +1,12 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"github.com/snonux/player/internal/clock"
 	"github.com/snonux/player/internal/model"
 	"github.com/snonux/player/internal/repository"
 	"github.com/snonux/player/internal/service"
-	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"

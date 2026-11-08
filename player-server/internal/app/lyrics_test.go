@@ -1,10 +1,10 @@
 package app
 
 import (
-	"github.com/snonux/player/internal/model"
-	"github.com/snonux/player/internal/service"
 	"context"
 	"encoding/json"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/service"
 	"net/http"
 	"os"
 	"path/filepath"

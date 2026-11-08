@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
 import '../widgets/share_quality_picker.dart';
+import '../widgets/state_views.dart';
 import '../l10n/music_localizations.dart';
 import 'edit_share_dialog.dart';
 import '../providers/api_client_provider.dart';
@@ -205,13 +206,13 @@ class _MySharesScreenState extends ConsumerState<MySharesScreen> {
     }
 
     if (_error != null) {
-      return _ErrorView(message: _error!, onRetry: _load);
+      return ErrorRetryView(keyPrefix: 'shares', message: _error!, onRetry: _load);
     }
 
     return RefreshIndicator(
       onRefresh: _load,
       child: _shares == null || _shares!.isEmpty
-          ? const _EmptyView()
+          ? const EmptyStateView(icon: Icons.link_off, title: 'No shares yet', titleKey: Key('shares_empty'), message: 'Share links you create will appear here.')
           : _ShareList(
               shares: _shares!,
               onCopyLink: _copyLink,
@@ -381,92 +382,5 @@ class _ShareTile extends StatelessWidget {
     final m = expiresAt.month.toString().padLeft(2, '0');
     final d = expiresAt.day.toString().padLeft(2, '0');
     return 'Expires $y-$m-$d';
-  }
-}
-
-/// Full-screen empty-state view shown when [listMyShares] returns [].
-///
-/// Wrapped in a [ListView] with [AlwaysScrollableScrollPhysics] so the parent
-/// [RefreshIndicator] can still trigger pull-to-refresh even with no content.
-class _EmptyView extends StatelessWidget {
-  const _EmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        SizedBox(
-          height: MediaQuery.of(context).size.height * 0.6,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.link_off,
-                size: 72,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No shares yet',
-                key: const Key('shares_empty'),
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Share links you create will appear here.',
-                style: Theme.of(context).textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Full-screen error view with a retry button.
-///
-/// Shown when [listMyShares] throws (network error, server error, etc.).
-/// The [message] comes from [sharesErrorMessage], which maps exceptions to
-/// human-readable strings.
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 56,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('shares_error'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              key: const Key('shares_retry'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

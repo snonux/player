@@ -5,6 +5,7 @@ import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../providers/current_user_provider.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/state_views.dart';
 
 /// Admin-only screen for managing registered user accounts.
 ///
@@ -257,13 +258,13 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
     }
 
     if (_error != null) {
-      return _ErrorView(message: _error!, onRetry: _load);
+      return ErrorRetryView(keyPrefix: 'admin_users', message: _error!, onRetry: _load);
     }
 
     return RefreshIndicator(
       onRefresh: _load,
       child: _users == null || _users!.isEmpty
-          ? const _EmptyView()
+          ? const EmptyStateView(icon: Icons.people_outline, title: 'No users found', titleKey: Key('admin_users_empty'))
           : _UserList(
               users: _users!,
               currentUserId: currentUserId,
@@ -402,88 +403,6 @@ class _RoleBadge extends StatelessWidget {
           : colorScheme.surfaceContainerHighest,
       padding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
-    );
-  }
-}
-
-/// Full-screen empty-state shown when the user list is empty.
-///
-/// Wrapped in a [ListView] so the parent [RefreshIndicator] can still trigger
-/// pull-to-refresh even when no content is present.
-class _EmptyView extends StatelessWidget {
-  const _EmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    // Wrap in a fixed-height CustomScrollView so RefreshIndicator still works
-    // on an empty list, while Expanded+Center keeps the content vertically
-    // centred without hard-coding a fraction of the screen height.
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: SizedBox(
-          height: constraints.maxHeight,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.people_outline,
-                  size: 72,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'No users found',
-                  key: const Key('admin_users_empty'),
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Full-screen error view with a retry button.
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 56,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('admin_users_error'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              key: const Key('admin_users_retry'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

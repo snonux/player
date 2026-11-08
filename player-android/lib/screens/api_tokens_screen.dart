@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/state_views.dart';
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -339,7 +340,7 @@ class _ApiTokensScreenState extends ConsumerState<ApiTokensScreen> {
     }
 
     if (_error != null) {
-      return _ErrorView(message: _error!, onRetry: _load);
+      return ErrorRetryView(keyPrefix: 'api_tokens', message: _error!, onRetry: _load);
     }
 
     return Column(
@@ -350,7 +351,7 @@ class _ApiTokensScreenState extends ConsumerState<ApiTokensScreen> {
           child: RefreshIndicator(
             onRefresh: _load,
             child: _tokens == null || _tokens!.isEmpty
-                ? const _EmptyView()
+                ? const EmptyStateView(icon: Icons.key_off_outlined, title: 'No API tokens', titleKey: Key('api_tokens_empty'), message: 'Tap + to create one')
                 : _TokenList(tokens: _tokens!, onRevoke: _revokeToken),
           ),
         ),
@@ -470,90 +471,6 @@ class _TokenTile extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Empty and error views
 // ---------------------------------------------------------------------------
-
-/// Full-screen empty-state shown when no tokens exist.
-///
-/// Wrapped in a scrollable so the parent [RefreshIndicator] works even without
-/// content present (mirrors the pattern used in AdminUsersScreen).
-class _EmptyView extends StatelessWidget {
-  const _EmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: SizedBox(
-          height: constraints.maxHeight,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.key_off_outlined,
-                  size: 72,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'No API tokens',
-                  key: const Key('api_tokens_empty'),
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Tap + to create one',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Full-screen error view with a retry button.
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 56,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('api_tokens_error'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              key: const Key('api_tokens_retry'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Plaintext token dialog

@@ -19,6 +19,7 @@ import '../widgets/authenticated_network_image.dart';
 import '../widgets/tag_picker.dart';
 import '../widgets/keep_offline_button.dart';
 import '../widgets/overflow_menu.dart';
+import '../widgets/state_views.dart';
 import 'create_share_dialog.dart';
 import 'media_playback_navigation.dart';
 
@@ -323,7 +324,7 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     }
 
     if (_error != null) {
-      return _ErrorView(
+      return ErrorRetryView(keyPrefix: 'media_detail', 
         message: _error!,
         onRetry: _load,
       );
@@ -743,54 +744,6 @@ class _PlayButton extends StatelessWidget {
               : 'Play Audio'),
       style: FilledButton.styleFrom(
         minimumSize: const Size.fromHeight(48),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _ErrorView
-// ---------------------------------------------------------------------------
-
-/// Full-screen error view with a retry button.
-///
-/// Shown when [getMedia] throws.  The [message] comes from
-/// [mediaDetailErrorMessage], which maps exceptions to human-readable strings.
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 56,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('media_detail_error'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              key: const Key('media_detail_retry'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
       ),
     );
   }

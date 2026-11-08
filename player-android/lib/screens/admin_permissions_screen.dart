@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/state_views.dart';
 
 /// Admin-only permission editor.
 ///
@@ -261,13 +262,13 @@ class _AdminPermissionsScreenState
     }
 
     if (_error != null) {
-      return _ErrorView(message: _error!, onRetry: _load);
+      return ErrorRetryView(keyPrefix: 'admin_perms', message: _error!, onRetry: _load);
     }
 
     final users = _users;
     final sets = _sets;
     if (users == null || sets == null || users.isEmpty || sets.isEmpty) {
-      return const _EmptyView();
+      return const EmptyStateView(icon: Icons.lock_outline, title: 'No users or sets found', titleKey: Key('admin_perms_empty'), scrollable: false);
     }
 
     if (_showMatrix) {
@@ -814,69 +815,3 @@ class _UserCell extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Shared sub-widgets (empty state, error state)
 // ---------------------------------------------------------------------------
-
-class _EmptyView extends StatelessWidget {
-  const _EmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.lock_outline,
-            size: 72,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No users or sets found',
-            key: const Key('admin_perms_empty'),
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 56,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('admin_perms_error'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              key: const Key('admin_perms_retry'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

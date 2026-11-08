@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../api/player_api_client.dart';
 import '../widgets/share_quality_picker.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/state_views.dart';
 
 /// The selected calendar date is inclusive; the API expiry is the next local
 /// midnight. Constructing it by calendar day also handles DST transitions.
@@ -246,7 +247,7 @@ class _CreateShareDialogState extends State<_CreateShareDialog> {
               onChanged: (value) => setState(() => _audioQuality = value)),
         if (_error != null) ...[
           const SizedBox(height: 12),
-          _ErrorText(message: _error!),
+          InlineErrorText(_error!, key: const Key('create_share_error')),
         ],
       ],
     );
@@ -363,25 +364,3 @@ class _MaxUsesField extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // _ErrorText
 // ---------------------------------------------------------------------------
-
-/// Inline error message shown when the createShare API call fails.
-///
-/// Uses the error colour from [ColorScheme] for semantic consistency with
-/// other error states in the app.
-class _ErrorText extends StatelessWidget {
-  const _ErrorText({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      message,
-      key: const Key('create_share_error'),
-      style: Theme.of(context)
-          .textTheme
-          .bodySmall
-          ?.copyWith(color: Theme.of(context).colorScheme.error),
-    );
-  }
-}

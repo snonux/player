@@ -40,6 +40,9 @@ func (s *SQLite) CreateShare(ctx context.Context, share *model.Share) error {
 	return nil
 }
 
+// shareColumns is the column list scanShare expects.
+const shareColumns = `token, media_id, created_by, created_at, expires_at, max_uses, used_count, collection_title, media_ids, description, audio_quality`
+
 func scanShare(row sqlScanner) (*model.Share, error) {
 	var sh model.Share
 	var maxUses sql.NullInt64
@@ -64,46 +67,20 @@ func scanShare(row sqlScanner) (*model.Share, error) {
 // GetShareByToken retrieves a share by its token.
 func (s *SQLite) GetShareByToken(ctx context.Context, token string) (*model.Share, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT token, media_id, created_by, created_at, expires_at, max_uses, used_count, collection_title, media_ids, description, audio_quality FROM shares WHERE token = ?`, token)
+		`SELECT `+shareColumns+` FROM shares WHERE token = ?`, token)
 	return scanShare(row)
 }
 
 // ListSharesByMedia returns shares for a media item.
 func (s *SQLite) ListSharesByMedia(ctx context.Context, mediaID int64) ([]model.Share, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT token, media_id, created_by, created_at, expires_at, max_uses, used_count, collection_title, media_ids, description, audio_quality FROM shares WHERE media_id = ? ORDER BY created_at DESC`, mediaID)
-	if err != nil {
-		return nil, fmt.Errorf("list shares: %w", err)
-	}
-	defer rows.Close()
-	var shares []model.Share
-	for rows.Next() {
-		sh, err := scanShare(rows)
-		if err != nil {
-			return nil, err
-		}
-		shares = append(shares, *sh)
-	}
-	return shares, rows.Err()
+	return queryList(ctx, s.db, "list shares", byValue(scanShare),
+		`SELECT `+shareColumns+` FROM shares WHERE media_id = ? ORDER BY created_at DESC`, mediaID)
 }
 
 // ListSharesByUser returns all shares created by a specific user.
 func (s *SQLite) ListSharesByUser(ctx context.Context, userID int64) ([]model.Share, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT token, media_id, created_by, created_at, expires_at, max_uses, used_count, collection_title, media_ids, description, audio_quality FROM shares WHERE created_by = ? ORDER BY created_at DESC`, userID)
-	if err != nil {
-		return nil, fmt.Errorf("list shares by user: %w", err)
-	}
-	defer rows.Close()
-	var shares []model.Share
-	for rows.Next() {
-		sh, err := scanShare(rows)
-		if err != nil {
-			return nil, err
-		}
-		shares = append(shares, *sh)
-	}
-	return shares, rows.Err()
+	return queryList(ctx, s.db, "list shares by user", byValue(scanShare),
+		`SELECT `+shareColumns+` FROM shares WHERE created_by = ? ORDER BY created_at DESC`, userID)
 }
 
 // UseShare increments the used_count of a share token.

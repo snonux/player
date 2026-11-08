@@ -1,8 +1,8 @@
 package api
 
 import (
-	"github.com/snonux/player/internal/service"
 	"context"
+	"github.com/snonux/player/internal/service"
 	"net/http"
 )
 

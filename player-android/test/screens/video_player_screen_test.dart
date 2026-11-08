@@ -1741,7 +1741,7 @@ void main() {
     });
   });
   testWidgets('double-tap toggles fullscreen', (tester) async {
-    _usePlayablePlatform()..duration = const Duration(seconds: 30);
+    _usePlayablePlatform().duration = const Duration(seconds: 30);
     await _pumpScreen(tester, _FakeApiClient(), mediaTitle: 'movie.mp4');
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('video_player_chewie')), findsOneWidget);

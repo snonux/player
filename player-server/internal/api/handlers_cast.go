@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -128,17 +129,24 @@ func (s *Server) castGrant(w http.ResponseWriter, r *http.Request) (auth.CastTic
 	return grant, true
 }
 
-func (s *Server) handleCastStream(w http.ResponseWriter, r *http.Request) {
+// serveCastFile serves one Browse file (stream or thumbnail) for a cast ticket.
+func (s *Server) serveCastFile(w http.ResponseWriter, r *http.Request, get func(ctx context.Context, mediaID, userID int64) (*service.FileResult, error)) {
 	grant, ok := s.castGrant(w, r)
 	if !ok || !requireService(w, s.media.Browse) {
 		return
 	}
-	res, err := s.media.Browse.StreamMedia(r.Context(), grant.MediaID, grant.UserID)
+	res, err := get(r.Context(), grant.MediaID, grant.UserID)
 	if err != nil || res == nil {
 		writeFileError(w, err)
 		return
 	}
 	s.serveFileResult(w, r, res, false)
+}
+
+func (s *Server) handleCastStream(w http.ResponseWriter, r *http.Request) {
+	s.serveCastFile(w, r, func(ctx context.Context, mediaID, userID int64) (*service.FileResult, error) {
+		return s.media.Browse.StreamMedia(ctx, mediaID, userID)
+	})
 }
 
 func (s *Server) handleCastCompatStream(w http.ResponseWriter, r *http.Request) {
@@ -160,16 +168,9 @@ func (s *Server) handleCastCompatStream(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleCastThumbnail(w http.ResponseWriter, r *http.Request) {
-	grant, ok := s.castGrant(w, r)
-	if !ok || !requireService(w, s.media.Browse) {
-		return
-	}
-	res, err := s.media.Browse.GetThumbnail(r.Context(), grant.MediaID, grant.UserID)
-	if err != nil || res == nil {
-		writeFileError(w, err)
-		return
-	}
-	s.serveFileResult(w, r, res, false)
+	s.serveCastFile(w, r, func(ctx context.Context, mediaID, userID int64) (*service.FileResult, error) {
+		return s.media.Browse.GetThumbnail(ctx, mediaID, userID)
+	})
 }
 
 // writeFileError answers a failed media lookup. Access errors answer 404

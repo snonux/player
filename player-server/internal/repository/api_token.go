@@ -53,24 +53,9 @@ FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?`,
 
 // ListByUser returns all API tokens for a user ordered newest first.
 func (s *SQLite) ListByUser(ctx context.Context, userID int64) ([]model.APIToken, error) {
-	rows, err := s.db.QueryContext(ctx,
+	return queryList(ctx, s.db, "list api tokens by user", byValue(scanAPIToken),
 		`SELECT id, user_id, token_hash, name, last_used_at, expires_at, created_at FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC, id DESC`,
-		userID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list api tokens by user: %w", err)
-	}
-	defer rows.Close()
-
-	var tokens []model.APIToken
-	for rows.Next() {
-		token, err := scanAPIToken(rows)
-		if err != nil {
-			return nil, err
-		}
-		tokens = append(tokens, *token)
-	}
-	return tokens, rows.Err()
+		userID)
 }
 
 // DeleteByID removes an API token by database ID.

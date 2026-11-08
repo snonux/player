@@ -33,8 +33,10 @@ func (s *Server) handleChangeLyrics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (s *Server) handleLyrics(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.media.Browse) {
+// serveMediaDetail answers one uncached, per-user JSON detail of the {id}
+// media item (lyrics, audio format).
+func serveMediaDetail(w http.ResponseWriter, r *http.Request, browse service.MediaBrowseService, get func(ctx context.Context, id, userID int64) (any, error)) {
+	if !requireService(w, browse) {
 		return
 	}
 	id, err := pathID(r, "id")
@@ -42,13 +44,19 @@ func (s *Server) handleLyrics(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	result, err := s.media.Browse.GetLyrics(r.Context(), id, userIDFromContext(r))
+	result, err := get(r.Context(), id, userIDFromContext(r))
 	if err != nil {
 		handleError(w, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleLyrics(w http.ResponseWriter, r *http.Request) {
+	serveMediaDetail(w, r, s.media.Browse, func(ctx context.Context, id, userID int64) (any, error) {
+		return s.media.Browse.GetLyrics(ctx, id, userID)
+	})
 }
 func (s *Server) handleShareLyrics(w http.ResponseWriter, r *http.Request) {
 	preparePublicShare(w)
@@ -65,21 +73,9 @@ func (s *Server) handleShareLyrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAudioFormat(w http.ResponseWriter, r *http.Request) {
-	if !requireService(w, s.media.Browse) {
-		return
-	}
-	id, err := pathID(r, "id")
-	if err != nil || id == 0 {
-		badRequest(w, "invalid media id")
-		return
-	}
-	result, err := s.media.Browse.GetAudioFormat(r.Context(), id, userIDFromContext(r))
-	if err != nil {
-		handleError(w, err)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, result)
+	serveMediaDetail(w, r, s.media.Browse, func(ctx context.Context, id, userID int64) (any, error) {
+		return s.media.Browse.GetAudioFormat(ctx, id, userID)
+	})
 }
 func (s *Server) handleShareAudioFormat(w http.ResponseWriter, r *http.Request) {
 	preparePublicShare(w)

@@ -1,10 +1,10 @@
 package service
 
 import (
-	"github.com/snonux/player/internal/model"
-	"github.com/snonux/player/internal/repository"
 	"context"
 	"errors"
+	"github.com/snonux/player/internal/model"
+	"github.com/snonux/player/internal/repository"
 	"math"
 	"unicode/utf8"
 )

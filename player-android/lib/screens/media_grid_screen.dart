@@ -17,6 +17,7 @@ import '../widgets/search_filter_bar.dart';
 import '../widgets/media_filter_sheet.dart';
 import '../widgets/overflow_menu.dart';
 import '../widgets/thumbnail_zoom.dart';
+import '../widgets/state_views.dart';
 import 'media_playback_navigation.dart';
 
 // ---------------------------------------------------------------------------
@@ -606,7 +607,7 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
 
     // Show an error view with a retry button if the load failed.
     if (_error != null) {
-      return _ErrorView(message: _error!, onRetry: _load);
+      return ErrorRetryView(keyPrefix: 'media', message: _error!, onRetry: _load);
     }
 
     // [RefreshIndicator] wraps the scrollable content so pull-to-refresh
@@ -1125,87 +1126,17 @@ class _EmptyView extends StatelessWidget {
   final VoidCallback onClearFilters;
 
   @override
-  Widget build(BuildContext context) {
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        SizedBox(
-          height: MediaQuery.of(context).size.height * 0.6,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                filtered ? Icons.filter_alt_off : Icons.video_library_outlined,
-                size: 72,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                filtered ? 'Nothing matches these filters' : 'No media found',
-                key: const Key('media_empty'),
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              if (filtered)
-                FilledButton.tonal(
-                  key: const Key('media_empty_clear_filters'),
-                  onPressed: onClearFilters,
-                  child: const Text('Clear filters'),
-                )
-              else
-                Text(
-                  'Pull down to refresh.',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Full-screen error view with a retry button.
-///
-/// Shown when [listMedia] throws (network error, server error, etc.).
-/// The [message] comes from [mediaErrorMessage], which maps exceptions to
-/// human-readable strings.
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 56,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('media_error'),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              key: const Key('media_retry'),
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => EmptyStateView(
+        icon: filtered ? Icons.filter_alt_off : Icons.video_library_outlined,
+        title: filtered ? 'Nothing matches these filters' : 'No media found',
+        titleKey: const Key('media_empty'),
+        message: filtered ? null : 'Pull down to refresh.',
+        action: filtered
+            ? FilledButton.tonal(
+                key: const Key('media_empty_clear_filters'),
+                onPressed: onClearFilters,
+                child: const Text('Clear filters'),
+              )
+            : null,
+      );
 }

@@ -9,6 +9,14 @@ class MusicRatingButton extends ConsumerStatefulWidget {
       required this.kind,
       required this.entity,
       required this.onChanged});
+
+
+  /// A rating keyed by the entity's identity so list rebuilds keep its state.
+  MusicRatingButton.keyed(
+      {required this.kind, required this.entity, required this.onChanged})
+      : super(
+            key: ValueKey(
+                'rating-$kind-${entity[kind == 'song' ? 'id' : '${kind}_key']}'));
   final String kind;
   final Map<String, dynamic> entity;
   final VoidCallback onChanged;

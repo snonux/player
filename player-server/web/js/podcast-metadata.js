@@ -1,4 +1,4 @@
-import { escapeHtml } from './utils.js';
+import { escapeHtml, fmtDur } from './utils.js';
 
 export function publicationDate(value) {
  const date = value ? new Date(value) : null;
@@ -68,4 +68,55 @@ export function bindPodcastMetadata(root) {
    if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
   });
  });
+}
+
+// episodeCardMarkup renders the compact episode card shared by subscription
+// and set-folder views: title, status badge, Play/Download (+ Cancel while
+// transferring), More for completion/restart/delete; description expands.
+// More stays available during transfer so completion remains reachable;
+// Cancel is the primary control. Progress shows without a server copy
+// (Android 1t3 parity). feedTitle adds a subtitle line; downloadLabel names
+// the download button; deletable adds the "Delete episode" action and
+// showListened the "✓ Listened" line.
+export function episodeCardMarkup(ep, { completed, downloaded, downloading = false, feedTitle = '', downloadLabel, deletable = false, showListened = false }) {
+  const dateStr = publicationDate(ep.published_at);
+  const duration = ep.duration_seconds ? fmtDur(ep.duration_seconds) : '';
+  const hasProgress = Number(ep.position_seconds) > 0;
+  const canResume = downloaded && hasProgress;
+  const position = hasProgress
+    ? (canResume ? `Resume ${fmtDur(ep.position_seconds)}` : `In progress · ${fmtDur(ep.position_seconds)}`)
+    : '';
+  const downloadState = downloading
+    ? 'Downloading…'
+    : downloaded ? 'Downloaded on server' : 'Not downloaded';
+  const completeLabel = completed ? 'Mark uncompleted' : 'Mark completed';
+  const feedLine = feedTitle ? `<div class="subtitle">${escapeHtml(feedTitle)}</div>` : '';
+  const metaBits = [dateStr, duration, position, downloadState].filter(Boolean).join(' · ');
+  const playLabel = hasProgress ? 'Resume' : 'Play';
+  const primary = `${downloading
+    ? '<button type="button" class="icon-btn btn-sm" data-action="cancel-download" title="Cancel download" aria-label="Cancel download">✕</button>'
+    : downloaded ? '' : `<button type="button" class="icon-btn btn-sm btn-download-episode" data-action="download-episode" title="${downloadLabel.title}" aria-label="${downloadLabel.aria}">↓</button>`}
+    <button type="button" class="icon-btn btn-sm" data-action="play" title="${playLabel}" aria-label="${playLabel} episode">▶</button>`;
+  const extras = `
+        <button type="button" class="icon-btn btn-sm card-action-extra btn-complete${completed ? ' active' : ''}" data-action="complete"
+          title="${completeLabel}" aria-label="${completeLabel}" aria-pressed="${completed}">✓</button>
+        ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="play-beginning" title="Play from beginning" aria-label="Play from beginning">↺</button>' : ''}
+        ${downloaded ? '<button type="button" class="icon-btn btn-sm card-action-extra" data-action="delete-download" title="Delete downloaded file" aria-label="Delete downloaded file">🗑</button>' : ''}${deletable ? `
+        <button type="button" class="icon-btn btn-sm card-action-extra" data-action="delete-episode" title="Delete episode" aria-label="Delete episode">🗑</button>` : ''}`;
+  return `
+    <div class="thumb-wrap">
+      ${episodeArtworkHTML(ep)}
+      <span class="badge">${escapeHtml(metaBits)}</span>
+      <div class="card-actions">
+        ${primary}
+        <button type="button" class="icon-btn btn-sm card-more" data-action="more" title="More episode actions" aria-label="More episode actions" aria-haspopup="menu">☰</button>
+        ${extras}
+      </div>
+    </div>
+    <div class="meta">
+      <div class="title" title="${escapeHtml(ep.title || 'Untitled')}">${escapeHtml(ep.title || 'Untitled')}</div>
+      ${feedLine}
+      ${showListened && completed ? '<div class="episode-listened">✓ Listened</div>' : ''}
+      ${showNotesHTML(ep.description)}
+    </div>`;
 }

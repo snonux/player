@@ -13,14 +13,14 @@ import (
 
 // Sentinel errors for HTTP mapping.
 var (
-	ErrDisabled     = errors.New("server audio is not enabled")
-	ErrForbidden    = errors.New("you do not have permission to control server audio")
-	ErrConflict     = errors.New("server audio is controlled by another session")
-	ErrBadSession   = errors.New("invalid server audio session")
-	ErrBadPath      = errors.New("media path is outside the library")
-	ErrEmptyQueue   = errors.New("server audio queue is empty")
-	ErrBadIndex     = errors.New("queue index out of range")
-	ErrUnavailable  = errors.New("server audio output is unavailable")
+	ErrDisabled    = errors.New("server audio is not enabled")
+	ErrForbidden   = errors.New("you do not have permission to control server audio")
+	ErrConflict    = errors.New("server audio is controlled by another session")
+	ErrBadSession  = errors.New("invalid server audio session")
+	ErrBadPath     = errors.New("media path is outside the library")
+	ErrEmptyQueue  = errors.New("server audio queue is empty")
+	ErrBadIndex    = errors.New("queue index out of range")
+	ErrUnavailable = errors.New("server audio output is unavailable")
 )
 
 const (
@@ -40,11 +40,11 @@ type PathResolver func(ctx context.Context, mediaID, userID int64) (path string,
 // device selection. Client streaming stays independent; this never mutates
 // browser or Android local players.
 type Engine struct {
-	mu       sync.Mutex
-	adapter  Adapter
+	mu        sync.Mutex
+	adapter   Adapter
 	mediaRoot string
-	resolve  PathResolver
-	enabled  bool
+	resolve   PathResolver
+	enabled   bool
 	adminOnly bool
 
 	queue     []int64

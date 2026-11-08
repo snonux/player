@@ -1,9 +1,9 @@
 package api
 
 import (
+	"errors"
 	"github.com/snonux/player/internal/model"
 	"github.com/snonux/player/internal/service"
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"

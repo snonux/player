@@ -1,28 +1,17 @@
 // Best-effort IndexedDB store for browser-picked local media blobs.
+import { openIndexedDB, txDone, allRows } from './idb.js';
+
 const DB = 'player-local-files-v1';
 const STORE = 'files';
 
 function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: 'id' });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error || new Error('IndexedDB unavailable'));
+  return openIndexedDB(DB, 1, (db) => {
+    if (!db.objectStoreNames.contains(STORE)) {
+      db.createObjectStore(STORE, { keyPath: 'id' });
+    }
   });
 }
 
-function txDone(tx) {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error || new Error('IndexedDB transaction failed'));
-    tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
-  });
-}
 
 export function localFileId(file) {
   return `local:${file.name}:${file.size}:${file.lastModified}`;
@@ -33,10 +22,7 @@ export async function listLocalFiles() {
   try {
     const tx = db.transaction(STORE, 'readonly');
     const req = tx.objectStore(STORE).getAll();
-    const rows = await new Promise((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
+    const rows = await allRows(req);
     await txDone(tx);
     return rows.sort((a, b) => String(a.name).localeCompare(String(b.name)));
   } finally {

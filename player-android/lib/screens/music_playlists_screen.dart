@@ -36,12 +36,9 @@ class MusicPlaylistsScreen extends ConsumerStatefulWidget {
 
 class _MusicPlaylistsState extends ConsumerState<MusicPlaylistsScreen> {
   bool _favoritesOnly = false;
-  Widget _heart(String kind, Map<String, dynamic> entity) => MusicFavoriteButton(
-      key: ValueKey(
-          '$kind-${entity[kind == 'playlist' ? 'playlist_id' : '${kind}_key']}'),
-      kind: kind,
-      entity: entity,
-      onChanged: () => setState(() {}));
+  Widget _heart(String kind, Map<String, dynamic> entity) =>
+      MusicFavoriteButton.keyed(
+          kind: kind, entity: entity, onChanged: () => setState(() {}));
   List<Widget> _menuItems() => [
         OverflowMenuItem(
             key: const Key('playlist_create'),

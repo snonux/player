@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/api_client_provider.dart';
 import '../utils/error_mappers.dart';
+import '../widgets/state_views.dart';
 
 /// Admin-only screen for independent music library roots.
 ///
@@ -208,12 +209,12 @@ class _AdminLibrariesScreenState extends ConsumerState<AdminLibrariesScreen> {
       );
     }
     if (_error != null) {
-      return _ErrorView(message: _error!, onRetry: _load);
+      return ErrorRetryView(keyPrefix: 'admin_libraries', message: _error!, onRetry: _load);
     }
     return RefreshIndicator(
       onRefresh: _load,
       child: _libraries == null || _libraries!.isEmpty
-          ? const _EmptyView()
+          ? const EmptyStateView(icon: Icons.library_music_outlined, title: 'No libraries yet', titleKey: Key('admin_libraries_empty'), message: 'Add a filesystem root to create another music library.')
           : ListView.separated(
               key: const Key('admin_libraries_list'),
               padding: const EdgeInsets.only(bottom: 88),
@@ -489,81 +490,6 @@ class _LibraryAccessSheetState extends State<_LibraryAccessSheet> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyView extends StatelessWidget {
-  const _EmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: SizedBox(
-          height: constraints.maxHeight,
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.library_music_outlined,
-                    size: 72,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No libraries yet',
-                    key: const Key('admin_libraries_empty'),
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Add a filesystem root to create another music library.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              message,
-              key: const Key('admin_libraries_error'),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              key: const Key('admin_libraries_retry'),
-              onPressed: onRetry,
-              child: const Text('Retry'),
-            ),
-          ],
         ),
       ),
     );

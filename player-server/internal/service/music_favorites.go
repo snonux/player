@@ -1,8 +1,8 @@
 package service
 
 import (
-	"github.com/snonux/player/internal/repository"
 	"context"
+	"github.com/snonux/player/internal/repository"
 )
 
 // SetMusicFavorite validates current read access before saving an account heart.

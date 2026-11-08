@@ -475,14 +475,11 @@ type setScan struct {
 	ledger *identityLedger
 }
 
-// scanSet scans a single set in three phases: discoverSet finds the files
-// and brings the already indexed rows up to date, probeAndStore probes and
-// persists the new files, and finally audio tracks pick up cover images
-// that appeared since they were indexed.
-func (s *FSScanner) scanSet(ctx context.Context, libraryID int64, root, setPath string, progress *model.ScanProgress, ledger *identityLedger) error {
-	return s.scanSetMode(ctx, libraryID, root, setPath, progress, ledger, false)
-}
-
+// scanSetMode scans a single set in three phases: discoverSet finds the
+// files and brings the already indexed rows up to date, probeAndStore probes
+// and persists the new files, and finally audio tracks pick up cover images
+// that appeared since they were indexed. inventory runs the same discovery
+// without reconciling orphans.
 func (s *FSScanner) scanSetMode(ctx context.Context, libraryID int64, root, setPath string, progress *model.ScanProgress, ledger *identityLedger, inventory bool) error {
 	setID, setName, err := s.ensureSet(ctx, libraryID, root, setPath)
 	if err != nil {

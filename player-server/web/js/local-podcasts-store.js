@@ -1,30 +1,19 @@
+import { openIndexedDB, txDone, allRows } from './idb.js';
+
 const DB = 'player-local-podcasts-v1';
 const FEEDS = 'feeds';
 const EPISODES = 'episodes';
 
 function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(FEEDS)) db.createObjectStore(FEEDS, { keyPath: 'feed_key' });
-      if (!db.objectStoreNames.contains(EPISODES)) {
-        const store = db.createObjectStore(EPISODES, { keyPath: 'episode_key' });
-        store.createIndex('by_feed', 'feed_key', { unique: false });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error || new Error('IndexedDB unavailable'));
+  return openIndexedDB(DB, 1, (db) => {
+    if (!db.objectStoreNames.contains(FEEDS)) db.createObjectStore(FEEDS, { keyPath: 'feed_key' });
+    if (!db.objectStoreNames.contains(EPISODES)) {
+      const store = db.createObjectStore(EPISODES, { keyPath: 'episode_key' });
+      store.createIndex('by_feed', 'feed_key', { unique: false });
+    }
   });
 }
 
-function txDone(tx) {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error || new Error('IndexedDB transaction failed'));
-    tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
-  });
-}
 
 export function feedKeyFromURL(raw) {
   const url = new URL(raw);
@@ -38,10 +27,7 @@ export async function listLocalPodcastFeeds() {
   try {
     const tx = db.transaction(FEEDS, 'readonly');
     const req = tx.objectStore(FEEDS).getAll();
-    const rows = await new Promise((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
+    const rows = await allRows(req);
     await txDone(tx);
     return rows.sort((a, b) => String(a.title || a.feed_url).localeCompare(String(b.title || b.feed_url)));
   } finally {
@@ -69,10 +55,7 @@ export async function removeLocalPodcastFeed(feedKey) {
     tx.objectStore(FEEDS).delete(feedKey);
     const index = tx.objectStore(EPISODES).index('by_feed');
     const req = index.getAllKeys(feedKey);
-    const keys = await new Promise((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
+    const keys = await allRows(req);
     for (const key of keys) tx.objectStore(EPISODES).delete(key);
     await txDone(tx);
   } finally {
@@ -85,10 +68,7 @@ export async function listLocalPodcastEpisodes(feedKey) {
   try {
     const tx = db.transaction(EPISODES, 'readonly');
     const req = tx.objectStore(EPISODES).index('by_feed').getAll(feedKey);
-    const rows = await new Promise((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
+    const rows = await allRows(req);
     await txDone(tx);
     return rows.sort((a, b) => (b.published_at || 0) - (a.published_at || 0));
   } finally {
