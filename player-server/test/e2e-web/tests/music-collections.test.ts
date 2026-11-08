@@ -1,4 +1,5 @@
 import { test, expect, request, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, expectPlaying, audioState, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
@@ -114,7 +115,7 @@ test('M15 album artist playlist catalog reverse selection follows visible order;
    await enqueue(page,'Play next');const inserted=[ids[0],...ids,...ids.slice(1)];await visibleQueue(page,inserted);
    await enqueue(page,'Add to queue');await visibleQueue(page,[...inserted,...ids]);
    if(target.kind==='album')for(const [theme,width]of [['dark',1366],['light',1366],['dark',390],['light',390]] as const){
-    await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+    await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     const shot=artifact(`m15-selection-${theme}-${width}.png`);await page.screenshot({path:shot,fullPage:true});artifacts.push(shot);
    }

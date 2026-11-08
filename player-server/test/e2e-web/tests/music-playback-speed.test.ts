@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { audioState, keyboardLogin, openFolder, playCard } from './helpers/music-ui';
 
@@ -78,7 +79,7 @@ test('M23: all speed choices, popup handoff and public share stay coherent', asy
   const artifacts: string[] = [];
   for (const theme of ['dark', 'light']) {
     if (await page.locator('html').getAttribute('data-theme') !== theme) {
-      await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+      await toggleTheme(page);
     }
     await more.click();
     await expect(speed).toBeVisible();

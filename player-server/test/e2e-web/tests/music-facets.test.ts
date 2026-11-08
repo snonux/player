@@ -1,4 +1,5 @@
 import { test, expect, request } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { loadFixture, Evidence, type MusicFixture } from './helpers/music-fixture';
 import { keyboardLogin, openMusicFilters, openSidebarMusic } from './helpers/music-ui';
 import { genuineTouchTap } from './helpers/genuine-touch.cjs';
@@ -35,7 +36,7 @@ test('M08 same-song facets, chips, keyboard Back, refresh, literal release metad
   await expect(page.locator('[data-album]')).toHaveCount(1);await expect(page.locator('[data-album]')).toContainText('Release Metadata');
   await page.getByRole('combobox',{name:'Year / decade',exact:true}).selectOption('2024');
   await expect(page.locator('[data-album]')).toHaveCount(1);
-  for(const [theme,width] of [['dark',1366],['light',390]] as const){await settleMusicViewport(page,width);if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();const path=evidence.path(`m08-${theme}-${width}.png`);await page.screenshot({path,fullPage:true});artifacts.push(path);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
+  for(const [theme,width] of [['dark',1366],['light',390]] as const){await settleMusicViewport(page,width);if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);const path=evidence.path(`m08-${theme}-${width}.png`);await page.screenshot({path,fullPage:true});artifacts.push(path);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
   evidence.record({feature:'M08',scenario:'facet combination, no cross-song match, full detail, Back/refresh, Clear, release label/year and themes',result:'pass',artifacts});
  }catch(error){evidence.record({feature:'M08',scenario:'facet journey',result:'fail',detail:String(error),artifacts});throw error;}
 });

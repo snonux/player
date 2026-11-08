@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { toggleTheme } from './helpers/header-menu';
 import { join } from 'node:path';
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, SUPPORT_DIR, type MusicFixture } from './helpers/music-fixture';
@@ -93,7 +94,7 @@ test('M04 two discs and compilation: grouped artwork, structured artist links, g
    }
    for(const [theme,width] of [['dark',1366],['light',390]] as const) {
     await settleMusicViewport(page,width);
-    if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+    if(await page.locator('html').getAttribute('data-theme')!==theme) await toggleTheme(page);
     await page.locator('.music-disc').last().scrollIntoViewIfNeeded();
     const shot=evidence.path(`m04-${folder}-${theme}-${width}.png`);await page.screenshot({path:shot,animations:'disabled'});artifacts.push(shot);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

@@ -1,4 +1,5 @@
 import { test, expect, request, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, audioState, expectPlaying, captureOutput, assertValidCapture, mainSegment, openSidebarMusic, openQueueShuffleAction, openQueueMoreAction } from './helpers/music-ui';
@@ -156,7 +157,7 @@ test('M19 named album mode groups multiple discs, retains pin/source, Undo and r
       await page.setViewportSize({ width, height: 844 });
       if (await page.locator('html').getAttribute('data-theme') !== theme) {
         await panel(page).getByRole('button', { name: 'Close queue', exact: true }).click();
-        await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+        await toggleTheme(page);
         await openQueue(page);
       }
       await expect(panel(page).locator('[data-queue-action="shuffle-menu"]')).toBeVisible();

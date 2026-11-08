@@ -1,4 +1,5 @@
 import { settleMusicViewport } from './helpers/music-viewport';
+import { toggleTheme } from './helpers/header-menu';
 import { test, expect } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -67,7 +68,7 @@ test('M05 organized rich release details, real disclosure keys, themes and sourc
    expect(await page.locator('#media-info-body td b').count()).toBe(0);
    await page.keyboard.press('Escape');
    await expect(page.getByRole('button',{name:track(fixture,path).title,exact:true})).toBeFocused();
-   if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   if(await page.locator('html').getAttribute('data-theme')!==theme) await toggleTheme(page);
    await expect(page.locator('html')).toHaveAttribute('data-theme',theme);
    await expect(page.locator('body')).toHaveCSS('background-color',theme==='light'?'rgb(244, 245, 248)':'rgb(15, 17, 23)');
    await info(page);

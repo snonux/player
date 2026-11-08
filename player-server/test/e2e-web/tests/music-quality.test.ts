@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { Evidence, loadFixture, track } from './helpers/music-fixture';
@@ -141,7 +142,7 @@ test('M50 saved device default, themes, narrow controls and profile-list transpo
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'More player controls', exact: true }).click();
   await page.screenshot({ path: e.path('quality-narrow-dark.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+  await toggleTheme(page);
   await page.getByRole('button', { name: 'More player controls', exact: true }).click();
   await page.screenshot({ path: e.path('quality-narrow-light.png'), fullPage: true });
   await expect(panel.locator('select[aria-label="Stream quality"]')).toBeVisible();

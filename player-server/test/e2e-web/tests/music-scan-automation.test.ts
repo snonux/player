@@ -1,5 +1,6 @@
 /** A06d: installed-browser acceptance against an owned, opt-in scan fixture. */
 import { test, expect, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { existsSync, renameSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { basename, join } from 'node:path';
@@ -148,7 +149,7 @@ test('A06d scheduled, watched and manual scans expose real results and recovery'
 
     await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole('button', { name: 'Toggle theme' }).click();
+    await toggleTheme(page);
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await openAdmin(page);
     await page.locator('#admin-scan-options summary').click();

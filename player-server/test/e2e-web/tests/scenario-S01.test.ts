@@ -12,7 +12,11 @@ test('S01: bootstrap form creates exactly one admin and browser login works', as
   await page.locator('#password').fill('TestPassw0rd!');
   await page.locator('#password-confirm').fill('TestPassw0rd!');
   await page.getByRole('button', { name: 'Create Admin' }).click();
-  await expect(page).toHaveURL(/login.html/);
+  // Bootstrap signs the new admin in, so the login page passes straight on to
+  // the app. Sign out by dropping the cookie, then use the login form.
+  await expect(page).not.toHaveURL(/bootstrap.html/);
+  await page.context().clearCookies();
+  await page.goto('/login.html');
   await page.locator('#username').fill('admin');
   await page.locator('#password').fill('TestPassw0rd!');
   await page.locator('button[type=submit]').click();

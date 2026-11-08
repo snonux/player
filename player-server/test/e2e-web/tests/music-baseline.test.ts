@@ -191,7 +191,8 @@ test('touch/pointer journey: granted set only, card Play (regular user, narrow l
       data.input = touch ? 'touch' : 'mouse';
       await pointerSignIn(page, press);
       await resetProgress(page, firstLight.id);
-      await press(page.getByRole('button', { name: 'Toggle theme' }));
+      await press(page.locator('#header-menu-toggle'));
+      await press(page.locator('#theme-toggle'));
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
       await press(page.getByRole('button', { name: 'Toggle sets sidebar' }));
       const sets = page.locator('#set-list [role="button"]');

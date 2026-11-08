@@ -1,5 +1,6 @@
 /** A03c provider and retained lyrics in installed browsers. */
 import { test, expect } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
@@ -97,7 +98,7 @@ test('A03c explicit provider and complete offline lyric snapshot', async ({ page
     await page.setViewportSize({ width: 390, height: 844 });
     artifacts.push(evidence.path('provider-offline.png'));
     await page.screenshot({ path: artifacts.at(-1)! });
-    await page.getByRole('button', { name: 'Toggle theme' }).click();
+    await toggleTheme(page);
     artifacts.push(evidence.path('provider-offline-other-theme.png'));
     await page.screenshot({ path: artifacts.at(-1)! });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

@@ -1,4 +1,5 @@
 import { test, expect, request, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, selectByKeys, expectPlaying, captureOutput, assertValidCapture, mainSegment, openSidebarMusic } from './helpers/music-ui';
@@ -62,7 +63,7 @@ test('M03 artist roles, discography links, keyboard Back selection, themes and a
   await expect(page.getByRole('heading',{name:'Mika Sørensen',exact:true})).toBeVisible();
   for(const [theme,width] of [['dark',1366],['light',1366],['dark',390],['light',390]] as const) {
    await page.setViewportSize({width,height:844});
-   if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   if(await page.locator('html').getAttribute('data-theme')!==theme) await toggleTheme(page);
    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
    const path=evidence.path(`m03-artist-${theme}-${width}.png`);await page.screenshot({path,fullPage:true,animations:'disabled'});shots.push(path);
   }
@@ -142,7 +143,7 @@ test('M03 scrolled Artists and long discography restore exact visible position',
  const shots:string[]=[];
  await page.keyboard.press('Enter');
  for(const theme of ['dark','light']) {
-  if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+  if(await page.locator('html').getAttribute('data-theme')!==theme) await toggleTheme(page);
   const path=evidence.path('m03-long-discography-'+theme+'.png');await page.screenshot({path,fullPage:true,animations:'disabled'});shots.push(path);
  }
  evidence.record({feature:'M03',scenario:'genuinely scrolled Artists and discography Back restores exact focus and position',result:'pass',data:{before,detailScroll,cardY,releaseY},artifacts:shots});

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
@@ -143,7 +144,7 @@ test('M54 actual MPRIS artwork metadata and OS previous next play pause follow r
   proof.push({beforePrevious:await resetSaved(page,a.id)});
   action(owner,'Previous');proof.push(await osMetadata(owner,a,'m54-previous',blue));proof.push(await toneAndSaved(page,owner,a,'m54-previous'));
   for(const [theme,width] of [['dark',1366],['light',390]] as const) {
-   await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);
    await expect(page.locator('#player-music-identity')).toContainText('Aurora Lane · Night Transit');await page.screenshot({path:e.path(`m54-full-${theme}-${width}.png`)});
    await minimizePlayer(page);await expect(page.locator('#player-restore-title')).toContainText('Aurora Lane · Night Transit');await page.screenshot({path:e.path(`m54-mini-${theme}-${width}.png`)});
    await page.getByRole('button',{name:'Restore player',exact:true}).click();
@@ -228,7 +229,7 @@ test('M54 detached OS owner, denied artwork and offline retry keep the current t
   await expect(page.locator('#cover-art')).toBeVisible();
   expect(await page.locator('#cover-art').evaluate((image:HTMLImageElement)=>image.naturalWidth)).toBeGreaterThan(0);
   for(const [theme,width] of [['dark',1366],['light',390]] as const){
-   await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);
    await expect(page.locator('#player-music-identity')).toContainText('A & B; C/D · Metadata Album');
    await page.screenshot({path:e.path(`m54-cover-full-${theme}-${width}.png`)});
    await minimizePlayer(page);await expect(page.locator('.player-mini-art')).toBeVisible();

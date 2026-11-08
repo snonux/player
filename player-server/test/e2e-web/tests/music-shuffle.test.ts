@@ -1,4 +1,5 @@
 import { test, expect, request, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, openQueueShuffleAction, openQueueMoreAction } from './helpers/music-ui';
@@ -110,7 +111,7 @@ test('M18 settled actual theme controls show readable queue On and Shuffle optio
   const setup=await fixture(page);pid=setup.pid;await page.locator('[data-collection-shuffle]').click();await expect.poll(async()=>(await q(page)).loading).toBe(false);await pause(page);
   for(const [theme,width] of [['light',1366],['dark',1366],['light',390],['dark',390]] as const){
    await page.setViewportSize({width,height:844});await close(page);
-   if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);
    await expect(page.locator('html')).toHaveAttribute('data-theme',theme);
    expect(await page.evaluate(()=>localStorage.getItem('kiss-theme'))).toBe(theme);
    await page.waitForTimeout(250);

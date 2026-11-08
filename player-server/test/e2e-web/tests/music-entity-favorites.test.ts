@@ -1,4 +1,5 @@
 import { expect, request, test, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
@@ -131,7 +132,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
     for (const theme of ['dark', 'light']) {
       await page.setViewportSize({ width: 390, height: 844 });
       if (await page.locator('html').getAttribute('data-theme') !== theme)
-        await page.getByRole('button', { name: 'Toggle theme' }).click();
+        await toggleTheme(page);
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const shot = evidence.path(`m34-${theme}-narrow.png`);
       await page.screenshot({ path: shot, fullPage: true, animations: 'disabled' });

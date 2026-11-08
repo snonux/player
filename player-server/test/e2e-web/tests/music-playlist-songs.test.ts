@@ -1,4 +1,5 @@
 import { test, expect, request } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { randomBytes } from 'node:crypto';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
@@ -60,7 +61,7 @@ test('M27 selected additions long list filtered duplicate move remove Undo origi
   const row=page.locator(`[data-entry="${restored.entries[45].entry_id}"]`);await row.focus();await page.keyboard.press('a');await context.setOffline(true);await page.getByRole('group',{name:'Media actions'}).getByRole('button',{name:'Move down',exact:true}).click();
   await expect(page.locator('[data-song-error]')).not.toBeEmpty();await expect(row).toHaveAttribute('data-index','45');await context.setOffline(false);
   for(const [theme,width]of [['dark',1366],['light',1366],['dark',390],['light',390]]as const){
-   await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);
    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
    await expect.poll(()=>page.locator('[data-add-songs]').evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(theme==='light'?'rgb(255, 255, 255)':'rgb(30, 34, 44)');
    const shot=e.path(`m27-songs-${theme}-${width}.png`);await page.screenshot({path:shot,fullPage:true,animations:'disabled'});artifacts.push(shot);

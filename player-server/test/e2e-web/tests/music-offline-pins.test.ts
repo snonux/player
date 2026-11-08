@@ -1,5 +1,6 @@
 /** M47 real browser collection pins on an isolated disposable music fixture. */
 import { test, expect, request, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -217,7 +218,7 @@ test('M47 saved collections stay account scoped and server denial cannot play ol
     await pin.getByRole('button', { name: 'Close', exact: true }).click();
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+    await toggleTheme(page);
     await openPin(page, title);
     const narrow = e.path('m47-light-narrow-pinned.png');
     await page.screenshot({ path: narrow, fullPage: true, animations: 'disabled' }); artifacts.push(narrow);

@@ -8,6 +8,7 @@
  * download, playback, completion, retry and cleanup use actual visible controls.
  */
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { toggleTheme } from './helpers/header-menu';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { test, expect, type Page, type Locator } from '@playwright/test';
@@ -604,7 +605,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       await page.setViewportSize({ width: 390, height: 844 });
       for (const theme of ['dark', 'light']) {
         if (await page.locator('html').getAttribute('data-theme') !== theme) {
-          await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+          await toggleTheme(page);
         }
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
         const geometry = await page.locator('#global-sync').evaluate(host => {

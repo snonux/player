@@ -1,4 +1,5 @@
 import { test, expect, request, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, selectByKeys, openFolder, playCard, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress, openSidebarMusic } from './helpers/music-ui';
@@ -69,7 +70,7 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
   await albums(page);
   for(const [theme,width] of [['dark',1366],['light',1366],['dark',390],['light',390]] as const) {
     await page.setViewportSize({width,height:844});
-    if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+    if(await page.locator('html').getAttribute('data-theme')!==theme) await toggleTheme(page);
     const shot=evidence.path(`m02-catalog-${theme}-${width}.png`);await page.screenshot({path:shot,fullPage:true,animations:'disabled'});artifacts.push(shot);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }
@@ -79,7 +80,7 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
   await page.getByRole('button',{name:'Album artist: Aurora Lane',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Aurora Lane',exact:true})).toBeVisible();
   for(const theme of ['dark','light']) {
-    if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+    if(await page.locator('html').getAttribute('data-theme')!==theme) await toggleTheme(page);
     const shot=evidence.path(`m02-linked-artist-${theme}-390.png`);await page.screenshot({path:shot,fullPage:true,animations:'disabled'});artifacts.push(shot);
   }
   await page.getByRole('button',{name:'← Back',exact:true}).click();
@@ -87,7 +88,7 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
   await expect(page.getByRole('heading',{name:albumName,exact:true})).toBeVisible();
   for(const [theme,width] of [['dark',1366],['light',1366],['dark',390],['light',390]] as const) {
     await page.setViewportSize({width,height:844});
-    if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+    if(await page.locator('html').getAttribute('data-theme')!==theme) await toggleTheme(page);
     await expect.poll(async()=>page.locator('.media-row').last().evaluate(row=>getComputedStyle(row).backgroundColor)).toBe(theme==='light' ? 'rgb(255, 255, 255)' : 'rgb(22, 25, 32)');
     const colors=await page.locator('.media-row .text-muted').last().evaluate(el=>({foreground:getComputedStyle(el).color,background:getComputedStyle(el.closest('.media-row')!).backgroundColor}));
     const luminance=(color:string)=>{const rgb=color.match(/[\d.]+/g)!.slice(0,3).map(Number).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;};
@@ -108,7 +109,7 @@ test('M02 library and song entry, album artwork/totals/discs, linked artist, typ
   const long=catalog.find((a:any)=>a.title.startsWith('Long Album '));
   await openAlbum(page,long.title,long.artist);
   for(const theme of ['dark','light']) {
-    if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+    if(await page.locator('html').getAttribute('data-theme')!==theme) await toggleTheme(page);
     await expect(page.getByRole('heading',{name:long.title,exact:true})).toBeVisible();
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     const shot=evidence.path(`m02-long-${theme}-390.png`);await page.screenshot({path:shot,fullPage:true,animations:'disabled'});artifacts.push(shot);

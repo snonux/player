@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, openQueueMoreAction, openQueueRowMenuAction } from './helpers/music-ui';
@@ -105,7 +106,7 @@ test('M20 edited queue mode survives paused reload, account isolation and empty 
   await page.keyboard.press('Y');await expect(repeat).toBeFocused();expect((await q(page)).repeat).toBe('all');
   for(const [theme,width] of [['dark',1366],['light',1366],['dark',390],['light',390]] as const) {
    await page.setViewportSize({width,height:844});
-   if(await page.locator('html').getAttribute('data-theme')!==theme){await closeQueue(page);await page.getByRole('button',{name:'Toggle theme',exact:true}).click();await openQueue(page);}
+   if(await page.locator('html').getAttribute('data-theme')!==theme){await closeQueue(page);await toggleTheme(page);await openQueue(page);}
    const path=e.path(`m20-repeat-${theme}-${width}.png`);await page.screenshot({path,animations:'disabled'});artifacts.push(path);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }

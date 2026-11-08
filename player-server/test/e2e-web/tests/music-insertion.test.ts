@@ -1,4 +1,5 @@
 import { test, expect, request, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, openSidebarMusic, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress, playCard, openQueueMoreAction, openQueueRowMenuAction} from './helpers/music-ui';
@@ -80,7 +81,7 @@ test('M14 single and selected insertion preserves FIFO, duplicates, position, Un
 });
 async function albumScreens(page:Page,artifacts:string[]) {
  for(const [theme,width] of [['dark',1366],['light',1366],['dark',390],['light',390]] as const){
-  await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+  await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);
   await expect(rows(page).first().getByRole('checkbox')).toBeVisible();await expect(rows(page).first().getByRole('button',{name:'Actions for First Light',exact:true})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   const shot=evidence.path(`m14-album-${theme}-${width}.png`);await page.screenshot({path:shot,fullPage:false});artifacts.push(shot);
@@ -166,7 +167,7 @@ test('M14 long song action labels and selection remain usable in narrow themes',
   await openSidebarMusic(page,'Albums');await page.locator(`[data-album="${long.album_key}"]`).click();
   await page.setViewportSize({width:390,height:844});
   for(const theme of ['dark','light']){
-   if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);
    await rows(page).first().getByRole('checkbox').check();await rows(page).first().getByRole('button',{name:/Actions for/}).click();
    const menu=page.getByRole('group',{name:'Media actions'});await expect(menu.getByRole('button',{name:'Play next',exact:true})).toBeVisible();
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);const shot=evidence.path(`m14-long-${theme}-390.png`);await page.screenshot({path:shot,fullPage:false});artifacts.push(shot);

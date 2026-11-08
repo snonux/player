@@ -1,4 +1,5 @@
 import { test, expect, request, type Page, type Locator } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { genuineTouchTap } from './helpers/genuine-touch.cjs';
@@ -62,7 +63,7 @@ test('M07 title, artist and album grouped entities; keyboard/pointer source play
   await page.keyboard.press('Backspace');await expect(page.locator('[data-album].selected')).toBeFocused();
   for(const [theme,width] of [['dark',1366],['light',390]] as const) {
    await settleMusicViewport(page,width);
-   if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);
    await search(page,'Long music title');
    await expect(page.locator('[data-search-kind=song]')).toHaveCount(1);
    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

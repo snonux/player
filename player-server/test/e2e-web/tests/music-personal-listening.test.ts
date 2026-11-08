@@ -1,4 +1,5 @@
 import { test, expect, request, type Page, type APIRequestContext } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -165,7 +166,7 @@ test('M36 real listening threshold, account totals and visible personal rows', a
     await page.setViewportSize({ width: 390, height: 844 });
     for (const theme of ['dark', 'light']) {
       if ((await page.locator('html').getAttribute('data-theme')) !== theme)
-        await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+        await toggleTheme(page);
       const shot = evidence.path(`personal-${theme}-390.png`);
       await page.screenshot({ path: shot, fullPage: true, animations: 'disabled' });
       artifacts.push(shot);

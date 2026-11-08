@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, captureOutput, assertValidCapture, audioState, openFolder, playCard, openQueueRowMenuAction} from './helpers/music-ui';
@@ -151,7 +152,7 @@ test('M21 seek, queue edit, speed and source fallback, themes and account scope'
     for (const [theme, width] of [['dark', 1366], ['light', 390]] as const) {
       await page.setViewportSize({ width, height: 844 });
       if (await page.locator('html').getAttribute('data-theme') !== theme)
-        await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+        await toggleTheme(page);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const shot = evidence.path(`m21-${theme}-${width}.png`);
       await page.screenshot({ path: shot, animations: 'disabled' });

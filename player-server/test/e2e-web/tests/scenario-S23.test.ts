@@ -17,7 +17,7 @@ test('S23: deletion cascades populated user rows and invalidates all credentials
     const episodes = await own('GET', `/podcasts/${feed.set_id}/episodes`);
     expect((await call('POST', `/api/v1/podcasts/episodes/${episodes[0].id}/complete`, { cookie: user.cookie })).status).toBe(204);
     const predicates: Record<string, string> = {};
-    for (const table of ['api_tokens', 'sessions', 'set_permissions', 'favorites', 'media_notes', 'playback_progress', 'podcast_status']) predicates[table] = `user_id=${user.id}`;
+    for (const table of ['api_tokens', 'sessions', 'set_permissions', 'favorites', 'media_notes', 'playback_progress', 'podcast_episode_state']) predicates[table] = `user_id=${user.id}`;
     predicates.shares = `created_by=${user.id}`;
     predicates.playback_accumulator = `session_id='${user.cookie.slice('session='.length)}'`;
     for (const [table, predicate] of Object.entries(predicates)) expect(Number(sandbox.sql(`SELECT count(*) FROM ${table} WHERE ${predicate}`)), `${table} setup`).toBeGreaterThan(0);

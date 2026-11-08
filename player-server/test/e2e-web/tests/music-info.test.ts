@@ -1,4 +1,5 @@
 import {test, expect, request, type Page} from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import {execFileSync} from 'node:child_process';
 import {join} from 'node:path';
 import {Evidence, loadFixture, track, SUPPORT_DIR, type MusicFixture} from './helpers/music-fixture';
@@ -39,7 +40,7 @@ test('M06 source/tag units and disclosures preserve actual playback, keyboard fo
   await playCard(page,item.title,item.id);
   for(const [theme,width] of [['dark',1366],['light',390]] as const) {
    await settleMusicViewport(page,width);
-   if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   if(await page.locator('html').getAttribute('data-theme')!==theme) await toggleTheme(page);
    // Actual card focus is the dialog opener, independently of ongoing playback.
    await page.getByRole('button',{name:item.title,exact:true}).focus();
    const before=await audioState(page);await openInfo(page);

@@ -1,5 +1,6 @@
 /** M38 installed-browser discovery acceptance on one disposable music server. */
 import { test, expect, request, type Page, type APIRequestContext } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
@@ -188,7 +189,7 @@ test('M38 personal discovery collections expose complete ACL-scoped order, empty
     await page.setViewportSize({ width: 390, height: 844 });
     for (const theme of ['dark', 'light']) {
       if (await page.locator('html').getAttribute('data-theme') !== theme)
-        await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+        await toggleTheme(page);
       await discovery(page);
       const shot = e.path(`m38-${theme}-narrow.png`);
       await page.screenshot({ path: shot, fullPage: true, animations: 'disabled' }); artifacts.push(shot);

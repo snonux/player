@@ -1,4 +1,5 @@
 import { test, expect, request, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -63,7 +64,7 @@ test('M10 artist/album enrichment refresh, no match, failure, ACL and playback',
     for (const [theme, width] of [['dark', 1366], ['light', 390]] as const) {
       await page.setViewportSize({ width, height: 844 });
       if (await page.locator('html').getAttribute('data-theme') !== theme)
-        await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+        await toggleTheme(page);
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       if (width === 1366) {
         await page.evaluate(() => scrollTo(0, 0));
