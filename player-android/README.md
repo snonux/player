@@ -129,6 +129,10 @@ resume, retry, and progress synchronization behavior.
 
 ## Podcasts on this device
 
+| Episodes | Grid | Episode sheet | Navigation |
+| --- | --- | --- | --- |
+| <img src="../docs/screenshots/android-podcast-episodes.png" alt="Compact podcast episode list" width="180"> | <img src="../docs/screenshots/android-podcast-grid.png" alt="Podcast episode grid with three per row" width="180"> | <img src="../docs/screenshots/android-podcast-sheet.png" alt="Episode sheet with play, download and more actions" width="180"> | <img src="../docs/screenshots/android-home-drawer.png" alt="Navigation drawer with Library and Music sections" width="180"> |
+
 The podcast overview shows cached publisher covers, including subscriptions synced
 under an alternate feed URL. New subscriptions fetch missing metadata in the
 background. A feed without its own cover uses available episode artwork.

@@ -230,9 +230,13 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
               icon: Icons.settings_outlined,
               label: context.tr('Settings'),
               route: AppRoutes.settings),
-          const GlobalSyncMenuTile(),
+          const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: GlobalSyncMenuTile()),
           DrawerSectionLabel(context.tr('View')),
-          const PreviewSizeMenuItems(),
+          const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: PreviewSizeMenuItems()),
         ],
       ),
       body: Column(children: [
