@@ -1688,6 +1688,54 @@ void main() {
     await player.playingChanges.close();
   });
 
+  for (final width in [320.0, 412.0]) {
+    testWidgets('podcast speed is one tap away at ${width.toInt()}dp',
+        (tester) async {
+      tester.view.physicalSize = Size(width, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      final player = _PlayableAudioPlayer();
+      final handler = _PlayableHandler(player);
+      final request = PodcastPlaybackRequest(
+        identity: 'podcast:local:speed',
+        title: 'Episode with speed',
+        sourceUri: Uri.parse('file:///offline/episode.mp3'),
+        readPosition: () async => 10,
+        savePosition: (_) async {},
+        markFinished: () async {},
+      );
+      await _pumpScreen(tester, _FakeApiClient(),
+          handlerOverride: handler,
+          request: request,
+          forbidServerDependencies: true);
+      await tester.pump();
+      final button = find.byKey(const Key('podcast_speed_button'));
+      expect(button, findsOneWidget);
+      expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+      // Play stays centered between the speed button and the spacer.
+      final play =
+          tester.getCenter(find.byKey(const Key('audio_player_play_pause')));
+      expect(play.dx, closeTo(width / 2, 1));
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('audio_player_speed_1_5')));
+      await tester.pumpAndSettle();
+      expect(player.selectedSpeed, 1.5);
+      expect(find.text('1.5x'), findsOneWidget);
+      // The menu does not repeat the speed action for podcasts.
+      await _openMenu(tester);
+      expect(
+          find.byKey(const Key('audio_player_speed_selector')), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await handler.endProgress();
+      await player.playingChanges.close();
+    });
+  }
+
   testWidgets('loaded title identifies the player and audio notification',
       (tester) async {
     _setupAudioSessionMock();

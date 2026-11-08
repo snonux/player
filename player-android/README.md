@@ -133,8 +133,16 @@ The podcast overview shows cached publisher covers, including subscriptions sync
 under an alternate feed URL. New subscriptions fetch missing metadata in the
 background. A feed without its own cover uses available episode artwork.
 
-Episode rows show publisher artwork (episode cover first, podcast cover as
-fallback), the publication date, and expandable **Show notes**. Artwork uses a
+Episode rows are compact: publisher artwork (episode cover first, podcast cover
+as fallback), the title, podcast and publication date, the time left, and a
+progress bar. Each row keeps only **Download** (or **Cancel download** /
+**Retry download**, or a downloaded mark), **Play / Resume** and the episode
+menu. Tap a row or its menu to open the episode sheet with the full title,
+publication date, download status, **Play / Resume**, download actions,
+**Play from beginning**, **Mark completed**, **Delete downloaded file**,
+**Delete episode** and expandable **Show notes**. The screen menu switches
+between list and grid; the grid shows at least three covers per row on a phone
+in portrait, for episodes and for the podcast overview. Artwork uses a
 public disk cache without Player credentials; downloaded server copies retain
 existing embedded/server thumbnails if publisher images are missing or fail.
 Artwork never blocks browsing or playback. Notes are selectable text with readable paragraphs and
@@ -188,7 +196,10 @@ available while it downloads. **Cancel download** removes the unfinished copy
 without stopping streaming or changing listening history. You can return from
 the player to the episode list to cancel a transfer while audio keeps playing.
 Completed copies are preferred on the next Play. **Play from beginning** is in
-the episode menu for saved copies.
+the episode sheet for started episodes and saved copies. While an episode plays
+in the background, a mini player on library and podcast screens pauses it or
+reopens the player. The podcast player shows the playback speed next to the
+skip buttons.
 **Delete downloaded file** removes only this device's audio; subscription,
 completion, position and pending sync edits remain. **Delete episode** in the
 episode menu asks for confirmation, removes the episode from your lists and
