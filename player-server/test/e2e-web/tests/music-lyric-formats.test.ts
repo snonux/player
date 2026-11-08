@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { headerItem } from './helpers/header-menu';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { loadFixture } from './helpers/music-fixture';
 import { audioState, expectPlaying, keyboardLogin, openFolder, playCard } from './helpers/music-ui';
@@ -47,10 +48,10 @@ test('A03a formats keep timing, focus, fallback and readable narrow presentation
       await expect(panel).not.toContainText(/wrong priority|wrong text|<p|start_ms|-->/);
     }
     for (const theme of ['light', 'dark']) {
-      await page.getByRole('button', { name: 'Settings', exact: true }).click();
+      await (await headerItem(page, '#settings-toggle')).click();
       await page.locator('#appearance-mode').selectOption(theme);
       await page.keyboard.press('Escape');
-      await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeFocused();
+      await expect(page.locator('#header-menu-toggle')).toBeFocused(); // Settings opened from the header menu
       if (title !== 'Unavailable') {
         const contrasts = await panel.evaluate(element => {
           const style = getComputedStyle(element);

@@ -41,6 +41,12 @@ export function bindCollectionActions(root, collections, current, sourceLabel = 
  };
  return owner;
 }
+// Detail pages hide the collection More behind the entity More menu; dialogs
+// opened from it return focus to the control the user can actually see.
+function visibleOpener(owner, control) {
+ if (typeof control?.getClientRects !== 'function' || control.getClientRects().length) return control;
+ return owner.root.closest('.music-heading')?.querySelector('[data-album-more], [data-playlist-more], [data-artist-more]') || control;
+}
 function menu(button, owner) {
  const pin = owner.root.querySelector('[data-collection-pin]');
  const popover = document.createElement('div');
@@ -52,7 +58,7 @@ function menu(button, owner) {
   + html`<button class="btn btn-ghost" data-action="share">Share…</button>`;
  popover.querySelectorAll('button').forEach(item => item.onclick = () => {
   popover.hidePopover();
-  if (item.dataset.action === 'options') shuffleOptions(owner, button);
+  if (item.dataset.action === 'options') shuffleOptions(owner, visibleOpener(owner, button));
   else if (item.dataset.action === 'pin') pin?.click();
   else void run(owner, item.dataset.action);
  });
@@ -75,7 +81,7 @@ async function run(owner, action, targets, settings = {}) {
   if (action === 'shuffle') songs = selectShuffleSongs(songs, settings.options);
   if (!current()) return;
   if (!songs.length) { status.textContent = action === 'shuffle' ? t('No songs match these options.') : t('No songs available.'); return; }
-  const focus = owner.root.querySelector('[data-collection-menu]') || owner.root.querySelector(`[data-collection-${action}]`);
+  const focus = visibleOpener(owner, owner.root.querySelector('[data-collection-menu]') || owner.root.querySelector(`[data-collection-${action}]`));
   if (action === 'share') { shareMusicCollection(songs, owner.sourceLabel, focus); status.textContent = ''; return true; }
   if (action === 'download') { downloadMusic(songs, focus); status.textContent = ''; return true; }
   if (await insertQueue(songs, ['replace', 'shuffle'].includes(action) ? 'now' : action, {replace:['replace', 'shuffle'].includes(action), shuffled:action === 'shuffle', source:owner.sourceLabel})) {

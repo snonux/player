@@ -1,8 +1,9 @@
 import { test, expect, request, type Page } from '@playwright/test';
-import { toggleTheme } from './helpers/header-menu';
+import { toggleTheme, headerItem } from './helpers/header-menu';
+import { minimizePlayer } from './helpers/player-options';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, openQueueShuffleAction, openQueueMoreAction } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, openQueueShuffleAction, openQueueMoreAction, openCollectionMoreAction, collectionShuffle } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE,'Requires disposable local music fixture');
 let f:MusicFixture,e:Evidence;
@@ -12,10 +13,10 @@ const ids=(s:any)=>s.entries.map((v:any)=>v.id);
 const media=(s:any)=>s.entries.map((v:any)=>v.media.id);
 const sorted=(values:number[])=>[...values].sort((a,b)=>a-b);
 async function saved(p:Page){const c=await(await p.request.get('/api/config')).json();return p.evaluate(id=>JSON.parse(localStorage.getItem(`player.queue.${location.origin}.${id}`)||'null'),c.user_id);}
-async function open(p:Page){if(!await panel(p).isVisible()){await p.getByRole('button',{name:'Log out',exact:true}).focus();await p.keyboard.press('Q');}await expect(panel(p)).toBeVisible();}
+async function open(p:Page){if(!await panel(p).isVisible()){await p.locator('#header-menu-toggle').focus();await p.keyboard.press('Q');}await expect(panel(p)).toBeVisible();}
 async function close(p:Page){if(await panel(p).isVisible())await panel(p).getByRole('button',{name:'Close queue',exact:true}).click();}
-async function pause(p:Page){if(!(await audioState(p)).paused){if(!await p.locator('#btn-play').isVisible())await p.getByRole('button',{name:'Restore player',exact:true}).click();await p.locator('#btn-play').click();}await expect.poll(async()=>(await audioState(p)).paused).toBe(true);const minimize=p.getByRole('button',{name:'Minimize player (Shift+C)',exact:true});if(await minimize.isVisible())await minimize.click();}
-async function play(p:Page){await close(p);if(!await p.locator('#btn-play').isVisible())await p.getByRole('button',{name:'Restore player',exact:true}).click();await p.locator('#btn-play').click();await expect.poll(async()=>(await audioState(p)).paused).toBe(false);}
+async function pause(p:Page){await expect(async()=>{if(!(await audioState(p)).paused){if(!await p.locator('#btn-play').isVisible())await p.getByRole('button',{name:'Restore player',exact:true}).click();await p.locator('#btn-play').click();}await expect.poll(async()=>(await audioState(p)).paused,{timeout:2000}).toBe(true);}).toPass({timeout:15000});if(!/\bminimized\b/.test((await p.locator('#player').getAttribute('class'))||''))await minimizePlayer(p);}
+async function play(p:Page){await close(p);await expect(async()=>{if((await audioState(p)).paused){if(!await p.locator('#btn-play').isVisible())await p.getByRole('button',{name:'Restore player',exact:true}).click();await p.locator('#btn-play').click();}await expect.poll(async()=>(await audioState(p)).paused,{timeout:2000}).toBe(false);}).toPass({timeout:15000});}
 async function tone(p:Page,id:number,name:string){await expectPlaying(p,id);const capture=await captureOutput(p,1100,e.path(name+'.wav'));assertValidCapture(capture);const segment=mainSegment(capture.analysis),track=f.tracks.find(t=>f.mediaIds[t.path]===id)!;expect(segment!.duration_s).toBeGreaterThan(.6);expect(Math.abs(segment!.tone_hz!-track.tone_hz[0])).toBeLessThan(5);return {id,runtime:await audioState(p),segment,wav:capture.wav};}
 async function fixture(p:Page){
  const albums=await(await p.request.get('/api/v1/music/albums')).json();const album=albums.find((a:any)=>a.title==='Night Transit');
@@ -26,7 +27,7 @@ async function fixture(p:Page){
  await p.goto('/?music=playlist&id='+pid);await expect(p.locator('.media-row')).toHaveCount(songs.length);
  return {pid,songs,album,detail,name};
 }
-async function options(p:Page){await close(p);await p.locator('#media-grid [data-collection-menu]').click();await p.getByRole('menu',{name:'More collection actions'}).getByRole('button',{name:'Shuffle options…',exact:true}).click();const dialog=p.locator('#shuffle-options-modal');await expect(dialog).toBeVisible();return dialog;}
+async function options(p:Page){await close(p);await openCollectionMoreAction(p,'Shuffle options…');const dialog=p.locator('#shuffle-options-modal');await expect(dialog).toBeVisible();return dialog;}
 test.beforeAll(async({browser},info)=>{f=loadFixture();e=new Evidence(f.evidenceDir,info.project.name,{browser_version:browser.version(),server_version:f.serverVersion,server_build:f.buildRevision,checkout:f.checkout});});
 test.beforeEach(async({page})=>{await page.addInitScript(installAudioTap);await keyboardLogin(page,f.user);});
 
@@ -43,13 +44,13 @@ test('M18 queue remainder preserves current source, canonical Off, reshuffle Und
   await openQueueShuffleAction(page,'Reshuffle remaining');await openQueueMoreAction(page,'Undo');expect(ids(await q(page))).toEqual(ids(mixed));expect((await q(page)).shuffle).toBe(true);
   await openQueueShuffleAction(page,/· Toggle/);expect(ids(await q(page))).toEqual(ids(before));await openQueueShuffleAction(page,/· Toggle/);const retained=await q(page);
   await close(page);await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();await page.locator('#music-albums').click();await expect(page.locator('.album-card').first()).toBeVisible();expect(ids(await q(page))).toEqual(ids(retained));expect((await q(page)).index).toBe(retained.index);
-  await page.getByRole('button',{name:'Log out',exact:true}).focus();await page.keyboard.press('r');expect((await q(page)).shuffle).toBe(true);expect(ids(await q(page))).toEqual(ids(retained));
-  await page.goto('/?music=playlist&id='+pid);await page.locator('[data-collection-shuffle]').click();await expect.poll(async()=>(await q(page)).loading).toBe(false);await pause(page);await open(page);
+  await page.locator('#header-menu-toggle').focus();await page.keyboard.press('r');expect((await q(page)).shuffle).toBe(true);expect(ids(await q(page))).toEqual(ids(retained));
+  await page.goto('/?music=playlist&id='+pid);await collectionShuffle(page);await expect.poll(async()=>(await q(page)).loading).toBe(false);await pause(page);await open(page);
   const collection=await q(page),stored=await saved(page);expect(collection.shuffle).toBe(true);expect(collection.index).toBe(0);expect(sorted(media(collection))).toEqual(sorted(setup.songs.map((s:any)=>s.id)));expect(stored.canonical).toEqual(sorted(ids(collection)));
   const visited:number[]=[];
   for(let at=0;at<collection.entries.length;at++){
    await play(page);await expectPlaying(page,collection.entries[at].media.id);proof.push(await tone(page,collection.entries[at].media.id,`m18-cycle-${at}`));visited.push((await q(page)).entries[(await q(page)).index].id);await pause(page);
-   if(at+1<collection.entries.length){await page.getByRole('button',{name:'Log out',exact:true}).focus();await page.keyboard.press('N');await expectPlaying(page,collection.entries[at+1].media.id);await pause(page);}
+   if(at+1<collection.entries.length){await page.locator('#header-menu-toggle').focus();await page.keyboard.press('N');await expectPlaying(page,collection.entries[at+1].media.id);await pause(page);}
   }
   expect(visited).toEqual(ids(collection));expect(new Set(visited).size).toBe(collection.entries.length);
   await open(page);await panel(page).locator('[data-queue-action="shuffle-menu"]').click();
@@ -65,7 +66,7 @@ test('M18 optional collection filters invalid/no-match/offline/Cancel preserve q
  let pid='';const artifacts:string[]=[];
  try{
   const setup=await fixture(page);pid=setup.pid;await page.locator('.media-row').first().click();await expectPlaying(page,setup.songs[0].id);await pause(page);const before=await saved(page);
-  const escaped=await options(page);await escaped.getByLabel('Genre (optional)',{exact:true}).focus();await page.keyboard.press('Escape');await expect(escaped).not.toBeVisible();await expect(page.locator('#media-grid [data-collection-menu]')).toBeFocused();
+  const escaped=await options(page);await escaped.getByLabel('Genre (optional)',{exact:true}).focus();await page.keyboard.press('Escape');await expect(escaped).not.toBeVisible();await expect(page.locator('#media-grid [data-playlist-more]')).toBeFocused();
   const dialog=await options(page),submit=dialog.getByRole('button',{name:'Shuffle',exact:true});
   await dialog.getByLabel('Maximum songs (optional)',{exact:true}).fill('0');await submit.click();await expect(dialog).toContainText('Maximum songs must be a whole number');expect((await saved(page)).entries).toEqual(before.entries);
   await dialog.getByLabel('Maximum songs (optional)',{exact:true}).fill('2');await dialog.getByLabel('Genre (optional)',{exact:true}).fill('No such genre');await submit.click();await expect(dialog).toContainText('No songs match these options.');expect((await saved(page)).entries).toEqual(before.entries);
@@ -84,7 +85,7 @@ test('M18 optional collection filters invalid/no-match/offline/Cancel preserve q
    const pending=await options(page);await pending.getByRole('button',{name:'Shuffle',exact:true}).click();await started;
    if(action==='Escape'){await pending.getByLabel('Genre (optional)',{exact:true}).focus();await page.keyboard.press('Escape');}
    else await pending.getByRole('button',{name:'Cancel',exact:true}).click();
-   await expect(pending).not.toBeVisible();await expect(page.locator('#media-grid [data-collection-menu]')).toBeEnabled();await expect(page.locator('#media-grid [data-collection-menu]')).toBeFocused();
+   await expect(pending).not.toBeVisible();await expect(page.locator('#media-grid [data-collection-menu]')).toBeEnabled();await expect(page.locator('#media-grid [data-playlist-more]')).toBeFocused();
    const received=page.waitForResponse(response=>new URL(response.url()).pathname===`/api/playlists/${pid}`&&response.status()===200);
    release();await done;await(await received).finished();await page.waitForTimeout(200);await page.unroute(`**/api/playlists/${pid}`);expect((await saved(page)).entries).toEqual(canceledBefore.entries);
   }
@@ -95,9 +96,9 @@ test('M18 optional collection filters invalid/no-match/offline/Cancel preserve q
 
 test('M18 scoped shuffle snapshot survives reload paused; keyboard typing focus and real account isolation',async({page})=>{
  let pid='';try{
-  const setup=await fixture(page);pid=setup.pid;await page.locator('[data-collection-shuffle]').click();await expect.poll(async()=>(await q(page)).loading).toBe(false);await pause(page);const before=await saved(page);await page.reload();await open(page);await expect(panel(page).getByRole('button',{name:'Resume queue',exact:true})).toBeVisible();const after=await saved(page);expect(after.entries).toEqual(before.entries);expect(after.canonical).toEqual(before.canonical);expect(after.shuffle).toBe(true);expect(after.index).toBe(before.index);expect((await audioState(page)).paused).toBe(true);
+  const setup=await fixture(page);pid=setup.pid;await collectionShuffle(page);await expect.poll(async()=>(await q(page)).loading).toBe(false);await pause(page);const before=await saved(page);await page.reload();await open(page);await expect(panel(page).getByRole('button',{name:'Resume queue',exact:true})).toBeVisible();const after=await saved(page);expect(after.entries).toEqual(before.entries);expect(after.canonical).toEqual(before.canonical);expect(after.shuffle).toBe(true);expect(after.index).toBe(before.index);expect((await audioState(page)).paused).toBe(true);
   await close(page);await page.keyboard.press('/');const search=page.getByRole('searchbox',{name:'Search media'});await search.fill('r Q j/k');await expect(search).toHaveValue('r Q j/k');expect((await q(page)).shuffle).toBe(true);await page.keyboard.press('Escape');
-  const logout=async()=>{await close(page);await page.getByRole('button',{name:'Log out',exact:true}).click();await page.waitForURL(u=>u.pathname==='/login.html');};
+  const logout=async()=>{await close(page);await (await headerItem(page, '#logout-btn')).click();await page.waitForURL(u=>u.pathname==='/login.html');};
   await logout();await keyboardLogin(page,f.admin);await open(page);expect((await q(page)).entries).toHaveLength(0);expect((await q(page)).shuffle).toBe(false);await logout();await keyboardLogin(page,f.user);await open(page);expect((await saved(page)).canonical).toEqual(before.canonical);expect((await q(page)).shuffle).toBe(true);
   await panel(page).getByRole('button',{name:'Resume queue',exact:true}).click();await close(page);const proof=await tone(page,before.entries[before.index].mediaId,'m18-recovered-source');await pause(page);
   e.record({feature:'M18',scenario:'scoped order/mode/canonical reload and account roundtrip paused then actual Resume source, native typing',result:'pass',data:{before,after,proof}});
@@ -108,7 +109,7 @@ test('M18 scoped shuffle snapshot survives reload paused; keyboard typing focus 
 test('M18 settled actual theme controls show readable queue On and Shuffle options on desktop and narrow screens',async({page})=>{
  let pid='';const artifacts:string[]=[],computed:any[]=[];
  try{
-  const setup=await fixture(page);pid=setup.pid;await page.locator('[data-collection-shuffle]').click();await expect.poll(async()=>(await q(page)).loading).toBe(false);await pause(page);
+  const setup=await fixture(page);pid=setup.pid;await collectionShuffle(page);await expect.poll(async()=>(await q(page)).loading).toBe(false);await pause(page);
   for(const [theme,width] of [['light',1366],['dark',1366],['light',390],['dark',390]] as const){
    await page.setViewportSize({width,height:844});await close(page);
    if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);
@@ -130,7 +131,7 @@ test('M18 settled actual theme controls show readable queue On and Shuffle optio
    const fg=luminance(rgb(colors.foreground)),bg=luminance(rgb(colors.background));const ratio=(Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05);
    computed.push({...colors,width,contrast:ratio});expect(ratio).toBeGreaterThanOrEqual(4.5);
    const optionShot=e.path(`m18-actual-options-${theme}-${width}.png`);await page.screenshot({path:optionShot,animations:'disabled'});artifacts.push(optionShot);
-   await cancel.click();await expect(page.locator('#media-grid [data-collection-menu]')).toBeFocused();
+   await cancel.click();await expect(page.locator('#media-grid [data-playlist-more]')).toBeFocused();
   }
   e.record({feature:'M18',scenario:'actual persisted theme controls, settled Cancel contrast, selected queue On and options desktop/narrow originals',result:'pass',data:{computed},artifacts});
  }catch(error){e.record({feature:'M18',scenario:'actual settled theme inspection',result:'fail',detail:String(error),data:{computed},artifacts});throw error;}finally{if(pid)await page.request.delete('/api/v1/playlists/'+pid);}
@@ -144,7 +145,7 @@ test('M18 actual revoked Music grant preserves queue/source/position for direct 
   await page.locator('.media-row').nth(1).click();await expectPlaying(page,setup.songs[1].id);await pause(page);
   await page.getByRole('button',{name:'Toggle sets sidebar',exact:true}).click();await page.locator('#music-albums').click();
   await page.getByRole('button',{name:'Open album Night Transit by Aurora Lane',exact:true}).click();
-  await expect(page.locator('[data-collection-shuffle]')).toBeVisible();
+  await expect(page.locator('#media-grid [data-album-more]')).toBeVisible();
   const before=await saved(page),runtime=await audioState(page);
   expect((await admin.post('/api/v1/auth/login',{data:f.admin})).ok()).toBe(true);
   const users=await(await admin.get('/api/v1/admin/users')).json();
@@ -157,7 +158,7 @@ test('M18 actual revoked Music grant preserves queue/source/position for direct 
   try{
    expect((await admin.delete('/api/v1/admin/permissions',{data:grant})).ok()).toBe(true);
    deniedStatus=(await page.request.get('/api/v1/music/albums/'+setup.album.album_key)).status();expect(deniedStatus).toBeGreaterThanOrEqual(400);
-   await page.locator('[data-collection-shuffle]').click();await expect(page.locator('[data-collection-status]')).toContainText('Could not load songs.');
+   await collectionShuffle(page);await expect(page.locator('[data-collection-status]')).toContainText('Could not load songs.');
    expect((await saved(page)).entries).toEqual(before.entries);
    const direct=e.path('m18-permission-direct-retained.png');await page.screenshot({path:direct});artifacts.push(direct);
    const dialog=await options(page);await dialog.getByRole('button',{name:'Shuffle',exact:true}).click();await expect(dialog).toContainText('Could not load songs.');

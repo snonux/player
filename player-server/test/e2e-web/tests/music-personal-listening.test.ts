@@ -1,5 +1,5 @@
 import { test, expect, request, type Page, type APIRequestContext } from '@playwright/test';
-import { toggleTheme } from './helpers/header-menu';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -60,7 +60,7 @@ async function startSong(page: Page, id: number): Promise<void> {
 
 async function pauseAndReturn(page: Page): Promise<void> {
   if (!(await audioState(page)).paused) {
-    await page.getByRole('button', { name: 'Log out', exact: true }).focus();
+    await page.locator('#header-menu-toggle').focus();
     await page.keyboard.press('p');
     await expect.poll(() => audioState(page).then(state => state.paused)).toBe(true);
   }

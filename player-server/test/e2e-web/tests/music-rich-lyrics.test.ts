@@ -1,5 +1,6 @@
 /** A03b rich lyrics in installed browsers against the owned local fixture. */
 import { test, expect } from '@playwright/test';
+import { headerItem } from './helpers/header-menu';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
@@ -92,7 +93,7 @@ test('A03b words, voices and translations follow playback and seeking', async ({
       getComputedStyle(element).textDecorationLine)).toContain('underline');
 
     for (const theme of ['dark', 'light']) {
-      await page.getByRole('button', { name: 'Settings', exact: true }).click();
+      await (await headerItem(page, '#settings-toggle')).click();
       await page.locator('#appearance-mode').selectOption(theme);
       await page.keyboard.press('Escape');
       await expect(page.locator('#settings-modal')).toBeHidden();

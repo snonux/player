@@ -1,6 +1,7 @@
 /** M39: installed-browser home preferences, pins and account boundaries. */
 import { randomBytes } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
+import { headerItem } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, openSidebarMusic, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
@@ -105,7 +106,7 @@ test('M39 customize, pin, recover and isolate home per account', async ({ page, 
   await expect(editor(page).locator(`[data-home-pin="${id}"]`)).toBeChecked();
   await expect(panel(page).getByRole('button', { name, exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Log out', exact: true }).click();
+  await (await headerItem(page, '#logout-btn')).click();
   await page.waitForURL(url => url.pathname === '/login.html');
   await keyboardLogin(page, observer);
   await home(page);
@@ -120,7 +121,7 @@ test('M39 customize, pin, recover and isolate home per account', async ({ page, 
     await expect(editor(page).locator(`[data-home-pin="${id}"]`)).not.toBeChecked();
   }
 
-  await page.getByRole('button', { name: 'Log out', exact: true }).click();
+  await (await headerItem(page, '#logout-btn')).click();
   await page.waitForURL(url => url.pathname === '/login.html');
   await keyboardLogin(page, actor);
   await home(page);

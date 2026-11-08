@@ -1,11 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
-import { toggleTheme } from './helpers/header-menu';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState } from './helpers/music-ui';
-import { minimizePlayer } from './helpers/player-options';
+import { minimizePlayer, inPlayerOptions } from './helpers/player-options';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable --session-artwork fixture and real MPRIS bus');
 let f:MusicFixture,e:Evidence;
@@ -225,7 +225,7 @@ test('M54 detached OS owner, denied artwork and offline retry keep the current t
   }catch(error){proof.push({reattachFailure:await readiness(page,owner)});throw error;}
   // Keep the existing default visualization choice; use its visible Off
   // control to inspect the actual known cover on the full-player surface.
-  await page.getByRole('combobox',{name:'Audio visualization'}).selectOption('off');
+  await (await inPlayerOptions(page,page.getByRole('combobox',{name:'Audio visualization'}))).selectOption('off');
   await expect(page.locator('#cover-art')).toBeVisible();
   expect(await page.locator('#cover-art').evaluate((image:HTMLImageElement)=>image.naturalWidth)).toBeGreaterThan(0);
   for(const [theme,width] of [['dark',1366],['light',390]] as const){
@@ -261,7 +261,7 @@ test('M54 detached OS owner, denied artwork and offline retry keep the current t
   if(info.project.name==='chrome')await page.locator('#btn-play').click();else action(owner,'Play');
   await expectPlaying(page,d.id);
   proof.push(await osMetadata(owner,d,'m54-offline-retry'));proof.push(await toneAndSaved(page,owner,d,'m54-offline-retry'));
-  await page.getByRole('button',{name:'Log out',exact:true}).click();await page.waitForURL(url=>url.pathname==='/login.html');
+  await (await headerItem(page, '#logout-btn')).click();await page.waitForURL(url=>url.pathname==='/login.html');
   await expect.poll(()=>exportedMetadata(owner)).not.toContain(JSON.stringify(d.title));
   e.record({feature:'M54',scenario:'actual popup owns OS metadata/Next with real audio; paused return preserves intent (Chrome explicit visible Play activation, Firefox OS-only resume); actual OS controls then work; actual routed injected403 art response clears both previous cover colors; offline recovery (Chrome visible Play activation, Firefox OS retry) and logout clear session',result:'pass',data:{owner,proof},artifacts:[popupPath,offlinePath]});
  }catch(error){
@@ -296,7 +296,7 @@ test('M54 Chrome failed untouched source uses visible Play then actual OS contro
   action(owner,'Previous');await expectPlaying(page,a.id);proof.push(await osMetadata(owner,a,'m54-focused-recovered-previous',[43,76,126]));
   action(owner,'Next');await expectPlaying(page,d.id);proof.push(await osMetadata(owner,d,'m54-focused-recovered-next'));action(owner,'Pause');
   const active=property(owner,'Metadata');
-  await page.getByRole('button',{name:'Log out',exact:true}).click();await page.waitForURL(url=>url.pathname==='/login.html');
+  await (await headerItem(page, '#logout-btn')).click();await page.waitForURL(url=>url.pathname==='/login.html');
   await expect.poll(()=>exportedMetadata(owner)).not.toContain(JSON.stringify(d.title));
   e.record({feature:'M54',scenario:'Chrome144 failed untouched source loses OS focus without stale track/art; existing visible Play after reconnect activates real OS metadata/Play/Pause/Previous/Next, audible fresh D progress and logout clears',result:'pass',detail:'OS-only failed-source metadata/retry before visible Play is not supported in observed Chrome144; prior actual-attempt7 failure retained.',data:{owner,proof,active,cleared:exportedMetadata(owner)},artifacts:[offlineShot]});
  }catch(error){e.record({feature:'M54',scenario:'Chrome focused offline/clear',result:'fail',detail:String(error),data:{proof}});throw error;}

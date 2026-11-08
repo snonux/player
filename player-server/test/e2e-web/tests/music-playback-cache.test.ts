@@ -2,6 +2,7 @@
  * The added WAVs are complete, decodable originals served by Player. No route
  * fulfills a successful media response from fabricated bytes. */
 import { test, expect, request, type Page } from '@playwright/test';
+import { headerItem } from './helpers/header-menu';
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, openSync, writeSync, closeSync, readFileSync } from 'node:fs';
@@ -115,7 +116,7 @@ async function login(page: Page, who: 'user' | 'admin'): Promise<void> {
   await page.keyboard.type(fixture[who].password);
   await page.keyboard.press('Enter');
   await page.waitForURL(url => url.pathname === '/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
+  await expect(page.locator('#header-menu-toggle')).toBeVisible();
 }
 async function browse(page: Page): Promise<void> {
   await page.goto(`${origin}/?set=${fixture.setIds.Music}&folder=${encodeURIComponent(folder)}`);
@@ -127,7 +128,7 @@ async function play(page: Page, index: number): Promise<void> {
   await expectPlaying(page, ids[index]);
 }
 async function settings(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await (await headerItem(page, '#settings-toggle')).click();
   await expect(page.locator('#settings-modal')).toHaveClass(/open/);
   await expect(page.locator('#settings-modal')).toContainText('Kept downloads are separate');
 }
@@ -162,7 +163,7 @@ test('M45 complete streamed bytes, offline replay, eviction, prefetch, cancel, a
     await panel.getByLabel('Playback buffering').selectOption('complete');
     await panel.getByLabel('Prefetch next queued song').uncheck();
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeFocused();
+    await expect(page.locator('#header-menu-toggle')).toBeFocused(); // Settings opened from the header menu
     await play(page, 0);
     await expect.poll(() => cachedHash(page, 0), { timeout: 60_000 }).toBe(expected.get(names[0]));
     proof.first_hash = await cachedHash(page, 0);
@@ -232,7 +233,7 @@ test('M45 complete streamed bytes, offline replay, eviction, prefetch, cancel, a
     // Otherwise an empty cache would make the account check vacuous.
     await play(page, 1);
     await expect.poll(() => cachedHash(page, 1), { timeout: 60_000 }).toBe(expected.get(names[1]));
-    await page.getByRole('button', { name: 'Log out', exact: true }).click();
+    await (await headerItem(page, '#logout-btn')).click();
     await page.waitForURL(url => url.pathname === '/login.html');
     await login(page, 'admin'); await browse(page);
     const adminConfig = await (await page.request.get(origin + '/api/config')).json();

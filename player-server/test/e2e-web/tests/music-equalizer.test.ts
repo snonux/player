@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { inPlayerOptions, closePlayerOptions, openPlayerOptions } from './helpers/player-options';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadFixture, track } from './helpers/music-fixture';
@@ -16,10 +17,10 @@ test('M25: real output follows bands, presets, bypass and reset', async ({ page,
   await openFolder(page, fixture.setIds.Music, 'EQ Probe');
   const probe = track(fixture, 'Music/EQ Probe/Three Tones.flac');
   await playCard(page, probe.title, probe.id);
-  const panel = page.locator('.equalizer-control');
+  const panel = await inPlayerOptions(page, page.locator('.equalizer-control'));
   await panel.locator('summary').click();
-  const preset = page.getByLabel('Equalizer preset', { exact: true });
-  const enabled = page.getByLabel('Enable equalizer', { exact: true });
+  const preset = panel.getByLabel('Equalizer preset', { exact: true });
+  const enabled = panel.getByLabel('Enable equalizer', { exact: true });
   const reset = panel.getByRole('button', { name: 'Reset flat', exact: true });
   const bands: Record<string, Record<string, number>> = {};
   async function capture(name: string) {
@@ -27,6 +28,7 @@ test('M25: real output follows bands, presets, bypass and reset', async ({ page,
       const path = '/js/playback.js';
       return (await import(path)).currentMediaId();
     })).toBe(probe.id);
+    await closePlayerOptions(page);
     const timeline = page.locator('#progress-track');
     const bounds = (await timeline.boundingBox())!;
     await timeline.click({ position: { x: bounds.width * .02, y: bounds.height / 2 } });
@@ -50,7 +52,7 @@ test('M25: real output follows bands, presets, bypass and reset', async ({ page,
   await capture('flat');
   expect(Math.max(...Object.values(bands.flat)) - Math.min(...Object.values(bands.flat))).toBeLessThan(1.5);
   // Native range keys must adjust the curve without triggering page navigation.
-  const middle = page.getByLabel('Equalizer 910 Hz', { exact: true });
+  const middle = await inPlayerOptions(page, page.getByLabel('Equalizer 910 Hz', { exact: true }));
   await middle.focus();
   await middle.press('Home');
   await expect(middle).toHaveValue('-12');
@@ -99,12 +101,13 @@ test('M25: real output follows bands, presets, bypass and reset', async ({ page,
   await capture('voice-after-reload');
   closeTo('voice-after-reload', 'voice', [0, 0, 0]);
   await reset.click();
+  await closePlayerOptions(page);
   await page.getByRole('button', { name: 'Play/Pause (Space/p)', exact: true }).click();
   await expect.poll(async () => (await audioState(page)).paused).toBe(true);
   for (const [theme, width] of [['light', 390], ['dark', 1280]] as const) {
     await page.setViewportSize({ width, height: 1000 });
     await page.evaluate(theme => document.documentElement.setAttribute('data-theme', theme), theme);
-    if (width < 600) await page.getByRole('button', { name: 'More player controls', exact: true }).click();
+    await openPlayerOptions(page);
     await panel.screenshot({ path: join(dir, theme + '.png') });
   }
   writeFileSync(join(dir, 'results.json'), JSON.stringify({ browser: browser.version(), bands, source: probe.path,

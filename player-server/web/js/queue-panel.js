@@ -28,6 +28,9 @@ function syncMode() {
   if (narrow) panel.setAttribute('aria-modal', 'true'); else panel.removeAttribute('aria-modal');
   document.body.classList.toggle('queue-open', !narrow);
 }
+// Shared by the panel and its toolbar menus, which live outside the panel so
+// a re-render (sync status, offline retry) does not tear an open menu down.
+let panelClick = null;
 export function initQueuePanel() {
   panel = document.getElementById('queue-panel');
   originalParent = panel.parentElement;
@@ -35,7 +38,7 @@ export function initQueuePanel() {
     if (panel.classList.contains('open')) (document.fullscreenElement || originalParent).appendChild(panel);
   });
   document.querySelectorAll('[data-queue-toggle]').forEach(button => button.addEventListener('click', toggleQueue));
-  panel.addEventListener('click', async e => {
+  panel.addEventListener('click', panelClick = async e => {
     const action = e.target.closest('[data-queue-action]');
     if (!action) return;
     const at = Number(action.closest('[data-queue-index]')?.dataset.queueIndex ?? selected);
@@ -104,7 +107,8 @@ function openRowMenu() {
     menu.appendChild(button);
   }
   menu.addEventListener('toggle', e => { if (e.newState === 'closed') { menu.remove(); focusRow(); } });
-  panel.appendChild(menu); menu.showPopover(); menu.querySelector('button:not(:disabled)')?.focus();
+  if (panelClick) menu.addEventListener('click', panelClick);
+  (panel.parentElement || document.body).appendChild(menu); menu.showPopover(); menu.querySelector('button:not(:disabled)')?.focus();
 }
 function openToolbarMenu(opener, label, items) {
   const menu = document.createElement('div');
@@ -113,8 +117,18 @@ function openToolbarMenu(opener, label, items) {
   menu.setAttribute('role', 'menu');
   menu.setAttribute('aria-label', label);
   menu.innerHTML = items.map(([action, text, disabled]) => html`<button class="btn btn-ghost" data-queue-action="${action}" ${disabled ? 'disabled' : ''}>${esc(text)}</button>`).join('');
-  menu.addEventListener('toggle', e => { if (e.newState === 'closed') { menu.remove(); opener.focus(); } });
-  panel.appendChild(menu); menu.showPopover(); menu.querySelector('button:not(:disabled)')?.focus();
+  // Choosing an item closes the menu; the action (or the dialog it opens) owns
+  // focus from there, so only a dismissal returns focus to the opener.
+  let chosen = false;
+  menu.addEventListener('click', e => { if (e.target.closest('button:not(:disabled)')) { chosen = true; setTimeout(() => { if (menu.isConnected && menu.matches(':popover-open')) menu.hidePopover(); }); } });
+  const openerAction = opener.dataset.queueAction;
+  menu.addEventListener('toggle', e => {
+    if (e.newState !== 'closed') return;
+    menu.remove();
+    if (!chosen) (opener.isConnected ? opener : panel.querySelector(`[data-queue-action="${openerAction}"]`))?.focus();
+  });
+  if (panelClick) menu.addEventListener('click', panelClick);
+  (panel.parentElement || document.body).appendChild(menu); menu.showPopover(); menu.querySelector('button:not(:disabled)')?.focus();
 }
 function openQueueShuffleMenu(opener) {
   const q = queueState();

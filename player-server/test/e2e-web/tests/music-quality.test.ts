@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { toggleTheme } from './helpers/header-menu';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import { writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { Evidence, loadFixture, track } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, openFolder, playCard, expectPlaying, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
-import { minimizePlayer } from './helpers/player-options';
+import { minimizePlayer, inPlayerOptions, restorePlayer, openPlayerOptions } from './helpers/player-options';
 
 test('M50 actual quality responses, playback, next-open transition and seek', async ({ page, browser }, info) => {
   const f = loadFixture();
@@ -16,7 +16,7 @@ test('M50 actual quality responses, playback, next-open transition and seek', as
   await keyboardLogin(page, f.user);
   await openFolder(page, f.setIds.Music, 'EQ Probe');
   await playCard(page, song.title, song.id);
-  const panel = page.locator('details').filter({ has: page.getByLabel('Stream quality', { exact: true }) });
+  const panel = await inPlayerOptions(page, page.locator('details').filter({ has: page.getByLabel('Stream quality', { exact: true }) }));
   await panel.locator('summary').click();
   await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
   const quality = panel.locator('select[aria-label="Stream quality"]');
@@ -30,7 +30,7 @@ test('M50 actual quality responses, playback, next-open transition and seek', as
     // Reopen through the visible card: preferences deliberately apply next open.
     await minimizePlayer(page);
     await playCard(page, song.title, song.id);
-    await page.getByRole('button', { name: 'Restore player', exact: true }).click();
+    await restorePlayer(page);
     await expectPlaying(page, song.id);
     const src = await page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.currentSrc);
     const endpoint = `/api/media/${song.id}/${profile === 'original' ? 'stream' : `compat?profile=${profile}`}`;
@@ -67,6 +67,9 @@ test('M50 actual quality responses, playback, next-open transition and seek', as
   await page.keyboard.press('Tab');
   await page.keyboard.press('Escape');
   await expect(panel.locator('summary')).toBeFocused();
+  // A second Escape closes the player menu; player shortcuts work again.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#btn-player-options')).toBeFocused();
   await page.keyboard.press('p');
   await expect.poll(() => page.locator('#media-audio').evaluate((a: HTMLAudioElement) => a.paused)).toBe(true);
   await page.keyboard.press('p');
@@ -88,7 +91,7 @@ test('M50 actual unavailable encoder fails visibly and Original recovers', async
   await keyboardLogin(page, f.user);
   await openFolder(page, f.setIds.Music, 'EQ Probe');
   await playCard(page, probe.title, probe.id);
-  const panel = page.locator('details').filter({ has: page.locator('select[aria-label="Stream quality"]') });
+  const panel = await inPlayerOptions(page, page.locator('details').filter({ has: page.locator('select[aria-label="Stream quality"]') }));
   await panel.locator('summary').click();
   await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
   await panel.locator('select[aria-label="Stream quality"]').selectOption('opus96');
@@ -104,7 +107,7 @@ test('M50 actual unavailable encoder fails visibly and Original recovers', async
   await page.screenshot({ path: e.path('encoder-failure.png') });
   await minimizePlayer(page);
   await playCard(page, song.title, song.id);
-  await page.getByRole('button', { name: 'Restore player', exact: true }).click();
+  await restorePlayer(page);
   const out = await captureOutput(page, 1200, e.path('encoder-original-recovery.wav'));
   assertValidCapture(out);
   expect(mainSegment(out.analysis)!.duration_s).toBeGreaterThan(.5);
@@ -118,7 +121,7 @@ test('M50 saved device default, themes, narrow controls and profile-list transpo
   await keyboardLogin(page, f.user);
   await openFolder(page, f.setIds.Music, 'EQ Probe');
   await playCard(page, song.title, song.id);
-  const panel = page.locator('details').filter({ has: page.getByLabel('Stream quality', { exact: true }) });
+  const panel = await inPlayerOptions(page, page.locator('details').filter({ has: page.getByLabel('Stream quality', { exact: true }) }));
   await panel.locator('summary').click();
   await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
   await panel.locator('select[aria-label="Stream quality"]').selectOption('mp3192');
@@ -126,7 +129,7 @@ test('M50 saved device default, themes, narrow controls and profile-list transpo
   await page.getByRole('button', { name: song.title, exact: true }).waitFor();
   await minimizePlayer(page);
   await playCard(page, song.title, song.id);
-  await page.getByRole('button', { name: 'Restore player', exact: true }).click();
+  await restorePlayer(page);
   await panel.locator('summary').click();
   await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
   await expect(panel.locator('select[aria-label="Stream quality"]')).toHaveValue('mp3192');
@@ -140,14 +143,16 @@ test('M50 saved device default, themes, narrow controls and profile-list transpo
   await panel.getByRole('button', { name: 'Reload profiles', exact: true }).click();
   await expect(panel.getByRole('status')).toContainText('ready');
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'More player controls', exact: true }).click();
+  await openPlayerOptions(page);
   await page.screenshot({ path: e.path('quality-narrow-dark.png'), fullPage: true });
   await toggleTheme(page);
   await page.getByRole('button', { name: 'More player controls', exact: true }).click();
   await page.screenshot({ path: e.path('quality-narrow-light.png'), fullPage: true });
   await expect(panel.locator('select[aria-label="Stream quality"]')).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.getByRole('button', { name: 'Log out', exact: true }).click();
+  await (await headerItem(page, '#logout-btn')).click();
+  // Let logout finish its own redirect before signing in again.
+  await page.waitForURL(/login/);
   await keyboardLogin(page, f.admin);
   await openFolder(page, f.setIds.Music, 'EQ Probe');
   await playCard(page, song.title, song.id);
@@ -165,7 +170,7 @@ test('M50 current buffered source survives offline quality edits', async ({ page
   await keyboardLogin(page, f.user);
   await openFolder(page, f.setIds.Music, 'EQ Probe');
   await playCard(page, song.title, song.id);
-  const panel = page.locator('details').filter({ has: page.locator('select[aria-label="Stream quality"]') });
+  const panel = await inPlayerOptions(page, page.locator('details').filter({ has: page.locator('select[aria-label="Stream quality"]') }));
   await panel.locator('summary').click();
   await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
   await expect(panel.getByRole('status')).toContainText('ready');

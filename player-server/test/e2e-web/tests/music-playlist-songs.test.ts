@@ -66,7 +66,7 @@ test('M27 selected additions long list filtered duplicate move remove Undo origi
    await expect.poll(()=>page.locator('[data-add-songs]').evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(theme==='light'?'rgb(255, 255, 255)':'rgb(30, 34, 44)');
    const shot=e.path(`m27-songs-${theme}-${width}.png`);await page.screenshot({path:shot,fullPage:true,animations:'disabled'});artifacts.push(shot);
   }
-  await page.getByRole('button',{name:'Clear',exact:true}).click();await expect(find).toHaveValue('');await expect(page.locator('.media-row')).toHaveCount(47);
+  await find.fill('');await expect(find).toHaveValue('');await expect(page.locator('.media-row')).toHaveCount(47);
   await page.reload();await expect(page.locator('.media-row')).toHaveCount(47);const persisted=await(await page.request.get('/api/v1/playlists/'+id)).json();expect(persisted.entries).toEqual(restored.entries);
   e.record({feature:'M27',scenario:'long list selected add filtered later duplicate original queue audio move remove Undo offline failure restart',result:'pass',data:{saved,moved,removed,restored,persisted,audio:segment},artifacts});
  }catch(error){e.record({feature:'M27',scenario:'long playlist song editing',result:'fail',detail:String(error),data:{id},artifacts});throw error;}

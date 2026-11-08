@@ -6,7 +6,7 @@
  * media element, dialogs), never screen coordinates, so a restyled page does
  * not break the suite while a renamed control does — as it should.
  */
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import type { Account } from './music-fixture';
 import { analyze, startCapture, takeCapture, writeWav, type Analysis, type MediaEvent } from './audio-tap';
 
@@ -33,7 +33,12 @@ export async function audioState(page: Page): Promise<AudioState> {
 
 /** Sign in through the login form by keyboard only (Tab between fields). */
 export async function keyboardLogin(page: Page, account: Account): Promise<void> {
-  await page.goto('/login.html');
+  // A just-clicked Log out redirects to the login page itself; a goto racing
+  // that redirect is aborted or interrupted, and the redirect lands there anyway.
+  await page.goto('/login.html').catch(async error => {
+    if (!/ERR_ABORTED|interrupted by another navigation/.test(String(error))) throw error;
+    await page.waitForURL(/\/login\.html/);
+  });
   // app.js is a module; submitting before it binds turns the form into a GET
   // with credentials in the query string and never reaches /api/v1/auth/login.
   await page.waitForLoadState('networkidle');
@@ -191,11 +196,37 @@ export async function playCard(page: Page, fileName: string, mediaId: number): P
 }
 
 /** Open a collection secondary action from the shared hamburger More menu. Returns the More control (focus restore target). */
-export async function openCollectionMoreAction(page: Page, action: string | RegExp) {
-  const more = page.locator('#media-grid').getByRole('button', { name: 'More', exact: true });
-  await more.click();
+/**
+ * Open the collection More menu. Catalog pages show it directly; album, artist
+ * and playlist detail pages reach it through the entity More menu's
+ * "Queue and offline…" item. Returns the visible opener that keeps focus.
+ */
+export async function openCollectionMenu(page: Page, scope: Locator = page.locator('#media-grid')) {
+  const direct = scope.locator('[data-collection-menu]:visible').first();
+  if (await direct.count()) {
+    await direct.click();
+    return direct;
+  }
+  const entity = scope.locator('[data-album-more]:visible, [data-artist-more]:visible, [data-playlist-more]:visible').first();
+  await entity.click();
+  await page.getByRole('menu', { name: /^More (album|artist|playlist) actions$/ }).getByRole('button', { name: 'Queue and offline…', exact: true }).click();
+  return entity;
+}
+
+export async function openCollectionMoreAction(page: Page, action: string | RegExp, scope?: Locator) {
+  const more = await openCollectionMenu(page, scope);
   await page.getByRole('menu', { name: 'More collection actions', exact: true }).getByRole('button', { name: action }).click();
   return more;
+}
+
+/** Collection Shuffle: visible on catalogs, in the entity More menu on detail pages. */
+export async function collectionShuffle(page: Page, scope: Locator = page.locator('#media-grid')) {
+  const direct = scope.locator('[data-collection-shuffle]:visible').first();
+  if (await direct.count()) { await direct.click(); return direct; }
+  const entity = scope.locator('[data-album-more]:visible, [data-artist-more]:visible, [data-playlist-more]:visible').first();
+  await entity.click();
+  await page.getByRole('menu', { name: /^More (album|artist|playlist) actions$/ }).getByRole('button', { name: 'Shuffle', exact: true }).click();
+  return entity;
 }
 
 const queuePanel = (page: Page) => page.locator('#queue-panel');

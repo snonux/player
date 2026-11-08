@@ -299,6 +299,13 @@ export function initKeyboardAccess() {
     }
     if (local?.matches('[popover]') && event.key === 'Escape') {
       event.preventDefault(); event.stopImmediatePropagation();
+      // Inside an expanded section (Stream quality, Equalizer…), Escape
+      // collapses that section first; a second Escape closes the menu.
+      const section = event.target?.closest?.('details[open]');
+      if (section && local.contains(section)) {
+        section.open = false; section.querySelector('summary')?.focus();
+        return;
+      }
       local.hidePopover();
       if (local.id === 'player-options') document.getElementById('btn-player-options')?.focus();
       return;

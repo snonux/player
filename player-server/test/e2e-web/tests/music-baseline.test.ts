@@ -234,8 +234,8 @@ async function pointerSignIn(page: Page, press: (locator: Locator) => Promise<vo
 }
 
 /**
- * Start a card: a tap opens Player's card action menu, whose Play button
- * plays; with the mouse, hover the card and click its ▶ button.
+ * Start a card: a tap on the card title plays it directly; with the mouse,
+ * hover the card and click its ▶ button.
  */
 async function playFromCard(page: Page, fileName: string, touch: boolean, shots: string[]) {
   const open = page.getByRole('button', { name: fileName, exact: true });
@@ -246,10 +246,8 @@ async function playFromCard(page: Page, fileName: string, touch: boolean, shots:
     return;
   }
   await open.tap();
-  const menu = page.getByRole('group', { name: 'Media actions' });
-  await expect(menu).toBeVisible();
-  await shot(page, shots, 'narrow-light-card-menu');
-  await menu.getByRole('button', { name: 'Play', exact: true }).tap();
+  await expect(page.locator('#player')).toHaveClass(/\bopen\b/);
+  await shot(page, shots, 'narrow-light-card-play');
 }
 
 /** Width and height of the touch controls used in the narrow journey. */

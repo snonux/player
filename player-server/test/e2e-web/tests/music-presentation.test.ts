@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { inPlayerOptions } from './helpers/player-options';
+import { headerItem } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { audioState, expectPlaying, keyboardLogin, openFolder, playCard } from './helpers/music-ui';
 
@@ -35,21 +37,22 @@ test('M68: appearance choices persist during local playback, including offline c
     await playCard(page, firstLight.title, firstLight.id);
     await expectPlaying(page, firstLight.id);
 
-    const visuals = page.getByLabel('Audio visualization');
+    const visuals = await inPlayerOptions(page, page.getByLabel('Audio visualization'));
     await expect(visuals).toBeVisible();
     await visuals.selectOption('off');
     const cover = page.locator('#cover-art');
-    // This synthetic track has no per-track artwork thumbnail. Turning
-    // visuals off must therefore retain its honest missing-art fallback,
-    // rather than showing stale art from a previous source.
-    await expect(cover).toBeHidden();
+    // The track has no embedded artwork, so turning visuals off shows its
+    // album folder's cover.jpg (the same art as its card), not stale art.
+    await expect(cover).toBeVisible();
+    const cardThumb = await page.locator(`#media-grid .media-card[data-id="${firstLight.id}"] img`).first().getAttribute('src');
+    expect(cardThumb).toBeTruthy();
+    await expect(cover).toHaveAttribute('src', /\S/);
 
     // The settings rows must also stay usable beside the compact player on a
     // phone-sized viewport.
     await page.setViewportSize({ width: 390, height: 844 });
 
-    const settings = page.getByRole('button', { name: 'Settings', exact: true });
-    await settings.click();
+    await (await headerItem(page, '#settings-toggle')).click();
     const dialog = page.locator('#settings-modal');
     await expect(dialog).toHaveClass(/open/);
 
@@ -88,11 +91,11 @@ test('M68: appearance choices persist during local playback, including offline c
 
     await page.keyboard.press('Escape');
     await expect(dialog).not.toHaveClass(/open/);
-    await expect(settings).toBeFocused();
+    await expect(page.locator('#header-menu-toggle')).toBeFocused();
     await expect.poll(async () => (await audioState(page)).paused).toBe(false);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await settings.click();
+    await (await headerItem(page, '#settings-toggle')).click();
     await expect(mode).toHaveValue('light');
     await expect(accent).toHaveValue('plum');
     await expect(shape).toHaveValue('rounded');

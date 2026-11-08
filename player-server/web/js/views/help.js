@@ -31,9 +31,12 @@ export function dismissSidebarAfterNav() {
   if (sidebar.contains(document.activeElement)) document.activeElement.blur?.();
   const focusContent = () => {
     if (focusSelectedCard()) return;
-    document.getElementById('media-grid')
-      ?.querySelector('.folder-open, .set-open, .media-open, .song-open, button, [href]')
-      ?.focus?.();
+    // Prefer a card's primary open control; otherwise the first rendered
+    // control (hidden toolbars such as bulk selection come first in the DOM).
+    const grid = document.getElementById('media-grid');
+    const target = grid?.querySelector('.folder-open, .set-open, .media-open, .song-open, .collection-open, .podcast-feed-open')
+      || [...(grid?.querySelectorAll('button, [href]') || [])].find(el => el.getClientRects().length);
+    target?.focus?.();
   };
   document.addEventListener('library:navigated', focusContent, { once: true });
   return true;

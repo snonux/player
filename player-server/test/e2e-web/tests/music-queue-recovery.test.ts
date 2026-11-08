@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs';
-import { toggleTheme } from './helpers/header-menu';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import { test, expect, request, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
@@ -87,9 +87,9 @@ test('M16 repeated reordered queue reload exact short-song offset paused Resume 
   expect((await state(page)).entries.map((v:any)=>v.id)).toEqual(saved.entries.map((v:any)=>v.id));
   expect((await state(page)).index).toBe(saved.index);
   await page.keyboard.press('Escape');
-  await page.getByRole('button',{name:'Log out',exact:true}).click();await keyboardLogin(page,f.admin);
+  await (await headerItem(page, '#logout-btn')).click();await keyboardLogin(page,f.admin);
   await page.keyboard.press('Q');await expect(panel(page)).toContainText('Queue is empty');expect((await state(page)).label).toBe('');
-  await page.keyboard.press('Escape');await page.getByRole('button',{name:'Log out',exact:true}).click();await keyboardLogin(page,f.user);
+  await page.keyboard.press('Escape');await (await headerItem(page, '#logout-btn')).click();await keyboardLogin(page,f.user);
   await page.keyboard.press('Q');await expect(panel(page).getByRole('button',{name:'Resume queue',exact:true})).toBeVisible();
   expect((await state(page)).entries.map((v:any)=>v.id)).toEqual(saved.entries.map((v:any)=>v.id));
   await openQueueMoreAction(page,'Clear queue');await page.reload();await page.keyboard.press('Q');await expect(panel(page)).toContainText('Queue is empty');

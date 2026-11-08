@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { test, expect, request, type Page } from '@playwright/test';
+import { headerItem } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, openFolder, playCard, audioState, expectPlaying, captureOutput, assertValidCapture, mainSegment, openQueueMoreAction} from './helpers/music-ui';
-import { minimizePlayer } from './helpers/player-options';
+import { minimizePlayer, inPlayerOptions } from './helpers/player-options';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires an isolated disposable music fixture');
 let fixture: MusicFixture;
@@ -29,7 +30,7 @@ test.beforeAll(async ({ browser }, info) => {
 });
 
 async function openSettings(page: Page) {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await (await headerItem(page, '#settings-toggle')).click();
   await expect(settingsPanel(page)).toHaveClass(/open/);
   await expect(networkPanel(page).getByLabel('Music network', { exact: true })).toBeVisible();
 }
@@ -37,11 +38,11 @@ async function openSettings(page: Page) {
 async function closeSettings(page: Page) {
   await page.keyboard.press('Escape');
   await expect(settingsPanel(page)).not.toHaveClass(/open/);
-  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeFocused();
+  await expect(page.locator('#header-menu-toggle')).toBeFocused(); // Settings opened from the header menu
 }
 
 async function openQuality(page: Page) {
-  const panel = qualityPanel(page);
+  const panel = await inPlayerOptions(page, qualityPanel(page));
   if (!(await panel.locator('summary').isVisible())) {
     const restore = page.getByRole('button', { name: 'Restore player', exact: true });
     if (await restore.isVisible()) await restore.click();
@@ -85,7 +86,7 @@ test('M52 Auto unknown uses Mobile; separate manual qualities change only next r
     await playCard(page, song.title, song.id);
     const panel = await openQuality(page);
     await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
-    await panel.getByLabel('Stream quality', { exact: true }).selectOption('opus96');
+    await panel.locator('select[aria-label="Stream quality"]').selectOption('opus96');
     const beforeMobile = await audioState(page);
     expect(beforeMobile.paused).toBe(false);
     const mobile = await reopenCard(page, song);
@@ -97,7 +98,7 @@ test('M52 Auto unknown uses Mobile; separate manual qualities change only next r
     expect((await audioState(page)).src).toBe(mobile.src);
     await openQuality(page);
     await panel.getByLabel('Quality network', { exact: true }).selectOption('wifi');
-    await panel.getByLabel('Stream quality', { exact: true }).selectOption('aac128');
+    await panel.locator('select[aria-label="Stream quality"]').selectOption('aac128');
     expect((await audioState(page)).src).toBe(mobile.src);
     const wifi = await reopenCard(page, song);
     expect(wifi.src).toContain(`/media/${song.id}/compat?profile=aac128`);
@@ -120,9 +121,9 @@ test('M52 Auto unknown uses Mobile; separate manual qualities change only next r
     await reopenCard(page, song);
     await openQuality(page);
     await panel.getByLabel('Quality network', { exact: true }).selectOption('wifi');
-    await expect(panel.getByLabel('Stream quality', { exact: true })).toHaveValue('aac128');
+    await expect(panel.locator('select[aria-label="Stream quality"]')).toHaveValue('aac128');
     await panel.getByLabel('Quality network', { exact: true }).selectOption('mobile');
-    await expect(panel.getByLabel('Stream quality', { exact: true })).toHaveValue('opus96');
+    await expect(panel.locator('select[aria-label="Stream quality"]')).toHaveValue('opus96');
     await panel.locator('summary').focus();
     await page.keyboard.press('Escape');
     await expect(panel).not.toHaveAttribute('open', '');
@@ -176,8 +177,8 @@ test('M52 Wi-Fi-only policy preserves current song, blocks cached/direct/convert
     await attempt(second);
     expect(attempted.length).toBe(beforeCached);
     await openQuality(page);
-    await qualityPanel(page).getByLabel('Quality network', { exact: true }).selectOption('mobile');
-    await qualityPanel(page).getByLabel('Stream quality', { exact: true }).selectOption('opus96');
+    await (await inPlayerOptions(page, qualityPanel(page))).getByLabel('Quality network', { exact: true }).selectOption('mobile');
+    await (await inPlayerOptions(page, qualityPanel(page))).locator('select[aria-label="Stream quality"]').selectOption('opus96');
     const beforeCompat = attempted.length;
     await attempt(third);
     expect(attempted.length).toBe(beforeCompat);

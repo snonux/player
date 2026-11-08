@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { assertValidCapture, audioState, captureOutput, expectPlaying, keyboardLogin, mainSegment, openFolder, openSidebarMusic, playCard } from './helpers/music-ui';
-import { minimizePlayer } from './helpers/player-options';
+import { minimizePlayer, inPlayerOptions, restorePlayer, closePlayerOptions } from './helpers/player-options';
 
 const FEATURE = 'M24 ReplayGain loudness';
 const GAIN_FOLDER = 'Gain Check';
@@ -37,7 +37,7 @@ test('M24: Automatic preserves ordered album dynamics and explicit Track overrid
     await page.getByRole('button', { name: 'Open album Gain Check by Level Lab', exact: true }).click();
     await page.getByRole('button', { name: '▶ Play album', exact: true }).click();
     await expectPlaying(page, loud.id);
-    const mode = page.getByLabel('Loudness', { exact: true });
+    const mode = await inPlayerOptions(page, page.getByLabel('Loudness', { exact: true }));
     const status = page.locator('.loudness-control').filter({ has: mode }).locator('[role="status"]');
     await mode.selectOption('automatic');
     await expect(status).toContainText('Album tags');
@@ -69,6 +69,7 @@ test.beforeEach(async ({ page }) => {
 async function measure(page: Parameters<typeof captureOutput>[0], name: string, artifacts: string[]) {
   // The multi-mode journey outlasts a 12-second fixture. Seek through the real
   // timeline before each capture so later settings cannot measure its successor.
+  await closePlayerOptions(page);
   const timeline = page.locator('#progress-track');
   const bounds = (await timeline.boundingBox())!;
   await timeline.click({ position: { x: bounds.width * .02, y: bounds.height / 2 } });
@@ -92,7 +93,7 @@ async function level(page: Parameters<typeof captureOutput>[0], name: string, ar
 async function playAnotherCard(page: Parameters<typeof playCard>[0], title: string, id: number) {
   await minimizePlayer(page);
   await playCard(page, title, id);
-  await page.getByRole('button', { name: 'Restore player', exact: true }).click();
+  await restorePlayer(page);
 }
 
 test('M24: loudness settings normalize tagged music and keep untagged music clipping-safe', async ({ page }) => {
@@ -106,8 +107,8 @@ test('M24: loudness settings normalize tagged music and keep untagged music clip
     await openFolder(page, fixture.setIds.Music, GAIN_FOLDER);
     await playCard(page, loud.title, loud.id);
 
-    const mode = page.getByLabel('Loudness', { exact: true });
-    const control = page.locator('.loudness-control').filter({ has: mode });
+    const mode = await inPlayerOptions(page, page.getByLabel('Loudness', { exact: true }));
+    const control = await inPlayerOptions(page, page.locator('.loudness-control').filter({ has: page.getByLabel('Loudness', { exact: true }) }));
     const status = control.locator('[role="status"]');
     await expect(mode).toBeVisible();
     await mode.selectOption('off');

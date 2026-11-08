@@ -1,5 +1,5 @@
 import {test, expect, request, type Page} from '@playwright/test';
-import { toggleTheme } from './helpers/header-menu';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import {execFileSync} from 'node:child_process';
 import {join} from 'node:path';
 import {Evidence, loadFixture, track, SUPPORT_DIR, type MusicFixture} from './helpers/music-fixture';
@@ -80,7 +80,7 @@ test('M06 missing lossy depth, actual offline Info/retry, restart and permission
   execFileSync('python3',[join(SUPPORT_DIR,'music_fixture.py'),'restart',fixture.dir]);
   await page.reload();await selectByKeys(page,item.title);await openInfo(page);await tabExpand(page);await row(page,'Bit depth','24 bits');await page.keyboard.press('Escape');
   const after=await (await page.request.get(`/api/v1/media/${item.id}`)).json();expect(after.media.id).toBe(snapshot.media.id);expect(after.media.music).toEqual(snapshot.media.music);
-  await page.getByRole('button',{name:'Log out',exact:true}).click();
+  await (await headerItem(page, '#logout-btn')).click();
   await page.waitForURL(url=>url.pathname==='/login.html',{waitUntil:'domcontentloaded'});
   await expect(page.locator('#username')).toBeFocused();
   await page.keyboard.type(fixture.user.username);await page.keyboard.press('Tab');

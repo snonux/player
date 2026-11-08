@@ -73,6 +73,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
     const artistHeart = await heart(page, 'artist', artist.artist_key);
     await artistHeart.click();
     await expect(artistHeart).toHaveAttribute('aria-pressed', 'true');
+    await openMusicFilters(page);
     await page.getByRole('checkbox', { name: 'Favorites only' }).check();
     await expect(page.locator(`[data-artist-card="${artist.artist_key}"]`)).toBeVisible();
     await expect(page.locator('[data-artist-card]')).toHaveCount(1);
@@ -93,6 +94,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
     await openPlaylistDetailMoreAction(page, 'favorite');
     await expect(await heart(page, 'playlist', playlistId)).toHaveAttribute('aria-pressed', 'true');
     await page.keyboard.press('Backspace');
+    await openMusicFilters(page);
     await page.getByRole('checkbox', { name: 'Favorites only' }).check();
     await expect(page.locator(`[data-playlist="${playlistId}"]`)).toBeVisible();
     await expect(page.locator('[data-playlist]')).toHaveCount(1);
@@ -107,6 +109,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
       await expect(await heart(otherPage, 'playlist', playlistId)).toHaveAttribute('aria-pressed', 'false');
       await (await heart(otherPage, 'playlist', playlistId)).click();
       await expect(await heart(otherPage, 'playlist', playlistId)).toHaveAttribute('aria-pressed', 'true');
+      await openMusicFilters(otherPage);
       await otherPage.getByRole('checkbox', { name: 'Favorites only' }).check();
       await expect(otherPage.locator(`[data-playlist="${playlistId}"]`)).toBeVisible();
       expect((await (await admin.get('/api/v1/music/albums?favorite=true')).json()).some((item: any) => item.album_key === album.album_key)).toBe(false);

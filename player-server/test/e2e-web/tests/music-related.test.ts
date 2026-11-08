@@ -1,4 +1,5 @@
 import { expect, request, test, type Page } from '@playwright/test';
+import { minimizePlayer } from './helpers/player-options';
 import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
@@ -60,7 +61,7 @@ async function checkOutput(page: Page, id: number, hz: number, name: string, art
 async function minimize(page: Page) {
   const classes = await page.locator('#player').getAttribute('class') || '';
   if (classes.includes('open') && !classes.includes('minimized')) {
-    await page.getByRole('button', { name: 'Minimize player (Shift+C)', exact: true }).click();
+    await minimizePlayer(page);
   }
 }
 

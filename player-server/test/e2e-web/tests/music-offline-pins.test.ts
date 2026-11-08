@@ -1,6 +1,6 @@
 /** M47 real browser collection pins on an isolated disposable music fixture. */
 import { test, expect, request, type Page } from '@playwright/test';
-import { toggleTheme } from './helpers/header-menu';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -226,16 +226,16 @@ test('M47 saved collections stay account scoped and server denial cannot play ol
     await pin.getByRole('button', { name: 'Close', exact: true }).click();
     await page.setViewportSize({ width: 1280, height: 800 });
 
-    await page.getByRole('button', { name: 'Log out', exact: true }).click();
+    await (await headerItem(page, '#logout-btn')).click();
     await page.waitForURL(url => url.pathname === '/login.html');
     await keyboardLogin(page, f.admin);
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await (await headerItem(page, '#settings-toggle')).click();
     const saved = page.locator('#settings-modal [data-offline-library]');
     await expect(saved.locator('[data-status]')).toContainText('No saved collections.');
     const other = e.path('m47-other-account-empty.png');
     await page.screenshot({ path: other, fullPage: true }); artifacts.push(other);
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Log out', exact: true }).click();
+    await (await headerItem(page, '#logout-btn')).click();
     await page.waitForURL(url => url.pathname === '/login.html');
     await keyboardLogin(page, f.user);
     await page.goto(`/?music=album&id=${encodeURIComponent(album.album_key)}`);

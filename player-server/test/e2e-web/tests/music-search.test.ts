@@ -1,5 +1,6 @@
 import { test, expect, request, type Page, type Locator } from '@playwright/test';
 import { toggleTheme } from './helpers/header-menu';
+import { inPlayerOptions } from './helpers/player-options';
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { genuineTouchTap } from './helpers/genuine-touch.cjs';
@@ -28,7 +29,7 @@ async function minimizePlayingView(page:Page,touch=false) {
  const player=page.locator('#player');
  await expect(player).toHaveClass(/\bopen\b/);await expect(player).not.toHaveClass(/\bhidden\b/);
  if(!((await player.getAttribute('class')) || '').split(/\s+/).includes('minimized')) {
-  const control=page.getByRole('button',{name:'Minimize player (Shift+C)',exact:true});
+  const control=await inPlayerOptions(page,page.getByRole('button',{name:'Minimize player (Shift+C)',exact:true}));
   await expect(control).toBeVisible();
   if(touch)await genuineTouchTap(page,control);else await control.click();
  }

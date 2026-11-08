@@ -1,5 +1,5 @@
 import { test, expect, request, type Page } from '@playwright/test';
-import { toggleTheme } from './helpers/header-menu';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, audioState, expectPlaying, captureOutput, assertValidCapture, mainSegment, openSidebarMusic, openQueueShuffleAction, openQueueMoreAction } from './helpers/music-ui';
@@ -59,7 +59,7 @@ async function makePlaylist(page: Page) {
 
 async function openQueue(page: Page) {
   if (!(await panel(page).isVisible())) {
-    await page.getByRole('button', { name: 'Log out', exact: true }).focus();
+    await page.locator('#header-menu-toggle').focus();
     await page.keyboard.press('Q');
   }
   await expect(panel(page)).toBeVisible();
@@ -258,14 +258,14 @@ test('M19 offline retry, bounded catalog ACL and account isolation', async ({ pa
       })).ok()).toBe(true);
     }
     await panel(page).getByRole('button', { name: 'Close queue', exact: true }).click();
-    await page.getByRole('button', { name: 'Log out', exact: true }).click();
+    await (await headerItem(page, '#logout-btn')).click();
     await page.waitForURL(url => url.pathname === '/login.html');
     await keyboardLogin(page, fixture.admin);
     await openQueue(page);
     expect((await state(page)).entries).toHaveLength(0);
     await expect(panel(page).locator('[data-queue-action="shuffle-menu"]')).toBeDisabled();
     await panel(page).getByRole('button', { name: 'Close queue', exact: true }).click();
-    await page.getByRole('button', { name: 'Log out', exact: true }).click();
+    await (await headerItem(page, '#logout-btn')).click();
     await page.waitForURL(url => url.pathname === '/login.html');
     await keyboardLogin(page, fixture.user);
     await openQueue(page);

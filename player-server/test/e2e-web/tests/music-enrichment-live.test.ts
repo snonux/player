@@ -1,5 +1,5 @@
 import { test, expect, request, type Page } from '@playwright/test';
-import { toggleTheme } from './helpers/header-menu';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -127,7 +127,7 @@ test('M10 artist/album enrichment refresh, no match, failure, ACL and playback',
     const shot = evidence.path('m10-album-after-restart.png');
     await page.screenshot({ path: shot, fullPage: true, animations: 'disabled' }); artifacts.push(shot);
 
-    await page.getByRole('button', { name: 'Log out', exact: true }).click();
+    await (await headerItem(page, '#logout-btn')).click();
     await keyboardLogin(page, fixture.user);
     await openSidebarMusic(page, 'Albums');
     await page.getByRole('button', { name: 'Open album Night Transit by Aurora Lane', exact: true }).click();

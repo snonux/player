@@ -1,5 +1,5 @@
 import { settleMusicViewport } from './helpers/music-viewport';
-import { toggleTheme } from './helpers/header-menu';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import { test, expect } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -134,7 +134,7 @@ test('M05 scan/removal/failed probe, permission and restart round trips',async({
   await rescan('initial');restored=true;
   execFileSync('python3',[join(SUPPORT_DIR,'music_fixture.py'),'restart',fixture.dir]);
   await page.reload();await info(page);await expand(page,'Release details');await row(page,'Original date','1979');await page.keyboard.press('Escape');
-  await page.getByRole('button',{name:'Log out',exact:true}).click();await keyboardLogin(page,fixture.user);
+  await (await headerItem(page, '#logout-btn')).click();await keyboardLogin(page,fixture.user);
   const hidden=track(fixture,'Restricted/Release Metadata/hidden.flac');const denied=await page.request.get(`/api/v1/media/${hidden.id}`);expect(denied.status()).toBe(403);expect(await denied.text()).not.toContain('1979');
   evidence.record({feature:'M05',scenario:'rescan/removal/failed probe/restart/ACL round trips',result:'pass',data:{before,after}});
  }catch(error){evidence.record({feature:'M05',scenario:'rescan/removal/failed probe/restart/ACL round trips',result:'fail',detail:String(error)});throw error;}
