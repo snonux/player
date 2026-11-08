@@ -510,7 +510,8 @@ function keyboardHandlers() {
     tags: openTagsForSelected,
     favorite: () => {
       const el = currentElement();
-      if (el?.dataset.id) toggleFavorite(el.dataset.id, el.querySelector('[data-action="favorite"]'));
+      // Streamed episodes carry a negative stand-in id: no server media to favorite.
+      if (Number(el?.dataset.id) > 0) toggleFavorite(el.dataset.id, el.querySelector('[data-action="favorite"]'));
     },
     // The admin toggle is hidden for non-admins; A does nothing for them.
     admin: () => {

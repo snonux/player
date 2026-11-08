@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { bootstrap, triggerRescan, waitForServer } from './helpers/server';
+import { playerOptionsItem } from './helpers/player-options';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -54,13 +55,28 @@ test('floating, mobile, and fullscreen controls leave seek and volume usable', a
     expect(trackBox).not.toBeNull();
     expect(trackBox!.width).toBeGreaterThan(minTrackWidth);
     expect(trackBox!.height).toBeGreaterThanOrEqual(24);
-    for (const control of [volume, mute, fullscreen]) {
+    await expect(fullscreen).toBeVisible();
+    const box = (await fullscreen.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(playerBox!.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(playerBox!.x + playerBox!.width);
+    expect(box.y + box.height).toBeLessThanOrEqual(playerBox!.y + playerBox!.height);
+    // Volume and mute live in the More player controls menu, which must fit the viewport.
+    const viewport = page.viewportSize() || await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    for (const selector of ['#volume-slider', '#btn-mute']) {
+      const control = await playerOptionsItem(page, selector);
       await expect(control).toBeVisible();
-      const box = await control.boundingBox();
-      expect(box).not.toBeNull();
-      expect(box!.x).toBeGreaterThanOrEqual(playerBox!.x);
-      expect(box!.x + box!.width).toBeLessThanOrEqual(playerBox!.x + playerBox!.width);
-      expect(box!.y + box!.height).toBeLessThanOrEqual(playerBox!.y + playerBox!.height);
+      const controlBox = (await control.boundingBox())!;
+      expect(controlBox.x).toBeGreaterThanOrEqual(0);
+      expect(controlBox.x + controlBox.width).toBeLessThanOrEqual(viewport.width);
+      expect(controlBox.y + controlBox.height).toBeLessThanOrEqual(viewport.height);
+    }
+    await closeOptions();
+  }
+
+  async function closeOptions() {
+    if (await page.locator('#player-options').isVisible()) {
+      await page.locator('#player-options').getByRole('button', { name: 'Close controls' }).click();
+      await expect(page.locator('#player-options')).toBeHidden();
     }
   }
 
@@ -76,11 +92,13 @@ test('floating, mobile, and fullscreen controls leave seek and volume usable', a
 
   await assertControls(80);
   await seekTo(0.7);
+  await playerOptionsItem(page, '#volume-slider');
   const volumeBox = await volume.boundingBox();
   expect(volumeBox).not.toBeNull();
   await volume.click({ position: { x: volumeBox!.width * 0.3, y: volumeBox!.height / 2 } });
   await expect.poll(() => page.locator('#media-audio').evaluate((m: any) => m.volume)).toBeLessThan(0.5);
   await expect.poll(() => page.locator('#media-audio').evaluate((m: any) => m.volume)).toBeGreaterThan(0);
+  await closeOptions();
 
   await fullscreen.click();
   await expect(player).toHaveClass(/is-fullscreen/);
@@ -93,10 +111,11 @@ test('floating, mobile, and fullscreen controls leave seek and volume usable', a
   await page.setViewportSize({ width: 320, height: 640 });
   await assertControls(80);
   await seekTo(0.6, true);
-  await mute.click();
+  await (await playerOptionsItem(page, '#btn-mute')).click();
   await expect.poll(() => page.locator('#media-audio').evaluate((m: any) => m.muted)).toBe(true);
-  await mute.click();
+  await (await playerOptionsItem(page, '#btn-mute')).click();
   await expect.poll(() => page.locator('#media-audio').evaluate((m: any) => m.muted)).toBe(false);
+  await closeOptions();
   await player.evaluate((element: any) => element.style.setProperty('--floating-w', '240px'));
   await expect.poll(async () => (await player.boundingBox())?.width).toBeLessThan(243);
   await assertControls(80);

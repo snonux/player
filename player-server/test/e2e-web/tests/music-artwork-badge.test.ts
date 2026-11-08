@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { headerItem } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { keyboardLogin, openFolder } from './helpers/music-ui';
 
@@ -56,7 +57,7 @@ test('B9: duration/size artwork badge remains legible in light and dark themes',
     await expect(badge).toBeVisible();
     await expect(badge).toContainText('00:12');
 
-    const settings = page.getByRole('button', { name: 'Settings', exact: true });
+    const settings = { click: async () => (await headerItem(page, '#settings-toggle')).click() };
     const mode = page.locator('#appearance-mode');
     for (const theme of ['light', 'dark']) {
       await settings.click();

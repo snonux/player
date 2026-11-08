@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
+import { inPlayerOptions } from './helpers/player-options';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, captureOutput, assertValidCapture, audioState, openFolder, playCard, openQueueRowMenuAction} from './helpers/music-ui';
@@ -52,7 +54,7 @@ async function makePlaylist(page: Page, codec: 'FLAC' | 'MP3') {
 }
 
 async function setGapless(page: Page, enabled: boolean) {
-  const panel = gapless(page);
+  const panel = await inPlayerOptions(page, gapless(page));
   if (!(await panel.evaluate((details: HTMLDetailsElement) => details.open))) await panel.locator('summary').click();
   const box = panel.getByRole('checkbox', { name: 'Gapless music queue' });
   if (enabled) await box.check(); else await box.uncheck();
@@ -143,22 +145,22 @@ test('M21 seek, queue edit, speed and source fallback, themes and account scope'
     await expect(page.locator('#player-music-identity')).toContainText('Movement III');
     await expect.poll(async () => (await (await page.request.get(`/api/media/${songs[0].id}`)).json()).progress?.finished,
       { timeout: 10000 }).toBe(true);
-    await page.locator('#playback-speed').selectOption('1.5');
+    await (await inPlayerOptions(page, page.locator('#playback-speed'))).selectOption('1.5');
     await expect.poll(async () => (await audioState(page)).src, { timeout: 10000 }).toMatch(new RegExp(`/media/${songs[2].id}/`));
     await page.getByRole('button', { name: '▶ Play playlist', exact: true }).click();
     await expect(panel.getByRole('status')).toContainText('requires 1×');
-    await page.locator('#playback-speed').selectOption('1');
+    await (await inPlayerOptions(page, page.locator('#playback-speed'))).selectOption('1');
     for (const [theme, width] of [['dark', 1366], ['light', 390]] as const) {
       await page.setViewportSize({ width, height: 844 });
       if (await page.locator('html').getAttribute('data-theme') !== theme)
-        await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+        await toggleTheme(page);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const shot = evidence.path(`m21-${theme}-${width}.png`);
       await page.screenshot({ path: shot, animations: 'disabled' });
       artifacts.push(shot);
     }
     await page.getByRole('button', { name: 'More player controls', exact: true }).click();
-    const compactGapless = gapless(page);
+    const compactGapless = await inPlayerOptions(page, gapless(page));
     if (!(await compactGapless.evaluate((details: HTMLDetailsElement) => details.open)))
       await compactGapless.locator('summary').click();
     const compactBox = compactGapless.getByRole('checkbox', { name: 'Gapless music queue' });
@@ -174,7 +176,7 @@ test('M21 seek, queue edit, speed and source fallback, themes and account scope'
     await playCard(page, songs[0].title, songs[0].id);
     expect((await queue(page)).active).toBe(false);
     expect((await audioState(page)).paused).toBe(false);
-    await page.getByRole('button', { name: 'Log out', exact: true }).click();
+    await (await headerItem(page, '#logout-btn')).click();
     await keyboardLogin(page, fixture.admin);
     expect((await queue(page)).active).toBe(false);
     expect(await identity(page)).toBeFalsy();
@@ -185,7 +187,7 @@ test('M21 seek, queue edit, speed and source fallback, themes and account scope'
     // The playlist is owned by the fixture user; cleanup uses its browser session.
     if (new URL(page.url()).pathname === '/login.html') await keyboardLogin(page, fixture.user);
     if ((await page.request.delete(`/api/v1/playlists/${id}`)).status() === 404) {
-      await page.getByRole('button', { name: 'Log out', exact: true }).click();
+      await (await headerItem(page, '#logout-btn')).click();
       await keyboardLogin(page, fixture.user);
       await page.request.delete(`/api/v1/playlists/${id}`);
     }

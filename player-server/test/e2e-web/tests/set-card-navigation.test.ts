@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { cardAction } from './helpers/card-actions';
 import { bootstrap, triggerRescan, waitForServer } from './helpers/server';
 
 test.use({ serviceWorkers: 'block' });
@@ -41,9 +42,9 @@ test('set center click and keyboard open the set; explicit cover button regenera
   expect(coverPosts).toBe(0);
 
   await page.keyboard.press('Backspace');
-  const regenerate = page.getByRole('button', { name: 'Regenerate cover for images' });
+  // Cover regeneration lives in the set card's More actions menu.
   const request = page.waitForRequest(req => req.method() === 'POST' && /\/api\/sets\/\d+\/cover$/.test(req.url()));
-  await regenerate.click();
+  await cardAction(page, page.locator('.set-card').filter({ hasText: 'images' }), 'Regenerate cover for images');
   await request;
   await expect(page.locator('#toast')).toContainText('Set cover regenerated');
   await expect(page.getByRole('button', { name: 'Set images' })).toBeVisible();

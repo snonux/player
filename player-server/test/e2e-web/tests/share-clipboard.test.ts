@@ -69,18 +69,18 @@ test('s shortcut exposes a selectable link when clipboard API is absent', async 
   const card = await openApp(page, 'absent');
   await card.click();
   // The card center can hit a nested action; this journey starts on the card.
-  await card.focus();
-  await expect(card).toBeFocused();
+  await card.locator('.media-open').focus();
+  await expect(card.locator('.media-open')).toBeFocused();
   await page.keyboard.press('s');
   await expectManualLink(page);
   await page.locator('#share-link-fallback-close').click();
   await expect(page.locator('#share-link-fallback-modal')).not.toHaveClass(/open/);
-  await expect(card).toBeFocused();
+  await expect(card.locator('.media-open')).toBeFocused();
   await page.keyboard.press('s');
   await expectManualLink(page);
   await page.locator('#share-link-fallback-modal').click({ position: { x: 5, y: 5 } });
   await expect(page.locator('#share-link-fallback-modal')).not.toHaveClass(/open/);
-  await expect(card).toBeFocused();
+  await expect(card.locator('.media-open')).toBeFocused();
   await page.keyboard.press('s');
   await expectManualLink(page);
 });

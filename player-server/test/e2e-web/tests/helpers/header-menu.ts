@@ -9,3 +9,8 @@ export async function headerItem(page: Page, selector: string): Promise<Locator>
   }
   return item;
 }
+
+/** Switches light/dark through the header menu's theme item. */
+export async function toggleTheme(page: Page): Promise<void> {
+  await (await headerItem(page, '#theme-toggle')).click();
+}

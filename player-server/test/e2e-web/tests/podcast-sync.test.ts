@@ -8,6 +8,7 @@
  * download, playback, completion, retry and cleanup use actual visible controls.
  */
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { test, expect, type Page, type Locator } from '@playwright/test';
@@ -216,7 +217,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       const betaButton = page.getByRole('button', { name: `Podcast ${beta.title}`, exact: true });
       if (!await betaButton.isVisible()) await page.getByRole('button', { name: 'Toggle sets sidebar', exact: true }).click();
       await expect(betaButton).toBeVisible();
-      await page.getByRole('button', { name: 'Log out', exact: true }).click();
+      await (await headerItem(page, '#logout-btn')).click();
       await page.waitForURL(url => url.pathname === '/login.html', { waitUntil: 'domcontentloaded' });
       await keyboardLogin(page, auth.other);
       await fullSync(page);
@@ -227,7 +228,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       await page.screenshot({ path: join(output, 'other-account.png') });
       record('visible browser account switch isolates subscriptions and episode history');
 
-      await page.getByRole('button', { name: 'Log out', exact: true }).click();
+      await (await headerItem(page, '#logout-btn')).click();
       await page.waitForURL(url => url.pathname === '/login.html', { waitUntil: 'domcontentloaded' });
       await keyboardLogin(page, auth.admin);
       await fullSync(page);
@@ -604,7 +605,7 @@ test(`podcast four-client acceptance: ${stage}`, async ({ page, browser }, info)
       await page.setViewportSize({ width: 390, height: 844 });
       for (const theme of ['dark', 'light']) {
         if (await page.locator('html').getAttribute('data-theme') !== theme) {
-          await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+          await toggleTheme(page);
         }
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
         const geometry = await page.locator('#global-sync').evaluate(host => {

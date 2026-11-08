@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { loadFixture, track } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
@@ -42,7 +43,7 @@ test('M53 browser page origin retains its account and audible playback', async (
   expect((await (await page.request.get('/api/v1/config')).json()).user_id).toBe(config.user_id);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: `${directory}/narrow-dark.png`, fullPage: true });
-  await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+  await toggleTheme(page);
   await page.screenshot({ path: `${directory}/narrow-light.png`, fullPage: true });
   await page.keyboard.press('/');
   await expect(page.locator('#search-input')).toBeFocused();

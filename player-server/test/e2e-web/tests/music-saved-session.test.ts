@@ -1,4 +1,5 @@
 import { writeFileSync } from 'node:fs';
+import { toggleTheme } from './helpers/header-menu';
 import { test, expect, type Page } from '@playwright/test';
 import { Evidence, loadFixture, track } from './helpers/music-fixture';
 import { keyboardLogin, expectPlaying, audioState, openQueueMoreAction } from './helpers/music-ui';
@@ -68,7 +69,7 @@ test('M17 explicit cross-client continuation, durable choices, offline conflict 
       await other.setViewportSize({ width, height: 844 });
       if (await other.locator('html').getAttribute('data-theme') !== theme) {
         await button(other, 'Close queue').click();
-        await other.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+        await toggleTheme(other);
         await other.keyboard.press('Q');
       }
       const path = evidence.path(`m17-continued-${theme}-${width}.png`);

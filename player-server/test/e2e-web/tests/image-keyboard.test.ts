@@ -68,7 +68,8 @@ test('image info, dialogs, typing and slideshow retain keyboard ownership', asyn
   await page.keyboard.press('i');
   await expect(page.locator('#media-info-modal')).toHaveClass(/open/);
   await page.locator('#media-info-close').focus();
-  for (const key of ['f', 'j', 'Shift+L', 'c', '0']) await page.keyboard.press(key);
+  // f and c are the dialog's own letters (Finished, Close); image keys must not act behind it.
+  for (const key of ['j', 'k', 'Shift+L', '-', '0']) await page.keyboard.press(key);
   expect(await image.evaluate((img: any) => img.style.transform)).toBe('translate(0px, 0px) scale(1.25)');
   expect(await page.evaluate(() => Boolean((globalThis as any).document.fullscreenElement))).toBe(false);
   await page.keyboard.press('Enter');

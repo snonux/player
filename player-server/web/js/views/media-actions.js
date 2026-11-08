@@ -15,8 +15,14 @@ let latestNoteLoad = 0;
 // selectedCardMediaId returns the media ID of the selected grid card, or ''
 // when the selection is a set, folder or podcast-episode card. Those carry no
 // data-id, and item actions must not fall through to an unrelated media.
+// A streamed podcast episode without a server copy has a negative stand-in id;
+// it is no server media, so sharing, favorites and notes do not apply to it.
+function serverMediaId(id) {
+  return Number(id) > 0 ? String(id) : '';
+}
+
 function selectedCardMediaId() {
-  const id = currentElement()?.dataset?.id || '';
+  const id = serverMediaId(currentElement()?.dataset?.id);
   if (!id) toast('Select a media item first', 'info');
   return id;
 }
@@ -128,7 +134,7 @@ export async function downloadSelected() {
 // and mark-finished must not silently hit whatever is playing instead.
 export function selectedMediaId() {
   const el = currentElement();
-  if (el?.dataset?.id) return el.dataset.id;
+  if (el?.dataset?.id) return serverMediaId(el.dataset.id);
   if (el?.classList.contains('episode-card')) return '';
   const id = currentMediaId();
   return id ? String(id) : '';

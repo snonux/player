@@ -56,7 +56,7 @@ function restoreSavedScroll(grid, saved, current) {
 function descend(next) { remember(); history.push({...state.music}); state.music=next; reload(); }
 export function openArtists() { openAlbums('', '', true); }
 function openDiscoveryCollection(collection, items) { descend({...state.music,collection,collectionKeys:items.map(a=>a.album_key)}); }
-function openArtist(key) { descend({artists:true,artist:key,album:'',role:state.music?.role || 'artists'}); }
+function openArtist(key) { selectOpened('data-artist-card', key); descend({artists:true,artist:key,album:'',role:state.music?.role || 'artists'}); }
 export function initMusicCatalog(load) {
  reload = load;
  document.addEventListener('music:rating-refresh',()=>{remember();reload();});
@@ -80,10 +80,16 @@ export function openAlbums(artist = '', name = '', artists = false, playlists = 
  updateSetRowsUI();
  reload();
 }
+// Pointer opens skip keyboard selection; select the opened card so Back restores it.
+function selectOpened(attr, key) {
+ const card = [...(document.querySelectorAll?.(`#media-grid .media-card[${attr}]`) || [])].find(c => c.getAttribute(attr) === key);
+ if (card && !card.classList.contains('selected')) selectByElement(card);
+}
 export function openAlbum(key) {
  cancelPendingSearch();
  if (!state.music) state.music = {artist:'',name:'',album:''};
  selectedAlbum = key;
+ selectOpened('data-album', key);
  descend(state.music.search ? {album:key,artist:'',name:''} : {...state.music,album:key});
 }
 export function openPlaylist(id) { descend({playlists:true,playlist:id}); }

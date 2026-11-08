@@ -1,4 +1,5 @@
 import { test, expect, request } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { randomBytes } from 'node:crypto';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
@@ -59,7 +60,7 @@ test('M26 create add album rename comment cold client persistence account scope 
    await page.setViewportSize({width,height:844});
    if(await page.locator('html').getAttribute('data-theme')!==theme){
     await page.getByRole('button',{name:'More options',exact:true}).click();
-    await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+    await toggleTheme(page);
    }
    await expect(page.locator('html')).toHaveAttribute('data-theme',theme);
    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

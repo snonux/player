@@ -7,7 +7,8 @@ test('S04: public share renders media without granting application access and re
   expect(await api('GET', `/media/${item.id}/shares`)).toEqual(expect.arrayContaining([expect.objectContaining({ token: share.token })]));
   expect((await page.goto(`/s/${share.token}`))!.status()).toBe(200);
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
-  await expect(page.locator('body')).toContainText(item.file_name);
+  // Audio is shown by its display title: the tag title, else the name without extension.
+  await expect(page.locator('h1')).toHaveText(item.music?.title?.trim() || item.file_name.replace(/\.[^.]+$/, ''));
   await page.goto('/');
   await expect(page).toHaveURL(/login.html/);
   expect((await call('GET', '/api/v1/media')).status).toBe(401);

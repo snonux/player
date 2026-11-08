@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
+import { headerItem } from './helpers/header-menu';
 import { Evidence, loadFixture } from './helpers/music-fixture';
 import { keyboardLogin, audioState, openQueueMoreAction} from './helpers/music-ui';
 
@@ -25,7 +26,7 @@ test('M17 native-to-browser continuation and live revoked-media revalidation', a
   expect(transferred.position).toBeCloseTo(expected.position_seconds, 1);
   expect((await audioState(page)).paused).toBe(true);
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Log out', exact: true }).click();
+  await (await headerItem(page, '#logout-btn')).click();
   await keyboardLogin(page, fixture.user);
   const aclRemote = await (await page.request.get('/api/v1/queue')).json();
   expect(aclRemote.entries.map((entry: any) => entry.id)).toEqual([101, 102, 103]);

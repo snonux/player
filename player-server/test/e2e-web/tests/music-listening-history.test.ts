@@ -1,5 +1,6 @@
 /** M37: actual qualified browser plays and account-private history controls. */
 import { test, expect, request, type APIRequestContext, type Page } from '@playwright/test';
+import { headerItem } from './helpers/header-menu';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Evidence, loadFixture, type Account, type MusicFixture } from './helpers/music-fixture';
@@ -80,7 +81,7 @@ test('M37 qualified plays, replay, private settings and history recovery', async
     expect((await own.get('/api/v1/music/history?expected_user_id=' + otherId)).status()).toBe(409);
 
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await (await headerItem(page, '#settings-toggle')).click();
     const panel = page.locator('#settings-modal details.listening-history');
     await panel.locator('summary').click();
     await expect(panel.locator('[data-events] li')).toHaveCount(after.events.length);

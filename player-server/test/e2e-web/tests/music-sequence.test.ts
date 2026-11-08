@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, openFolder, playCard, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress } from './helpers/music-ui';
@@ -89,7 +90,7 @@ test('M12 three natural completions, real track controls, images skipped and pro
       await page.setViewportSize({width,height:844});
       if (await page.locator('html').getAttribute('data-theme') !== theme) {
         await page.locator('#header-menu-toggle').click();
-        await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+        await toggleTheme(page);
       }
       const shot=evidence.path(`m12-${theme}-${width}.png`);
       await page.screenshot({path:shot,fullPage:true});artifacts.push(shot);

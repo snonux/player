@@ -2,6 +2,7 @@
  * from the real disposable server. The per-client proxy only slows/truncates
  * responses; it never creates a successful ZIP or mutates fixture media. */
 import { test, expect, request, type Download, type Page } from '@playwright/test';
+import { headerItem } from './helpers/header-menu';
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -245,7 +246,7 @@ test('M46 actual slow/interrupted transfers show progress, preserve listening, c
   const progress = e.path('slow-progress.png'); await page.screenshot({ path: progress }); artifacts.push(progress);
   await dialog(page).getByRole('button', { name: 'Cancel', exact: true }).click(); await expect(dialog(page)).toHaveCount(0); await expect(opener).toBeFocused();
   expect(archivesDelivered).toBe(0);
-  await page.getByRole('button', { name: 'Log out', exact: true }).focus(); await page.keyboard.press('p');
+  await page.locator('#header-menu-toggle').focus(); await page.keyboard.press('p');
   await expect.poll(async () => (await audioState(page)).paused).toBe(true);
   mode = 'truncate'; await openDialog(page);
   await dialog(page).getByRole('button', { name: 'Download ZIP', exact: true }).click();

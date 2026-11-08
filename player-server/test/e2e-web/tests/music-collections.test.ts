@@ -1,7 +1,8 @@
 import { test, expect, request, type Page } from '@playwright/test';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
-import { keyboardLogin, expectPlaying, audioState, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
+import { keyboardLogin, expectPlaying, audioState, captureOutput, assertValidCapture, mainSegment, openCollectionMoreAction } from './helpers/music-ui';
 
 test.skip(!process.env.PLAYER_MUSIC_FIXTURE, 'Requires disposable local Music fixture');
 let f:MusicFixture,e:Evidence;
@@ -16,11 +17,11 @@ async function queue(page:Page) {
 async function pause(page:Page) {
  // Native global p remains available when collection Play retains a minimized
  // player. Focus a visible non-input control before dispatching the real key.
- await page.getByRole('button',{name:'Log out',exact:true}).focus();
+ await page.locator('#header-menu-toggle').focus();
  await page.keyboard.press('p');await expect.poll(async()=>(await audioState(page)).paused).toBe(true);
 }
 async function logout(page:Page) {
- await page.getByRole('button',{name:'Log out',exact:true}).click();
+ await (await headerItem(page, '#logout-btn')).click();
  await page.waitForURL(url=>url.pathname==='/login.html');
  await expect(page.locator('#username')).toBeVisible();
 }
@@ -47,8 +48,7 @@ async function audible(page:Page,id:number,name:string) {
 }
 async function enqueue(page:Page,action:string) {
  await ready(page);
- await grid(page).getByRole('button',{name:'More',exact:true}).click();
- await page.getByRole('menu',{name:'More collection actions',exact:true}).getByRole('button',{name:action,exact:true}).click();
+ await openCollectionMoreAction(page,new RegExp(`^${action}$`));
  await expect(grid(page).locator('[data-collection-status]').filter({hasText:/Added/})).toBeVisible();
 }
 async function fixtures(page:Page) {
@@ -114,7 +114,7 @@ test('M15 album artist playlist catalog reverse selection follows visible order;
    await enqueue(page,'Play next');const inserted=[ids[0],...ids,...ids.slice(1)];await visibleQueue(page,inserted);
    await enqueue(page,'Add to queue');await visibleQueue(page,[...inserted,...ids]);
    if(target.kind==='album')for(const [theme,width]of [['dark',1366],['light',1366],['dark',390],['light',390]] as const){
-    await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+    await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     const shot=artifact(`m15-selection-${theme}-${width}.png`);await page.screenshot({path:shot,fullPage:true});artifacts.push(shot);
    }

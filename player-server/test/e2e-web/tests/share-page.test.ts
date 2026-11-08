@@ -89,7 +89,7 @@ test('share page loads and exposes the share metadata payload', async ({ page })
   // is valid JSON referencing the media id we created.
   const metaText = await page.locator('#share-meta').textContent();
   expect(metaText, 'share-meta script tag should contain JSON payload').toBeTruthy();
-  const meta = JSON.parse(metaText || '{}') as { media?: { id: number; type: string; file_name: string }; stream_url?: string };
+  const meta = JSON.parse(metaText || "{}") as { media?: { id: number; type: string; file_name: string; music?: { title?: string } }; stream_url?: string };
   expect(meta.media?.id).toBeGreaterThan(0);
   expect(meta.stream_url).toContain(token);
   // The server HTML-escapes the payload (html.EscapeString emits &#34; and
@@ -98,8 +98,15 @@ test('share page loads and exposes the share metadata payload', async ({ page })
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
     .replace(/&amp;/g, '&');
-  await expect(page.locator('h1')).toHaveText(decoder);
-  await expect(page).toHaveTitle(`${decoder} — Shared Media`);
+  // Audio shows its display title (tag title, else the name without extension),
+  // the same title the library uses.
+  const title = await page.evaluate(async media => {
+    const path = '/js/music.js';
+    return (await import(path)).mediaTitle(media);
+  }, { ...meta.media, file_name: decoder });
+  expect(title).toBeTruthy();
+  await expect(page.locator('h1')).toHaveText(title);
+  await expect(page).toHaveTitle(`${title} — Shared Media`);
 
   // No JS console errors should have fired while the page initialised.
   // We allow a brief settle to let initPlayer() finish wiring the audio source.

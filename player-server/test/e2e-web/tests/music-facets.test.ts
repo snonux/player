@@ -1,4 +1,5 @@
 import { test, expect, request } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { loadFixture, Evidence, type MusicFixture } from './helpers/music-fixture';
 import { keyboardLogin, openMusicFilters, openSidebarMusic } from './helpers/music-ui';
 import { genuineTouchTap } from './helpers/genuine-touch.cjs';
@@ -21,7 +22,7 @@ test('M08 same-song facets, chips, keyboard Back, refresh, literal release metad
   await expect(page.locator('[data-album]')).toHaveCount(0);await expect(page.getByText('Nothing matches these filters.',{exact:false})).toBeVisible();
   await page.getByRole('button',{name:'Remove Role: Composer',exact:true}).click();
   await expect(page.locator('[data-album]')).toHaveCount(1);
-  await page.locator('[data-album]').focus();await page.keyboard.press('Enter');
+  await page.locator('[data-album] .collection-open').focus();await page.keyboard.press('Enter');
   await expect(page.getByRole('heading',{name:'Night Transit',exact:true})).toBeVisible();
   await expect(page.locator('.media-row[data-id]')).toHaveCount(3);
   await page.keyboard.press('Backspace');await expect(page.locator('[data-album]')).toHaveCount(1);
@@ -35,7 +36,7 @@ test('M08 same-song facets, chips, keyboard Back, refresh, literal release metad
   await expect(page.locator('[data-album]')).toHaveCount(1);await expect(page.locator('[data-album]')).toContainText('Release Metadata');
   await page.getByRole('combobox',{name:'Year / decade',exact:true}).selectOption('2024');
   await expect(page.locator('[data-album]')).toHaveCount(1);
-  for(const [theme,width] of [['dark',1366],['light',390]] as const){await settleMusicViewport(page,width);if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();const path=evidence.path(`m08-${theme}-${width}.png`);await page.screenshot({path,fullPage:true});artifacts.push(path);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
+  for(const [theme,width] of [['dark',1366],['light',390]] as const){await settleMusicViewport(page,width);if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);const path=evidence.path(`m08-${theme}-${width}.png`);await page.screenshot({path,fullPage:true});artifacts.push(path);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
   evidence.record({feature:'M08',scenario:'facet combination, no cross-song match, full detail, Back/refresh, Clear, release label/year and themes',result:'pass',artifacts});
  }catch(error){evidence.record({feature:'M08',scenario:'facet journey',result:'fail',detail:String(error),artifacts});throw error;}
 });
@@ -57,7 +58,7 @@ test('M08 extended facets: simultaneous release constraint, decade and rich rele
   await expect(page.locator('[data-remove-facet]')).toHaveCount(4);
   await select('Release type','album');await expect(page.locator('[data-album]')).toHaveCount(0);
   await page.getByRole('button',{name:'Remove Release type: album',exact:true}).click();await expect(page.locator('[data-album]')).toHaveCount(1);
-  await page.locator('[data-album]').focus();await page.keyboard.press('Enter');await expect(page.locator('.media-row[data-id]')).toHaveCount(3);
+  await page.locator('[data-album] .collection-open').focus();await page.keyboard.press('Enter');await expect(page.locator('.media-row[data-id]')).toHaveCount(3);
   await page.keyboard.press('Backspace');await expect(page.locator('[data-album].selected .collection-open')).toBeFocused();await expect(page.locator('[data-remove-facet]')).toHaveCount(4);
   await openMusicFilters(page);
   await page.locator('[data-clear-facets]').click();await expect(page.locator('[data-remove-facet]')).toHaveCount(0);
@@ -131,7 +132,7 @@ test('M08 options/results ACL and connection Retry retain chips',async({page})=>
  try {
   const admin=await request.newContext({baseURL:fixture.origin});try{expect((await admin.post('/api/v1/auth/login',{data:fixture.admin})).ok()).toBe(true);expect((await(await admin.get('/api/music/facets')).json()).genre).toContain('Restricted only');}finally{await admin.dispose();}
   const response=await page.request.get(fixture.origin+'/api/music/facets');expect(response.ok()).toBe(true);const options=await response.json();expect(options.genre).not.toContain('Restricted only');
-  await page.getByRole('combobox',{name:'Genre',exact:true}).selectOption('Ambient');
+  await openMusicFilters(page);await page.getByRole('combobox',{name:'Genre',exact:true}).selectOption('Ambient');
   await page.route('**/api/music/albums?**',route=>route.abort('failed'));
   await page.reload();await expect(page.getByRole('button',{name:'Retry',exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'Remove Genre: Ambient',exact:true})).toBeVisible();

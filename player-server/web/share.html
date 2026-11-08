@@ -169,7 +169,9 @@
     if (viewing.state !== 'open') return viewing;
 
     if (data.items?.length) { showShareCollection(data); return {state:'open'}; }
-    initPlayer();
+    // Shared links use the share's own quality policy, and an anonymous
+    // visitor cannot read the account's stream profiles.
+    initPlayer({ streamQuality: false });
 
     // First, and apart from the player: whatever happens to the player
     // below, the visitor can still fetch the file the use was spent on.

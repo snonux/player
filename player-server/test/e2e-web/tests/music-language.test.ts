@@ -141,14 +141,15 @@ test('M67: device-local German labels switch live, preserve playback and persist
     artifacts.push(germanShot);
 
     await page.keyboard.press('Escape');
-    await expect(settings).toBeFocused();
+    // Settings lives in the header menu; closing it returns focus to that menu's toggle.
+    await expect(page.locator('#header-menu-toggle')).toBeFocused();
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await settings.click();
+    await (await headerItem(page, '#settings-toggle')).click();
     await expect(language).toHaveValue('de');
     await expect(page.locator('html')).toHaveAttribute('lang', 'de');
     await language.selectOption('en');
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-    await expect(settings).toHaveText('Settings');
+    await expect(settings).toContainText('Settings');
     data.persisted_language = 'de';
     data.metadata_remained_verbatim = song.title;
     evidence.record({ feature: FEATURE, scenario: 'narrow live German/English switch, playback preservation and restart persistence', result: 'pass', data, artifacts });

@@ -1,4 +1,5 @@
 import { test, expect, request } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { randomBytes } from 'node:crypto';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
@@ -60,12 +61,12 @@ test('M27 selected additions long list filtered duplicate move remove Undo origi
   const row=page.locator(`[data-entry="${restored.entries[45].entry_id}"]`);await row.focus();await page.keyboard.press('a');await context.setOffline(true);await page.getByRole('group',{name:'Media actions'}).getByRole('button',{name:'Move down',exact:true}).click();
   await expect(page.locator('[data-song-error]')).not.toBeEmpty();await expect(row).toHaveAttribute('data-index','45');await context.setOffline(false);
   for(const [theme,width]of [['dark',1366],['light',1366],['dark',390],['light',390]]as const){
-   await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   await page.setViewportSize({width,height:844});if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);
    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
    await expect.poll(()=>page.locator('[data-add-songs]').evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(theme==='light'?'rgb(255, 255, 255)':'rgb(30, 34, 44)');
    const shot=e.path(`m27-songs-${theme}-${width}.png`);await page.screenshot({path:shot,fullPage:true,animations:'disabled'});artifacts.push(shot);
   }
-  await page.getByRole('button',{name:'Clear',exact:true}).click();await expect(find).toHaveValue('');await expect(page.locator('.media-row')).toHaveCount(47);
+  await find.fill('');await expect(find).toHaveValue('');await expect(page.locator('.media-row')).toHaveCount(47);
   await page.reload();await expect(page.locator('.media-row')).toHaveCount(47);const persisted=await(await page.request.get('/api/v1/playlists/'+id)).json();expect(persisted.entries).toEqual(restored.entries);
   e.record({feature:'M27',scenario:'long list selected add filtered later duplicate original queue audio move remove Undo offline failure restart',result:'pass',data:{saved,moved,removed,restored,persisted,audio:segment},artifacts});
  }catch(error){e.record({feature:'M27',scenario:'long playlist song editing',result:'fail',detail:String(error),data:{id},artifacts});throw error;}

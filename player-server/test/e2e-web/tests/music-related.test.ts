@@ -1,4 +1,6 @@
 import { expect, request, test, type Page } from '@playwright/test';
+import { minimizePlayer } from './helpers/player-options';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { audioState, captureOutput, assertValidCapture, keyboardLogin, mainSegment, openFolder, openSidebarMusic, resetProgress, selectByKeys } from './helpers/music-ui';
@@ -59,7 +61,7 @@ async function checkOutput(page: Page, id: number, hz: number, name: string, art
 async function minimize(page: Page) {
   const classes = await page.locator('#player').getAttribute('class') || '';
   if (classes.includes('open') && !classes.includes('minimized')) {
-    await page.getByRole('button', { name: 'Minimize player (Shift+C)', exact: true }).click();
+    await minimizePlayer(page);
   }
 }
 
@@ -78,7 +80,7 @@ test('M41 album, artist and song suggestions open and play actual local sources'
     for (const [theme, width] of [['dark', 1366], ['light', 390]] as const) {
       await page.setViewportSize({ width, height: 844 });
       if (await page.locator('html').getAttribute('data-theme') !== theme)
-        await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+        await toggleTheme(page);
       const screenshot = evidence.path(`m41-album-${theme}-${width}.png`);
       await page.screenshot({ path: screenshot, fullPage: true, animations: 'disabled' });
       artifacts.push(screenshot);

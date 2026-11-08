@@ -1,4 +1,5 @@
 import { test, expect, request, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { keyboardLogin } from './helpers/music-ui';
 import { settleMusicViewport } from './helpers/music-viewport';
@@ -179,7 +180,7 @@ test('F03 tag editing/focus, light-dark narrow, no-match and real offline retry'
     await query(page,'',ids(['f03-a.wav','f03-b.wav','f03-c.wav','f03-zero.jpg']));
     for (const [theme,width] of [['light',390],['dark',1366]] as const) {
       await settleMusicViewport(page,width);
-      if(await page.locator('html').getAttribute('data-theme')!==theme)await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+      if(await page.locator('html').getAttribute('data-theme')!==theme)await toggleTheme(page);
       await query(page,'max:1 maxsize:1',ids(['f03-a.wav','f03-zero.jpg']));
       const path=evidence.path(`f03-${theme}-${width}.png`);await page.screenshot({path,fullPage:true});
       evidence.record({feature:'F03',scenario:`${theme} ${width} existing file controls`,result:'pass',artifacts:[path]});

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { Evidence, loadFixture, SUPPORT_DIR, track, type MusicFixture } from './helpers/music-fixture';
@@ -61,7 +62,7 @@ test('M01 tags, filename fallback, Unicode and real structured multivalues in In
     for (const [theme,width] of [['dark',1366],['light',390]] as const) {
       await page.setViewportSize({width,height:860});
       await openFolder(page,fixture.setIds.Music,'Tag Verification');
-      if (await page.locator('html').getAttribute('data-theme') !== theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+      if (await page.locator('html').getAttribute('data-theme') !== theme) await toggleTheme(page);
       await expect(page.locator('html')).toHaveAttribute('data-theme',theme);
       const background = await page.evaluate(()=>getComputedStyle(document.body).backgroundColor);
       expect(background).toBe(theme === 'light' ? 'rgb(244, 245, 248)' : 'rgb(15, 17, 23)');

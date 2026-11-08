@@ -17,9 +17,11 @@ test('S20: HEAD, exact byte ranges, multipart and cache validators', async () =>
   const unsatisfied = await call('GET', `${route}/stream`, { cookie, headers: { Range: 'bytes=999999999-' } }); expect(unsatisfied.status).toBe(416); expect(unsatisfied.headers.get('content-range')).toBe(`bytes */${size}`);
   const malformed = await call('GET', `${route}/stream`, { cookie, headers: { Range: 'bytes=garbage' } }); expect(malformed.status).toBe(416); expect(await malformed.text()).toContain('invalid range');
   const multi = await call('GET', `${route}/stream`, { cookie, headers: { Range: 'bytes=0-99,200-299' } }); expect(multi.status).toBe(206); expect(multi.headers.get('content-type')).toMatch(/^multipart\/byteranges; boundary=/); expect((await multi.arrayBuffer()).byteLength).toBeGreaterThan(200);
-  const modified = full.headers.get('last-modified'); const etag = full.headers.get('etag'); expect(modified).toBeTruthy(); expect(etag).toMatch(/^"[^"\s]+"$/);
-  for (const headers of [{ 'If-Modified-Since': modified! }, { 'If-None-Match': etag! }] as Record<string, string>[]) {
-    const cached = await call('GET', `${route}/stream`, { cookie, headers }); expect(cached.status).toBe(304); expect((await cached.arrayBuffer()).byteLength).toBe(0);
-  }
+  // Streams validate by a content revision ETag only: a date cannot detect a
+  // replacement that keeps its modification time, so no Last-Modified is sent
+  // and a date-only conditional gets the full body.
+  const etag = full.headers.get('etag'); expect(full.headers.get('last-modified')).toBeNull(); expect(etag).toMatch(/^"[^"\s]+"$/);
+  const cached = await call('GET', `${route}/stream`, { cookie, headers: { 'If-None-Match': etag! } }); expect(cached.status).toBe(304); expect((await cached.arrayBuffer()).byteLength).toBe(0);
+  const dated = await call('GET', `${route}/stream`, { cookie, headers: { 'If-Modified-Since': new Date().toUTCString() } }); expect(dated.status).toBe(200); expect((await dated.arrayBuffer()).byteLength).toBe(size);
   for (const method of ['GET', 'HEAD']) expect((await call(method, '/api/v1/media/999999999/stream', { cookie })).status).toBe(404);
 });

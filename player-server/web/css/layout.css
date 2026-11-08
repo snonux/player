@@ -490,6 +490,9 @@ body {
   position: relative;
   bottom: auto;
   justify-self: start;
+  /* Narrow picture previews scroll the row instead of spilling past the card. */
+  max-width: calc(100% - 0.7rem);
+  box-sizing: border-box;
   margin: 0 0.35rem 0.35rem;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
@@ -503,6 +506,17 @@ body {
   white-space: nowrap;
 }
 .card-actions .card-action-extra { display: none; }
+/* Small previews keep Play, Favorite and More inside the card: the favorite
+   label (longer once favorited or translated) collapses to its heart. */
+@container (max-width: 13rem) {
+  .media-card .card-actions [data-action="favorite"] {
+    flex: 0 0 var(--control-height-sm);
+    min-width: var(--control-height-sm);
+    font-size: 0;
+  }
+  .media-card .card-actions [data-action="favorite"]::before { content: '\2661'; font-size: 1rem; }
+  .media-card .card-actions [data-action="favorite"][aria-pressed="true"]::before { content: '\2665'; }
+}
 .set-card .set-open,
 .folder-card .folder-open {
   display: block;

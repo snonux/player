@@ -1,5 +1,6 @@
 /** M61: installed-browser internet-radio journey against the local live stream. */
 import { test, expect, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, captureOutput, assertValidCapture, mainSegment } from './helpers/music-ui';
@@ -125,7 +126,7 @@ test('M61 station editor, permissions, live output, reconnect and keyboard', asy
     await viewer.screenshot({ path: evidence.path('radio-narrow-dark.png'), fullPage: true });
     await expect(viewerModal.locator('.radio-station').first()).toBeVisible();
     await viewerModal.getByRole('button', { name: 'Close internet radio' }).click();
-    await viewer.getByRole('button', { name: 'Toggle theme' }).click();
+    await toggleTheme(viewer);
     await openRadio(viewer);
     await viewer.screenshot({ path: evidence.path('radio-narrow-light.png'), fullPage: true });
     await expect(viewerModal.locator('.radio-station').first()).toBeVisible();

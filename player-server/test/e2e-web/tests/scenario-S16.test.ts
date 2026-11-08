@@ -23,7 +23,12 @@ test('S16: real pagination, tolerant parsing, search, filters and sort order', a
   await api('POST', `/media/${item.id}/favorite`); expect(await api('GET', '/media?favorites=true')).toEqual(favorites);
   const setMedia = await api('GET', `/media?set_id=${item.set_id}`); expect(setMedia.length).toBeGreaterThan(0); expect(setMedia.every((m: any) => m.set_id === item.set_id)).toBe(true);
   for (const [sort, field, desc] of [['duration', 'duration', false], ['date', 'created_at', true], ['name', 'file_name', false]] as const) {
-    const sorted = await api('GET', `/media?sort=${sort}`);
+    let sorted = await api('GET', `/media?sort=${sort}`);
+    // Unknown durations (0, e.g. images) sort after every known one.
+    if (sort === 'duration') {
+      const unknown = sorted.findIndex((m: any) => !m.duration);
+      if (unknown >= 0) { expect(sorted.slice(unknown).every((m: any) => !m.duration)).toBe(true); sorted = sorted.slice(0, unknown); }
+    }
     for (let i = 1; i < sorted.length; i++) expect(desc ? sorted[i-1][field] >= sorted[i][field] : sorted[i-1][field] <= sorted[i][field], sort).toBe(true);
   }
 });

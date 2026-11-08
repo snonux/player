@@ -1,4 +1,5 @@
 import { settleMusicViewport } from './helpers/music-viewport';
+import { toggleTheme, headerItem } from './helpers/header-menu';
 import { test, expect } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -67,7 +68,7 @@ test('M05 organized rich release details, real disclosure keys, themes and sourc
    expect(await page.locator('#media-info-body td b').count()).toBe(0);
    await page.keyboard.press('Escape');
    await expect(page.getByRole('button',{name:track(fixture,path).title,exact:true})).toBeFocused();
-   if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   if(await page.locator('html').getAttribute('data-theme')!==theme) await toggleTheme(page);
    await expect(page.locator('html')).toHaveAttribute('data-theme',theme);
    await expect(page.locator('body')).toHaveCSS('background-color',theme==='light'?'rgb(244, 245, 248)':'rgb(15, 17, 23)');
    await info(page);
@@ -133,7 +134,7 @@ test('M05 scan/removal/failed probe, permission and restart round trips',async({
   await rescan('initial');restored=true;
   execFileSync('python3',[join(SUPPORT_DIR,'music_fixture.py'),'restart',fixture.dir]);
   await page.reload();await info(page);await expand(page,'Release details');await row(page,'Original date','1979');await page.keyboard.press('Escape');
-  await page.getByRole('button',{name:'Log out',exact:true}).click();await keyboardLogin(page,fixture.user);
+  await (await headerItem(page, '#logout-btn')).click();await keyboardLogin(page,fixture.user);
   const hidden=track(fixture,'Restricted/Release Metadata/hidden.flac');const denied=await page.request.get(`/api/v1/media/${hidden.id}`);expect(denied.status()).toBe(403);expect(await denied.text()).not.toContain('1979');
   evidence.record({feature:'M05',scenario:'rescan/removal/failed probe/restart/ACL round trips',result:'pass',data:{before,after}});
  }catch(error){evidence.record({feature:'M05',scenario:'rescan/removal/failed probe/restart/ACL round trips',result:'fail',detail:String(error)});throw error;}

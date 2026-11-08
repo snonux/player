@@ -13,7 +13,9 @@ test('S03: Bearer upload survives rescan and appears in browser search', async (
   await page.goto('/');
   await page.keyboard.press('/');
   await page.locator('#search-input').fill('test-audio-e2e');
-  await expect(page.locator('.media-card').filter({ hasText: 'test-audio-e2e' })).toBeVisible();
+  // The copy keeps the source's tags, so the result shows the tag title; the
+  // file-name search still finds this exact upload.
+  await expect(page.locator(`#media-grid [data-id="${media.id}"]`)).toBeVisible();
   await api('DELETE', `/media/${media.id}`);
   expect((await call('DELETE', `/api/v1/auth/tokens/${token.id}`, { cookie })).status).toBe(204);
 });
@@ -36,5 +38,8 @@ test('S03: keyboard upload dialog adds a file to the current set', async ({ page
   await page.getByRole('button', { name: 'Upload to current set' }).click();
   await expect(page.locator('#toast')).toContainText('Upload complete');
   await expect(modal).not.toHaveClass(/open/);
-  await expect(page.locator('#media-grid')).toContainText('browser-upload.mp3');
+  const uploaded = (await (await call('GET', "/api/v1/media?limit=500", { cookie })).json() as any[])
+    .find(item => item.file_name === 'browser-upload.mp3');
+  expect(uploaded, 'upload is indexed in the current set').toBeTruthy();
+  await expect(page.locator(`#media-grid [data-id="${uploaded.id}"]`)).toBeVisible();
 });

@@ -41,7 +41,8 @@ test('S25: hostile file and folder names render as inert text in the browser', a
   await page.keyboard.press('Backspace');
   await page.getByRole('button', { name: 'Set audiobooks' }).click();
   await expect(page.getByRole('button', { name: `Folder ${folder}`, exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: `Regenerate cover for folder ${folder}`, exact: true })).toBeVisible();
+  // The folder's secondary actions (in its More menu) carry the name inertly too.
+  await expect(page.locator('#media-grid .folder-card').filter({ has: page.getByRole('button', { name: `Folder ${folder}`, exact: true }) }).locator('[data-action="regen-folder-cover"]')).toHaveAttribute('aria-label', `Regenerate cover for folder ${folder}`);
   expect(await page.locator('#media-grid img[src="x"]').count()).toBe(0);
 
   const share = await api('POST', `/media/${item.id}/shares`);

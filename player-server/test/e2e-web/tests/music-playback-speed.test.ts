@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { inPlayerOptions } from './helpers/player-options';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { audioState, keyboardLogin, openFolder, playCard } from './helpers/music-ui';
 
@@ -17,7 +19,7 @@ test('M23: visible speed choices change real audio progression and persist', asy
     await keyboardLogin(page, fixture.admin);
     await openFolder(page, fixture.setIds.Music, ALBUM);
     await playCard(page, item.title, item.id);
-    const speed = page.getByLabel('Playback speed', { exact: true });
+    const speed = await inPlayerOptions(page, page.getByLabel('Playback speed', { exact: true }));
     await expect(speed).toBeVisible();
     await speed.selectOption('2');
     await expect(speed).toHaveValue('2');
@@ -47,7 +49,7 @@ test('M23: all speed choices, popup handoff and public share stay coherent', asy
   await openFolder(page, fixture.setIds.Music, ALBUM);
   await playCard(page, item.title, item.id);
   await page.locator('#btn-play').click();
-  const speed = page.getByLabel('Playback speed', { exact: true });
+  const speed = await inPlayerOptions(page, page.getByLabel('Playback speed', { exact: true }));
   for (const rate of ['0.5', '1', '1.25', '1.5', '2']) {
     await speed.selectOption(rate);
     await expect(page.locator('#media-audio')).toHaveJSProperty('playbackRate', Number(rate));
@@ -57,7 +59,7 @@ test('M23: all speed choices, popup handoff and public share stay coherent', asy
   const opened = page.waitForEvent('popup');
   await page.keyboard.press('d');
   const popup = await opened;
-  const popupSpeed = popup.getByLabel('Playback speed', { exact: true });
+  const popupSpeed = await inPlayerOptions(popup, popup.getByLabel('Playback speed', { exact: true }));
   await expect(popupSpeed).toHaveValue('2');
   await expect(popup.locator('#media-audio')).toHaveJSProperty('playbackRate', 2);
   await popupSpeed.selectOption('1.25');
@@ -67,7 +69,8 @@ test('M23: all speed choices, popup handoff and public share stay coherent', asy
   await expect(page.locator('#detached-bar')).toBeHidden();
   await expect(speed).toHaveValue('1.25');
   await expect(page.locator('#media-audio')).toHaveJSProperty('playbackRate', 1.25);
-  await page.getByRole('button', { name: 'Restore player', exact: true }).click();
+  const restore = page.getByRole('button', { name: 'Restore player', exact: true });
+  if (await restore.isVisible()) await restore.click();
   await speed.selectOption('1');
   await page.setViewportSize({ width: 390, height: 720 });
   const more = page.getByRole('button', { name: 'More player controls', exact: true });
@@ -78,7 +81,7 @@ test('M23: all speed choices, popup handoff and public share stay coherent', asy
   const artifacts: string[] = [];
   for (const theme of ['dark', 'light']) {
     if (await page.locator('html').getAttribute('data-theme') !== theme) {
-      await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+      await toggleTheme(page);
     }
     await more.click();
     await expect(speed).toBeVisible();
@@ -95,7 +98,7 @@ test('M23: all speed choices, popup handoff and public share stay coherent', asy
     const shared = await anonymous.newPage();
     await shared.goto(`${fixture.origin}/s/${share.token}`);
     await expect(shared.locator('body')).toHaveAttribute('data-share-viewing', 'open');
-    const sharedSpeed = shared.getByLabel('Playback speed', { exact: true });
+    const sharedSpeed = await inPlayerOptions(shared, shared.getByLabel('Playback speed', { exact: true }));
     await sharedSpeed.selectOption('1.5');
     await expect(shared.locator('#media-audio')).toHaveJSProperty('playbackRate', 1.5);
     await sharedSpeed.selectOption('1');

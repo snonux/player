@@ -93,7 +93,8 @@ export function initCompactControls(player) {
   document.addEventListener('keydown', event => {
     if (!isOpen()) return;
     if (event.key === 'Escape') {
-      const disclosure = event.target?.closest?.('.loudness-control details[open]');
+      // Escape first collapses the section it is in (the section itself is a <details>).
+      const disclosure = event.target?.closest?.('.loudness-control details[open], details.loudness-control[open]');
       if (disclosure) {
         event.preventDefault(); event.stopImmediatePropagation();
         disclosure.open = false; disclosure.querySelector('summary')?.focus();
@@ -106,8 +107,12 @@ export function initCompactControls(player) {
       dismiss();
     }
   }, true);
+  // Arrow/Home/End on a focused select fire change on every step; only a
+  // pointer choice closes the menu so keyboard users can keep adjusting.
+  let keyed = false;
+  panel.addEventListener('keydown', () => { keyed = true; setTimeout(() => { keyed = false; }); }, true);
   panel.addEventListener('change', event => {
-    if (event.target.tagName === 'SELECT') dismiss();
+    if (event.target.tagName === 'SELECT' && !keyed) dismiss();
   });
   panel.addEventListener('click', event => {
     if (event.target.closest('#btn-minimize, #btn-save-position, #btn-bookmarks, #btn-player-notes, #btn-player-favorite')) dismiss();

@@ -22,7 +22,7 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole('button', { name: 'Set images', exact: true }).click();
   const card = page.locator('#media-grid .image-card').first();
   await expect(card).toBeVisible();
-  await card.focus();
+  await card.locator('.media-open').focus();
 });
 
 test('shares preserves chords, typing and native buttons while row navigation works', async ({ page }) => {
@@ -58,7 +58,7 @@ test('shares preserves chords, typing and native buttons while row navigation wo
   await expect(input).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(modal).not.toHaveClass(/open/);
-  await expect(card).toBeFocused();
+  await expect(card.locator('.media-open')).toBeFocused();
 
   await page.keyboard.press('Shift+L');
   await expect(modal).toHaveClass(/open/);
@@ -72,7 +72,7 @@ test('shares preserves chords, typing and native buttons while row navigation wo
 test('media info scrolls only for unmodified keys outside editable children', async ({ page }) => {
   await page.keyboard.press('i');
   await expect(page.locator('#media-info-modal')).toHaveClass(/open/);
-  await expect(page.locator('#media-info-body table')).toBeVisible();
+  await expect(page.locator('#media-info-body table').first()).toBeVisible();
   const panel = page.locator('#media-info-panel');
   await panel.evaluate(el => {
     const input = el.ownerDocument.createElement('textarea');
@@ -100,7 +100,7 @@ test('media info scrolls only for unmodified keys outside editable children', as
   await expect(input).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.locator('#media-info-modal')).not.toHaveClass(/open/);
-  await expect(page.locator('#media-grid .image-card.selected')).toBeFocused();
+  await expect(page.locator('#media-grid .image-card.selected .media-open')).toBeFocused();
 });
 
 test('modified Space leaves playback and sidebar selection alone', async ({ page }) => {

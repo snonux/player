@@ -1,5 +1,6 @@
 /** M42: installed-browser song, album and artist mix journeys. */
 import { test, expect, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, openFolder, selectByKeys, expectPlaying, captureOutput, assertValidCapture, mainSegment, resetProgress } from './helpers/music-ui';
@@ -75,7 +76,7 @@ test('M42 source mixes, rating filter, no match and failure preserve queue', asy
   await page.locator('#btn-play').click();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: e.path('album-narrow-dark.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+  await toggleTheme(page);
   await page.screenshot({ path: e.path('album-narrow-light.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 

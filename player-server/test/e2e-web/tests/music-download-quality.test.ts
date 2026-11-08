@@ -44,7 +44,7 @@ test('M51 download quality is independent, encoded truthfully and playable offli
   const album = albums.find((a: any) => a.title === 'Night Transit');
   expect(album).toBeTruthy();
   await page.goto(f.origin + '/?music=album&id=' + encodeURIComponent(album.album_key));
-  let opener = page.locator('#media-grid').getByRole('button', { name: 'More', exact: true });
+  let opener = page.locator('#media-grid [data-album-more]');
   const streamBefore = await page.evaluate(() => localStorage.getItem('player-stream-quality'));
   const results: any[] = [];
   await page.evaluate(() => {

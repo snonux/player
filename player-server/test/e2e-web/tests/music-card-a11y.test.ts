@@ -22,8 +22,14 @@ test('yn3: a media group exposes its title and separate card actions', async ({ 
     await open.focus();
     await expect(open).toBeFocused();
     await card.hover();
-    for (const name of ['Play', 'Favorite', 'Notes', 'Move to trash', 'Mark as finished', 'Download', 'Tags']) {
+    // Primary actions stay on the card; the rest are separate buttons in its More menu.
+    for (const name of ['Play', 'Favorite', 'More actions']) {
       await expect(card.getByRole('button', { name, exact: true })).toBeVisible();
+    }
+    await card.locator('[data-action="more"]').click();
+    const menu = page.locator('.shortcut-picker[aria-label="Media actions"]');
+    for (const name of ['Notes', 'Move to trash', 'Mark as finished', 'Download', 'Tags']) {
+      await expect(menu.getByRole('button', { name, exact: true })).toBeVisible();
     }
     const screenshot = evidence.path('yn3-card-actions.png');
     await page.screenshot({ path: screenshot });

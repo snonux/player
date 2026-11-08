@@ -1,4 +1,5 @@
 import { expect, request, test, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { Evidence, loadFixture, type MusicFixture } from './helpers/music-fixture';
@@ -72,6 +73,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
     const artistHeart = await heart(page, 'artist', artist.artist_key);
     await artistHeart.click();
     await expect(artistHeart).toHaveAttribute('aria-pressed', 'true');
+    await openMusicFilters(page);
     await page.getByRole('checkbox', { name: 'Favorites only' }).check();
     await expect(page.locator(`[data-artist-card="${artist.artist_key}"]`)).toBeVisible();
     await expect(page.locator('[data-artist-card]')).toHaveCount(1);
@@ -92,6 +94,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
     await openPlaylistDetailMoreAction(page, 'favorite');
     await expect(await heart(page, 'playlist', playlistId)).toHaveAttribute('aria-pressed', 'true');
     await page.keyboard.press('Backspace');
+    await openMusicFilters(page);
     await page.getByRole('checkbox', { name: 'Favorites only' }).check();
     await expect(page.locator(`[data-playlist="${playlistId}"]`)).toBeVisible();
     await expect(page.locator('[data-playlist]')).toHaveCount(1);
@@ -106,6 +109,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
       await expect(await heart(otherPage, 'playlist', playlistId)).toHaveAttribute('aria-pressed', 'false');
       await (await heart(otherPage, 'playlist', playlistId)).click();
       await expect(await heart(otherPage, 'playlist', playlistId)).toHaveAttribute('aria-pressed', 'true');
+      await openMusicFilters(otherPage);
       await otherPage.getByRole('checkbox', { name: 'Favorites only' }).check();
       await expect(otherPage.locator(`[data-playlist="${playlistId}"]`)).toBeVisible();
       expect((await (await admin.get('/api/v1/music/albums?favorite=true')).json()).some((item: any) => item.album_key === album.album_key)).toBe(false);
@@ -131,7 +135,7 @@ test('M34 entity hearts are scoped, durable and independent of file hearts', asy
     for (const theme of ['dark', 'light']) {
       await page.setViewportSize({ width: 390, height: 844 });
       if (await page.locator('html').getAttribute('data-theme') !== theme)
-        await page.getByRole('button', { name: 'Toggle theme' }).click();
+        await toggleTheme(page);
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const shot = evidence.path(`m34-${theme}-narrow.png`);
       await page.screenshot({ path: shot, fullPage: true, animations: 'disabled' });

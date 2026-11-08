@@ -1,4 +1,5 @@
 import { test, expect, request, type Page } from '@playwright/test';
+import { toggleTheme } from './helpers/header-menu';
 import { Evidence, loadFixture, track, type MusicFixture } from './helpers/music-fixture';
 import { installAudioTap } from './helpers/audio-tap';
 import { keyboardLogin, playCard, expectPlaying, captureOutput, assertValidCapture, mainSegment, audioState, resetProgress , openSidebarMusic, openQueueMoreAction, openQueueRowMenuAction} from './helpers/music-ui';
@@ -88,7 +89,7 @@ test('M13 queue keyboard and buttons preserve entry/focus, source edits and Undo
    if(await page.locator('html').getAttribute('data-theme')!==theme) {
     if(width<700) await panel(page).getByRole('button',{name:'Close queue'}).click();
     await page.getByRole('button',{name:'More options',exact:true}).click();
-    await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+    await toggleTheme(page);
     if(width<700) await page.keyboard.press('Q');
    }
    await expect(page.locator('html')).toHaveAttribute('data-theme',theme);
@@ -205,9 +206,9 @@ test('M13 long title and artist remain usable in narrow queue themes',async({pag
   await page.locator(`[data-album="${long.album_key}"]`).click();await page.getByRole('button',{name:'▶ Play album',exact:true}).click();
   await expectPlaying(page,detail.songs[0].id);await page.locator('#btn-play').click();await page.setViewportSize({width:390,height:844});
   for(const theme of ['dark','light']) {
-   if(await page.locator('html').getAttribute('data-theme')!==theme) await page.getByRole('button',{name:'Toggle theme',exact:true}).click();
+   if(await page.locator('html').getAttribute('data-theme')!==theme) await toggleTheme(page);
    await page.keyboard.press('Q');await expect(panel(page)).toContainText(long.title);
-   expect(await row(page,0).getByRole('button',{name:'Remove '+detail.songs[0].music.title,exact:true}).isVisible()).toBe(true);
+   expect(await row(page,0).getByRole('button',{name:'Actions for '+detail.songs[0].music.title,exact:true}).isVisible()).toBe(true);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
    const shot=evidence.path(`m13-long-queue-${theme}-390.png`);await page.screenshot({path:shot,fullPage:false,animations:'disabled'});artifacts.push(shot);
    await panel(page).getByRole('button',{name:'Close queue',exact:true}).click();
