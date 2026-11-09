@@ -59,6 +59,7 @@ type mockFS struct {
 	walkList  []walkEntry
 	walkErr   error
 	mkdirErr  error
+	statErrs  map[string]error
 }
 
 func (m *mockFS) ReadDir(name string) ([]os.DirEntry, error) {
@@ -71,6 +72,9 @@ func (m *mockFS) ReadDir(name string) ([]os.DirEntry, error) {
 func (m *mockFS) Stat(name string) (os.FileInfo, error) {
 	if info, ok := m.fileInfos[name]; ok {
 		return info, nil
+	}
+	if err, ok := m.statErrs[name]; ok {
+		return nil, &os.PathError{Op: "stat", Path: name, Err: err}
 	}
 	return nil, &os.PathError{Op: "stat", Path: name, Err: os.ErrNotExist}
 }
@@ -469,8 +473,11 @@ func TestFSScanner_Scan(t *testing.T) {
 		}
 	})
 
+	// A file that vanished (ErrNotExist) is skipped; any other stat
+	// failure still fails the scan.
 	t.Run("stat error", func(t *testing.T) {
 		mfs := &mockFS{
+			statErrs: map[string]error{"/media/Set/file.mp4": os.ErrPermission},
 			entries: map[string][]os.DirEntry{
 				"/media": {mockDirEntry{name: "Set", isDir: true}},
 			},
