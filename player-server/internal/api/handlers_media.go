@@ -150,6 +150,10 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	maxBytes := int64(s.cfg.MaxUploadSizeMB) << 20
+	// The server's ReadTimeout covers the whole body, so a large upload on a
+	// slow link would be cut after 30s. MaxBytesReader still bounds the size;
+	// the request context still ends when the client goes away.
+	_ = http.NewResponseController(w).SetReadDeadline(time.Time{})
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 	if err := r.ParseMultipartForm(multipartFormMemoryLimit); err != nil {
 		var mbe *http.MaxBytesError

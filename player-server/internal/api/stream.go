@@ -40,6 +40,10 @@ func (s *Server) serveFileResult(w http.ResponseWriter, r *http.Request, res *se
 	}
 
 	if attachment {
+		// A browser download of a large file cannot resume like a media
+		// player does with Range requests, so it must not be cut by the
+		// server's write deadline (same as the zip and podcast downloads).
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 		disp := fmt.Sprintf("attachment; filename=%q", res.FileName)
 		w.Header().Set("Content-Disposition", disp)
 	}
