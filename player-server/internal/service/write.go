@@ -92,24 +92,12 @@ func (s *writeService) pathAllowed(path string) bool {
 }
 
 func (s *writeService) libraryRoot(ctx context.Context, set *model.Set) (string, error) {
-	if set != nil && set.LibraryID != 0 {
-		lib, err := s.store.GetMusicLibrary(ctx, set.LibraryID)
-		if err != nil {
-			return "", err
-		}
-		if lib != nil && lib.RootPath != "" {
-			return lib.RootPath, nil
-		}
-	}
-	return s.mediaRoot, nil
+	return setLibraryRoot(ctx, s.store, s.mediaRoot, set)
 }
 
 func (s *writeService) setDirectory(ctx context.Context, set *model.Set) (string, error) {
-	root, err := s.libraryRoot(ctx, set)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Clean(filepath.Join(root, set.RootPath)), nil
+	_, dir, err := setDirectoryIn(ctx, s.store, s.mediaRoot, set)
+	return dir, err
 }
 
 func (s *writeService) SoftDeleteMedia(ctx context.Context, mediaID, userID int64) error {
@@ -383,11 +371,15 @@ func (s *writeService) RegenerateSetCover(ctx context.Context, setID int64, fold
 		return ErrNotFound
 	}
 
-	_, coverPath, err := coverDestination(s.mediaRoot, s.thumbLayout, set.RootPath, folder)
+	root, err := s.libraryRoot(ctx, set)
 	if err != nil {
 		return err
 	}
-	layout := s.thumbLayout
+	layout := coverLayoutFor(s.thumbLayout, s.mediaRoot, root)
+	_, coverPath, err := coverDestination(root, layout, set.RootPath, folder)
+	if err != nil {
+		return err
+	}
 	media, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &setID})
 	if err != nil {
 		return fmt.Errorf("list media: %w", err)
@@ -400,7 +392,7 @@ func (s *writeService) RegenerateSetCover(ctx context.Context, setID int64, fold
 	if copyThumbnail {
 		source = candidate.ThumbnailPath
 	}
-	if !confinedPath(s.mediaRoot, source) && !(copyThumbnail && layout.CacheDir() != "" && confinedPath(layout.CacheDir(), source)) {
+	if !confinedPath(root, source) && !(copyThumbnail && layout.CacheDir() != "" && confinedPath(layout.CacheDir(), source)) {
 		return ErrForbidden
 	}
 	return s.renderCover(ctx, candidate, copyThumbnail, coverPath)
