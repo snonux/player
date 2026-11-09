@@ -41,8 +41,28 @@ type Manager struct {
 	state  *enableStore
 
 	mu      sync.Mutex
-	modules map[string]Module
+	modules map[string]*loadedModule
 	lastErr map[string]string
+}
+
+// loadedModule is one plugin's instance. Its mutex serialises Call (and
+// Close) on it: wazero instances share linear memory and globals, so two
+// calls at once would corrupt guest state.
+type loadedModule struct {
+	mu     sync.Mutex
+	mod    Module
+	closed bool
+}
+
+// close releases the instance once, waiting for a running call.
+func (e *loadedModule) close(ctx context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.closed {
+		return nil
+	}
+	e.closed = true
+	return e.mod.Close(ctx)
 }
 
 // Options configures a Manager.
@@ -82,7 +102,7 @@ func NewManager(opts Options) (*Manager, error) {
 		loader:  loader,
 		limits:  limits,
 		state:   store,
-		modules: map[string]Module{},
+		modules: map[string]*loadedModule{},
 		lastErr: map[string]string{},
 	}, nil
 }
@@ -90,13 +110,17 @@ func NewManager(opts Options) (*Manager, error) {
 // Close releases every loaded module.
 func (m *Manager) Close(ctx context.Context) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	entries := make([]*loadedModule, 0, len(m.modules))
+	for id, e := range m.modules {
+		entries = append(entries, e)
+		delete(m.modules, id)
+	}
+	m.mu.Unlock()
 	var first error
-	for id, mod := range m.modules {
-		if err := mod.Close(ctx); err != nil && first == nil {
+	for _, e := range entries {
+		if err := e.close(ctx); err != nil && first == nil {
 			first = err
 		}
-		delete(m.modules, id)
 	}
 	return first
 }
@@ -168,9 +192,13 @@ func (m *Manager) Disable(ctx context.Context, id string) (Info, error) {
 	return m.infoFor(d), nil
 }
 
-// Invoke runs a declared capability on an enabled plugin.
+// Invoke runs a declared capability on an enabled plugin. Calls on one
+// plugin run one at a time. A failed call (a timeout closes a wazero
+// instance) drops the instance, so the next call loads a fresh one instead
+// of failing as "module closed" until an admin toggles the plugin.
 func (m *Manager) Invoke(ctx context.Context, id, capability string) (uint64, error) {
 	capability = strings.TrimSpace(capability)
+	id = strings.TrimSpace(strings.ToLower(id))
 	d, err := m.discoverOne(id)
 	if err != nil {
 		return 0, err
@@ -188,27 +216,63 @@ func (m *Manager) Invoke(ctx context.Context, id, capability string) (uint64, er
 	if !ok {
 		return 0, fmt.Errorf("%w: %s", errUnknownCapability, capability)
 	}
-	m.mu.Lock()
-	mod := m.modules[id]
-	m.mu.Unlock()
-	if mod == nil {
-		if err := m.load(ctx, d); err != nil {
+	for attempt := 0; ; attempt++ {
+		e, err := m.instance(ctx, d, id)
+		if err != nil {
 			m.setErr(id, err.Error())
 			return 0, err
 		}
-		m.mu.Lock()
-		mod = m.modules[id]
-		m.mu.Unlock()
+		e.mu.Lock()
+		if e.closed {
+			// Dropped by a failed call or a disable while this one waited.
+			e.mu.Unlock()
+			if attempt == 0 {
+				continue
+			}
+			return 0, errDisabled
+		}
+		callCtx, cancel := context.WithTimeout(ctx, m.limits.CallTimeout)
+		res, err := e.mod.Call(callCtx, capability)
+		cancel()
+		e.mu.Unlock()
+		if err != nil {
+			m.setErr(id, err.Error())
+			m.drop(ctx, id, e)
+			return 0, err
+		}
+		m.setErr(id, "")
+		return res, nil
 	}
-	callCtx, cancel := context.WithTimeout(ctx, m.limits.CallTimeout)
-	defer cancel()
-	res, err := mod.Call(callCtx, capability)
-	if err != nil {
-		m.setErr(id, err.Error())
-		return 0, err
+}
+
+// instance returns the loaded module of id, loading it when needed.
+func (m *Manager) instance(ctx context.Context, d discovered, id string) (*loadedModule, error) {
+	m.mu.Lock()
+	e := m.modules[id]
+	m.mu.Unlock()
+	if e != nil {
+		return e, nil
 	}
-	m.setErr(id, "")
-	return res, nil
+	if err := m.load(ctx, d); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	e = m.modules[id]
+	m.mu.Unlock()
+	if e == nil {
+		return nil, errDisabled
+	}
+	return e, nil
+}
+
+// drop unloads e if it is still id's instance.
+func (m *Manager) drop(ctx context.Context, id string, e *loadedModule) {
+	m.mu.Lock()
+	if m.modules[id] == e {
+		delete(m.modules, id)
+	}
+	m.mu.Unlock()
+	_ = e.close(ctx)
 }
 
 var (
@@ -390,21 +454,22 @@ func (m *Manager) load(ctx context.Context, d discovered) error {
 		}
 	}
 	m.mu.Lock()
-	if old := m.modules[d.manifest.ID]; old != nil {
-		_ = old.Close(ctx)
-	}
-	m.modules[d.manifest.ID] = mod
+	old := m.modules[d.manifest.ID]
+	m.modules[d.manifest.ID] = &loadedModule{mod: mod}
 	m.mu.Unlock()
+	if old != nil {
+		_ = old.close(ctx)
+	}
 	return nil
 }
 
 func (m *Manager) unload(ctx context.Context, id string) {
 	m.mu.Lock()
-	mod := m.modules[id]
+	e := m.modules[id]
 	delete(m.modules, id)
 	m.mu.Unlock()
-	if mod != nil {
-		_ = mod.Close(ctx)
+	if e != nil {
+		_ = e.close(ctx)
 	}
 }
 
