@@ -10,7 +10,7 @@ const preferred = {
   'btn-bookmarks': 'r', 'btn-save-position': 's', 'btn-mute': 'm',
   'volume-slider': 'u', 'progress-track': 't', 'sidebar-toggle': 's',
   'btn-player-options': 'o', 'btn-cast': 'c', 'btn-zoom-in': 'z', 'btn-zoom-out': 'd',
-  'btn-slideshow': 'w', 'btn-download': 'x',
+  'btn-slideshow': 'w', 'btn-download': 'x', 'btn-delete-episode': 'd',
   'admin-toggle': 'a', 'theme-toggle': 't', 'logout-btn': 'o', 'header-menu-toggle': 'm',
   // Menu letters match the global vi keys shown beside them where possible.
   'shuffle-toggle': 'r', 'radio-toggle': 'w', 'header-search': 's',

@@ -14,6 +14,7 @@ import '../widgets/music_mini_player.dart';
 import '../widgets/podcast_library_switcher.dart';
 import '../services/podcast_metadata.dart';
 import '../providers/global_sync_provider.dart';
+import '../widgets/podcast_episode_delete.dart';
 
 // Shared by all episode routes so opening a feed keeps the chosen layout.
 final podcastEpisodeGridProvider = StateProvider<bool>((ref) => false);
@@ -694,34 +695,12 @@ class _LocalPodcastEpisodesScreenState
         mounted &&
         credentials.generation == generation &&
         ref.read(podcastScopeProvider).valueOrNull == scope;
-    final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-              title: const Text('Delete episode?'),
-              content: const Text(
-                  'Remove this episode from your podcast lists and delete its download on this device. Listening history is kept.'),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Cancel')),
-                TextButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Delete episode')),
-              ],
-            ));
-    if (confirmed != true || !current()) return;
+    if (!await confirmEpisodeDelete(context) || !current()) return;
     try {
-      await ref.read(podcastDownloadsProvider).removeEpisodeCopy(
-          episode['feed_key'] as String, episode['episode_key'] as String,
+      await ref.read(podcastDownloadsProvider).deleteEpisode(
+          ref.read(podcastSyncStoreProvider), scope, episode,
           current: current);
-      if (!current()) return;
-      await ref.read(podcastSyncStoreProvider).saveEpisode(
-          scope,
-          episode['scope_feed_key'] as String,
-          episode['scope_episode_key'] as String,
-          deleted: true,
-          enclosureUrl: episode['enclosure_url'] as String);
-      reload();
+      if (current()) reload();
     } catch (_) {
       if (mounted) setState(() => error = 'Could not delete episode. Retry.');
     }
@@ -936,7 +915,12 @@ class _LocalPodcastEpisodesScreenState
             color: completed ? colors.surfaceContainerHighest : null,
             child: styledTile,
           )
-        : styledTile;
+        : selecting || bulkBusy
+            ? styledTile
+            : EpisodeSwipeToDelete(
+                episode: (e['feed_key'], e['episode_key']),
+                onDelete: () => deleteEpisode(e, e['browse_scope'] as String),
+                child: styledTile);
   }
 
   @override

@@ -207,7 +207,10 @@ skip buttons.
 **Delete downloaded file** removes only this device's audio; subscription,
 completion, position and pending sync edits remain. **Delete episode** in the
 episode menu asks for confirmation, removes the episode from your lists and
-deletes its download on this device while retaining listening history. The
+deletes its download on this device while retaining listening history. In the
+list layout, swiping an episode row from right to left asks the same question.
+The podcast player's menu also has **Delete episode**: after confirmation it
+moves on to the feed's next episode, or stops and closes when none is left. The
 account deletion is durable across metadata refresh and sync. Older servers
 without deletion support keep the edit locally until support becomes available.
 **Unsubscribe (keep

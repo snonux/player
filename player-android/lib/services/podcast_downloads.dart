@@ -319,6 +319,21 @@ class PodcastDownloads extends ChangeNotifier {
     await _remove(feed, episode, current: current);
   }
 
+  /// Removes [episode] from [scope]'s podcast lists and deletes its copy on
+  /// this device. Listening history is kept. The episode list (row action and
+  /// swipe) and the podcast player share this one deletion flow.
+  Future<void> deleteEpisode(
+      PodcastSyncStore store, String scope, Map<String, Object?> episode,
+      {bool Function()? current}) async {
+    final feed = episode['feed_key'] as String;
+    final key = episode['episode_key'] as String;
+    await removeEpisodeCopy(feed, key, current: current);
+    if (current?.call() == false) return;
+    await store.saveEpisode(scope, episode['scope_feed_key'] as String? ?? feed,
+        episode['scope_episode_key'] as String? ?? key,
+        deleted: true, enclosureUrl: episode['enclosure_url'] as String? ?? '');
+  }
+
   /// Quiet expiry never interrupts playback/transfers or removes a shared
   /// device copy still needed by any other subscribed account library.
   Future<void> removeExpiredCopy(String scope, String feed, String episode,
@@ -506,6 +521,7 @@ class PodcastDownloads extends ChangeNotifier {
           ? (offline) => continuation(scope, feed, key, offline: offline)
           : null,
       synchronize: synchronize,
+      deleteEpisode: () => deleteEpisode(store, scope, episode),
       readPosition: () => readPosition(null),
       readPositionForDuration: readPosition,
       savePosition: (seconds) => save(seconds: seconds),

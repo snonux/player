@@ -3,7 +3,7 @@
 const SECONDARY =
   '#btn-minimize, #btn-save-position, #btn-bookmarks, #btn-player-notes, #btn-player-favorite, ' +
   '.volume-control, .audio-visual-control, .playback-speed-control, .loudness-control, .sleep-timer-control, ' +
-  '.lyrics-language, .lyrics-provider-controls';
+  '.lyrics-language, .lyrics-provider-controls, #btn-delete-episode';
 
 export function initCompactControls(player) {
   if (!player?.classList.contains('floating') || player.querySelector('#player-options')) return;
@@ -115,7 +115,7 @@ export function initCompactControls(player) {
     if (event.target.tagName === 'SELECT' && !keyed) dismiss();
   });
   panel.addEventListener('click', event => {
-    if (event.target.closest('#btn-minimize, #btn-save-position, #btn-bookmarks, #btn-player-notes, #btn-player-favorite')) dismiss();
+    if (event.target.closest('#btn-minimize, #btn-save-position, #btn-bookmarks, #btn-player-notes, #btn-player-favorite, #btn-delete-episode')) dismiss();
   }, true);
   // Firefox may consume Escape to leave native fullscreen before dispatching
   // a key event to the page. Close its controls on that path too.

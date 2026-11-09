@@ -60,6 +60,17 @@ export function bindEpisodeArtwork(root) {
  });
 }
 
+// One confirmation for every way to delete an episode: the row action, the
+// list's right-to-left swipe, the Delete key and the player's Delete episode.
+export function confirmEpisodeDelete(title) {
+ return confirm(`Delete "${title || 'this episode'}" from your podcast lists on all your devices? It stays deleted after feed refresh and sync. Listening history and downloaded files stay saved. Removing a downloaded file is a separate action.`);
+}
+
+// Device-only podcasts (no account) live in this browser's lists only.
+export function confirmLocalEpisodeDelete(title) {
+ return confirm(`Delete "${title || 'this episode'}" from this browser’s podcast lists?`);
+}
+
 export function bindPodcastMetadata(root) {
  bindEpisodeArtwork(root);
  root.querySelectorAll('.episode-description').forEach(notes => {

@@ -1688,6 +1688,101 @@ void main() {
     await player.playingChanges.close();
   });
 
+  PodcastPlaybackRequest deletableEpisode(String key, List<String> deleted,
+          {List<PlaybackRequest> Function()? next}) =>
+      PodcastPlaybackRequest(
+        identity: 'podcast:local:$key',
+        title: 'Episode $key',
+        sourceUri: Uri.parse('file:///offline/$key.mp3'),
+        readPosition: () async => 0,
+        savePosition: (_) async {},
+        markFinished: () async {},
+        continuation: next == null ? null : (_) async => next(),
+        deleteEpisode: () async => deleted.add(key),
+      );
+
+  testWidgets('player Delete episode confirms, deletes and plays the next one',
+      (tester) async {
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    final deleted = <String>[];
+    final request = deletableEpisode('a', deleted,
+        next: () => [deletableEpisode('b', deleted)]);
+    await _pumpScreen(tester, _FakeApiClient(),
+        handlerOverride: handler,
+        request: request,
+        forbidServerDependencies: true);
+    await _flushPlaybackStartup(tester);
+    await _openMenu(tester);
+    await tester.tap(find.byKey(const Key('podcast_player_delete_episode')));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete episode?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(deleted, isEmpty);
+    expect((player.loadedSource! as UriAudioSource).uri.path, '/offline/a.mp3');
+
+    await _openMenu(tester);
+    await tester.tap(find.byKey(const Key('podcast_player_delete_episode')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Delete episode'));
+    await _flushPlaybackStartup(tester);
+    await tester.pumpAndSettle();
+    expect(deleted, ['a']);
+    expect((player.loadedSource! as UriAudioSource).uri.path, '/offline/b.mp3');
+    expect(handler.lastId, 'podcast:local:b');
+    expect(find.text('Episode deleted'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await handler.endProgress();
+    await player.playingChanges.close();
+  });
+
+  testWidgets('deleting the last episode from the player stops playback',
+      (tester) async {
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    final deleted = <String>[];
+    await _pumpScreen(tester, _FakeApiClient(),
+        handlerOverride: handler,
+        request: deletableEpisode('last', deleted, next: () => []),
+        forbidServerDependencies: true);
+    await _flushPlaybackStartup(tester);
+    await _openMenu(tester);
+    await tester.tap(find.byKey(const Key('podcast_player_delete_episode')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Delete episode'));
+    await tester.pumpAndSettle();
+    expect(deleted, ['last']);
+    expect(player.isStopped, isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await handler.endProgress();
+    await player.playingChanges.close();
+  });
+
+  testWidgets('player offers no Delete episode for other audio',
+      (tester) async {
+    final player = _PlayableAudioPlayer();
+    final handler = _PlayableHandler(player);
+    await _pumpScreen(tester, _FakeApiClient(),
+        handlerOverride: handler,
+        request: PodcastPlaybackRequest(
+          identity: 'podcast:local:nodelete',
+          title: 'No delete',
+          sourceUri: Uri.parse('file:///offline/nodelete.mp3'),
+          readPosition: () async => 0,
+          savePosition: (_) async {},
+          markFinished: () async {},
+        ),
+        forbidServerDependencies: true);
+    await _flushPlaybackStartup(tester);
+    await _openMenu(tester);
+    expect(
+        find.byKey(const Key('podcast_player_delete_episode')), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await handler.endProgress();
+    await player.playingChanges.close();
+  });
+
   for (final width in [320.0, 412.0]) {
     testWidgets('podcast speed is one tap away at ${width.toInt()}dp',
         (tester) async {

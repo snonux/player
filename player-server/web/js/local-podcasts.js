@@ -1,6 +1,8 @@
 import { bindPodcastMultiselect } from './podcast-multiselect.js';
 import { localPodcastSnapshot, editLocalPodcast } from './local-podcast-state.js';
-import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from './podcast-metadata.js';
+import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata, confirmLocalEpisodeDelete } from './podcast-metadata.js';
+import { bindSwipeDelete } from './swipe-delete.js';
+import { initPodcastPlayerDelete } from './podcast-player-delete.js';
 import { openPodcastDiscovery } from './podcast-discovery.js';
 import { t, html } from './i18n.js';
 import { initPlayer } from './player.js';
@@ -38,6 +40,7 @@ export function initLocalPodcastsApp() {
   </section>`;
   initPlayer({ personalActions: false, cast: false, onNext: options => advanceQueue(options?.delta ?? 1, options), onPrevious: options => advanceQueue(options?.delta ?? -1, options) });
   initQueue(); initQueuePanel();
+  initPodcastPlayerDelete({ next: () => advanceQueue(1) });
   for (const selector of ['#btn-detach', '#btn-cast', '#btn-download', '#btn-player-notes', '#btn-player-favorite', '#btn-bookmarks', '#btn-save-position']) {
     const control = document.querySelector(selector);
     if (control) { control.disabled = true; control.hidden = true; }
@@ -85,7 +88,11 @@ export function initLocalPodcastsApp() {
     }
   }
 
+  // State changes (position, completion, deletion) can render again while an
+  // earlier render still waits for storage; only the latest one may draw.
+  let renderSerial = 0;
   async function render() {
+    const renderID = ++renderSerial;
     episodeSelection?.dispose();
     episodeSelection = undefined;
     const hadFocus = results.contains(document.activeElement);
@@ -99,6 +106,7 @@ export function initLocalPodcastsApp() {
         back.onclick = () => { detailKey = null; void render(); };
         results.append(back);
         const allEpisodes = await listLocalPodcastEpisodes(detailKey);
+        if (renderID !== renderSerial) return;
         const filters = document.createElement('div'); filters.className = 'playlist-actions';
         filters.setAttribute('role', 'group'); filters.setAttribute('aria-label', 'Completion filter');
         for (const [value, label] of [['uncompleted', 'Uncompleted'], ['completed', 'Completed'], ['all', 'All']]) {
@@ -164,9 +172,12 @@ export function initLocalPodcastsApp() {
           ]) {
             const button = document.createElement('button'); button.type = 'button'; button.className = 'btn'; button.textContent = label;
             button.onclick = () => {
-              if (name === 'deletion' && !confirm(`Delete "${episode.title}" from this browser’s podcast lists?`)) return;
+              if (name === 'deletion' && !confirmLocalEpisodeDelete(episode.title)) return;
               try { editLocalPodcast(episode, name, value); } catch (error) { message(error.message); }
             }; more.append(button);
+            if (name === 'deletion') {
+              bindSwipeDelete(li, () => button.click(), { enabled: () => !list.classList.contains('episode-grid') && !episodeSelection?.active });
+            }
           }
           copy.append(more);
           const notes = document.createElement('div'); notes.innerHTML = showNotesHTML(episode.description); copy.append(notes);
@@ -187,6 +198,7 @@ export function initLocalPodcastsApp() {
         return;
       }
       const feeds = await listLocalPodcastFeeds();
+      if (renderID !== renderSerial) return;
       if (!feeds.length) {
         message('No device subscriptions yet. Subscribe with a feed URL.');
         return;

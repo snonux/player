@@ -216,6 +216,43 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Episode 0'), findsNothing);
   });
+  testWidgets('right-to-left swipe on a list row deletes after confirmation',
+      (tester) async {
+    final repository = BrowsingRepository();
+    await tester.pumpWidget(
+        browsingApp(const LocalPodcastEpisodesScreen(), repository));
+    await tester.pumpAndSettle();
+    // A left-to-right swipe is not a delete gesture.
+    await tester.fling(find.text('Episode 0'), const Offset(500, 0), 1500);
+    await tester.pumpAndSettle();
+    expect(find.text('Delete episode?'), findsNothing);
+    await tester.fling(find.text('Episode 0'), const Offset(-500, 0), 1500);
+    await tester.pumpAndSettle();
+    expect(find.text('Delete episode?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(repository.deleted, false);
+    expect(find.text('Episode 0'), findsOneWidget);
+    await tester.fling(find.text('Episode 0'), const Offset(-500, 0), 1500);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Delete episode'));
+    await tester.pumpAndSettle();
+    expect(repository.deleted, true);
+    expect(find.text('Episode 0'), findsNothing);
+  });
+  testWidgets('selection mode turns the delete swipe off', (tester) async {
+    final repository = BrowsingRepository();
+    await tester.pumpWidget(
+        browsingApp(const LocalPodcastEpisodesScreen(), repository));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text('Episode 0'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Checkbox), findsWidgets);
+    await tester.fling(find.text('Episode 0'), const Offset(-500, 0), 1500);
+    await tester.pumpAndSettle();
+    expect(find.text('Delete episode?'), findsNothing);
+    expect(repository.deleted, false);
+  });
   testWidgets(
       'account switch while delete confirmation is open does not delete the old episode',
       (tester) async {

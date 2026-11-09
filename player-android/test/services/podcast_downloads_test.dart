@@ -200,6 +200,24 @@ void main() {
     expect(await downloads.continuation('local', feed, 'missing'), isEmpty);
   });
 
+  test('player Delete episode removes the copy and tombstones only this scope',
+      () async {
+    final key = episode['episode_key'] as String;
+    await downloads.download(feed, key);
+    final request = await downloads.playbackRequest('local', feed, episode);
+    await request.deleteEpisode!();
+    expect(await File.fromUri(request.sourceUri).exists(), false);
+    expect((await downloads.copy(feed, key))!['state'], 'missing');
+    final state =
+        (await (await repository.database).query('podcast_episode_state'))
+            .single;
+    expect(state['scope'], 'local');
+    expect(state['deleted'], 1);
+    expect(await downloads.continuation('local', feed, key), isEmpty);
+    expect(await repository.browseEpisodes('local', feed: feed, filter: 'all'),
+        isEmpty);
+  });
+
   test(
       'native duration overrides feed; manual status and start-over retain clocks',
       () async {

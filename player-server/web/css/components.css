@@ -598,3 +598,7 @@ label {
 /* Keep the last rows reachable above the floating player. */
 body:has(#player.open:not(.minimized):not(.detached):not(.is-fullscreen)) .main-content { padding-bottom: calc(min(var(--player-reserve, 22rem), 60vh) + 1rem); }
 body:has(#player.open.minimized) .main-content { padding-bottom: 4.5rem; }
+
+/* Right-to-left touch swipe on an episode row asks to delete it. */
+.swipe-delete { touch-action: pan-y; transition: transform .15s ease-out; }
+.swipe-delete.swipe-delete-active { transition: none; outline: 2px solid var(--danger); background: var(--danger-soft); }

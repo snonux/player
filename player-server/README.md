@@ -121,6 +121,13 @@ shared server copies, subject to permissions and confirmation explaining other
 listeners and seven-day Trash. Browser device podcast deletions affect only that
 browser's lists.
 
+To delete one episode, use **Delete episode** in its row actions, press
+**Delete** on the selected episode, or swipe its row from right to left on a
+touch screen in List layout. Each asks for confirmation first. While an
+episode plays, **Delete episode** is also in the player's controls menu (☰,
+shortcut letter **d** there): playback moves on to the feed's next episode, or
+stops when none is left.
+
 Focused layout verification:
 
 ```sh
