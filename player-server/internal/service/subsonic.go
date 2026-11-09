@@ -332,59 +332,49 @@ func searchableArtists(albums []Album) []Artist {
 	return people
 }
 
-func pageArtists(people []Artist, offset, count int) []subsonic.Artist {
-	if count < 0 {
-		count = 0
-	}
+// pageBounds returns the slice bounds of a page of n items. It never adds
+// offset and count before clamping, so client-supplied values near MaxInt
+// cannot overflow; ok is false for an empty page.
+func pageBounds(n, offset, count int) (start, end int, ok bool) {
 	if offset < 0 {
 		offset = 0
 	}
-	if offset > len(people) {
+	if count <= 0 || offset >= n {
+		return 0, 0, false
+	}
+	if count > n-offset {
+		count = n - offset
+	}
+	return offset, offset + count, true
+}
+
+func pageArtists(people []Artist, offset, count int) []subsonic.Artist {
+	start, end, ok := pageBounds(len(people), offset, count)
+	if !ok {
 		return []subsonic.Artist{}
 	}
-	end := offset + count
-	if end > len(people) || count == 0 {
-		end = len(people)
-	}
-	if count == 0 {
-		return []subsonic.Artist{}
-	}
-	out := make([]subsonic.Artist, 0, end-offset)
-	for _, person := range people[offset:end] {
+	out := make([]subsonic.Artist, 0, end-start)
+	for _, person := range people[start:end] {
 		out = append(out, subsonic.Artist{ID: person.Key, Name: person.Name, AlbumCount: person.AlbumCount})
 	}
 	return out
 }
 
 func pageAlbums(albums []Album, offset, count int) []subsonic.Album {
-	if count <= 0 {
+	start, end, ok := pageBounds(len(albums), offset, count)
+	if !ok {
 		return []subsonic.Album{}
 	}
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > len(albums) {
-		return []subsonic.Album{}
-	}
-	end := offset + count
-	if end > len(albums) {
-		end = len(albums)
-	}
-	out := make([]subsonic.Album, 0, end-offset)
-	for _, album := range albums[offset:end] {
+	out := make([]subsonic.Album, 0, end-start)
+	for _, album := range albums[start:end] {
 		out = append(out, mapAlbum(album, false))
 	}
 	return out
 }
 
 func pageSongs(songs []model.Media, albums []Album, offset, count int) []subsonic.Song {
-	if count <= 0 {
-		return []subsonic.Song{}
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > len(songs) {
+	start, end, ok := pageBounds(len(songs), offset, count)
+	if !ok {
 		return []subsonic.Song{}
 	}
 	byID := map[int64]Album{}
@@ -393,12 +383,8 @@ func pageSongs(songs []model.Media, albums []Album, offset, count int) []subsoni
 			byID[song.ID] = album
 		}
 	}
-	end := offset + count
-	if end > len(songs) {
-		end = len(songs)
-	}
-	out := make([]subsonic.Song, 0, end-offset)
-	for _, song := range songs[offset:end] {
+	out := make([]subsonic.Song, 0, end-start)
+	for _, song := range songs[start:end] {
 		out = append(out, mapSong(song, byID[song.ID]))
 	}
 	return out
