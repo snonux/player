@@ -152,7 +152,12 @@ final class PodcastPlaybackRequest extends PlaybackRequest {
     this.finishAtPosition,
     this.readPositionForDuration,
     this.continuation,
+    this.deleteEpisode,
   });
+
+  /// Removes this episode from the podcast lists and its device copy, as the
+  /// episode list's Delete episode action does.
+  final Future<void> Function()? deleteEpisode;
 
   /// Remaining episodes in feed order, captured when this episode opens.
   final Future<List<PlaybackRequest>> Function(bool offline)? continuation;

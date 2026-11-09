@@ -1,7 +1,8 @@
 import { podcastStreamMedia } from './podcast-playback.js';
 import { podcastDownloading, downloadPodcastEpisode, cancelPodcastDownload } from './podcast-downloads.js';
 import { bindPodcastMultiselect } from './podcast-multiselect.js';
-import { episodeArtworkHTML, bindPodcastMetadata, episodeCardMarkup } from './podcast-metadata.js';
+import { episodeArtworkHTML, bindPodcastMetadata, episodeCardMarkup, confirmEpisodeDelete } from './podcast-metadata.js';
+import { bindSwipeDelete } from './swipe-delete.js';
 import { openPodcastDiscovery } from './podcast-discovery.js';
 import { setSubscribed, listAccountPodcastSubscriptions } from './podcast-subscriptions.js';
 import { podcastFeedKey } from './podcast-identity.js';
@@ -314,6 +315,9 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
     if (mediaId) card.dataset.id = String(mediaId);
     card.tabIndex = -1;
     renderViewEpisodeCard(card, ep, { showFeed: !feedKey });
+    // List view only, as on Android; selection mode keeps its own gestures.
+    bindSwipeDelete(card, () => card.querySelector('[data-action="delete-episode"]:not(:disabled)')?.click(),
+      { enabled: () => grid.classList.contains('podcast-episode-list') && !card.classList.contains('podcast-selecting') });
     visibleEpisodes.push({ card, ep });
     if (before) grid.insertBefore(card, before);
     else grid.appendChild(card);
@@ -589,7 +593,7 @@ async function markCompletion(card, ep, completed) {
 }
 
 async function deleteEpisode(card, ep, button) {
-  if (!confirm(`Delete "${ep.title || 'this episode'}" from your podcast lists on all your devices? It stays deleted after feed refresh and sync. Listening history and downloaded files stay saved. Removing a downloaded file is a separate action.`)) return;
+  if (!confirmEpisodeDelete(ep.title)) return;
   button.disabled = true;
   try {
     // The state layer persists the edit before starting its network request.

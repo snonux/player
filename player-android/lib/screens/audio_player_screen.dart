@@ -50,6 +50,7 @@ import '../widgets/sleep_timer_control.dart';
 import '../widgets/playback_loading_view.dart';
 import '../widgets/personal_media_actions.dart';
 import '../widgets/overflow_menu.dart';
+import '../widgets/podcast_episode_delete.dart';
 import '../services/personal_media_store.dart';
 import 'cast_screen_mixin.dart';
 import 'playback_preparation_mixin.dart';
@@ -1239,7 +1240,44 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               label: 'Remove provider lyrics',
               onSelected: _lyricsActions.removeProvider),
       ],
+      // Destructive, so it stays last and apart from routine playback.
+      if (request is PodcastPlaybackRequest &&
+          request.deleteEpisode != null &&
+          !casting)
+        OverflowMenuItem(
+            key: const Key('podcast_player_delete_episode'),
+            icon: Icons.delete_outline,
+            label: 'Delete episode',
+            onSelected: () => _deleteEpisode(request)),
     ];
+  }
+
+  /// Deletes the open episode with the episode list's confirmation and flow.
+  /// Playback moves on to the feed's next episode; when none is left it stops
+  /// and the player closes.
+  Future<void> _deleteEpisode(PodcastPlaybackRequest request) async {
+    if (!await confirmEpisodeDelete(context) || !mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final handler = ref.read(audioHandlerProvider);
+    bool playing() => handler.musicState?.request.identity == request.identity;
+    final wasPlaying = playing();
+    if (wasPlaying) await handler.skipToNext();
+    final moved = wasPlaying && !playing();
+    try {
+      await request.deleteEpisode!();
+    } catch (_) {
+      messenger?.showSnackBar(
+          const SnackBar(content: Text('Could not delete episode. Retry.')));
+      return;
+    }
+    messenger?.showSnackBar(const SnackBar(content: Text('Episode deleted')));
+    if (moved || !mounted) return;
+    final lease = _sessionLease;
+    if (lease?.isCurrent == true &&
+        _activeRequest?.identity == request.identity) {
+      await lease!.stop();
+    }
+    if (mounted) await Navigator.of(context).maybePop();
   }
 
   /// Loudness, EQ, quality, visuals and gapless share one nested sheet so the

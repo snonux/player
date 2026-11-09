@@ -1,6 +1,7 @@
 import { localFilesMode, localPodcastsMode } from './offline-context.js';
 import { initLocalFilesApp } from './local-files.js';
 import { initLocalPodcastsApp } from './local-podcasts.js';
+import { initPodcastPlayerDelete } from './podcast-player-delete.js';
 import { initLanguage } from './i18n.js';
 import { initOfflinePinLibrary } from './offline-pin-library.js';
 import { mountMusicPresence } from './music-presence.js';
@@ -235,6 +236,7 @@ async function initApp() {
     onNext: (options) => navigatePlayable(options?.delta ?? 1, options),
     onPrevious: (options) => navigatePlayable(options?.delta ?? -1, options),
   });
+  initPodcastPlayerDelete({ next: () => navigatePlayable(1, { completed: true }) });
   initSelection();
   initMusicCatalog(loadMedia);
   let navigatedDuringStartup = false;
