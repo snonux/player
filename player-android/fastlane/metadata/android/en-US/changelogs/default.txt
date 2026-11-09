@@ -1,1 +1,1 @@
-Reliability and security release for the server. Fixes long uploads and downloads being cut off, covers and lyrics in extra music libraries, podcast feed redirects affecting other users, deleted folders lingering after a rescan, and cross-site requests on web sessions. Database upgrades are now versioned and tested against older releases.
+Delete a podcast episode from the podcast player's menu, or by swiping its row from right to left in the episode list. After deleting from the player, the next episode plays, or playback stops when none is left.
