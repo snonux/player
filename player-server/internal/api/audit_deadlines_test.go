@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -143,5 +144,47 @@ func TestPublicJSONBodiesAreBounded(t *testing.T) {
 		if rr.Code != http.StatusRequestEntityTooLarge {
 			t.Errorf("%s: status = %d, want 413", path, rr.Code)
 		}
+	}
+}
+
+// B6: state-changing requests that carry the session cookie are refused
+// when a browser says they come from another origin or site.
+func TestCrossOriginUnsafeRequestsRefused(t *testing.T) {
+	store := buildAdminSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24, CORSAllowedOrigins: []string{"https://app.example"}}
+	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	cookie := sessionCookieForStore(t, store, sm, 1)
+	tests := []struct {
+		name, method, origin, site string
+		refused                    bool
+	}{
+		{"cross-site POST", http.MethodPost, "https://evil.example", "cross-site", true},
+		{"same-site POST", http.MethodPost, "https://sub.example.com", "same-site", true},
+		{"cross-origin POST without fetch metadata", http.MethodPost, "https://evil.example", "", true},
+		{"cross-site DELETE", http.MethodDelete, "https://evil.example", "cross-site", true},
+		{"same-origin POST", http.MethodPost, "", "same-origin", false},
+		{"native client POST", http.MethodPost, "", "", false},
+		{"trusted CORS origin", http.MethodPost, "https://app.example", "cross-site", false},
+		{"cross-site GET", http.MethodGet, "https://evil.example", "cross-site", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, "/api/admin/users", bytes.NewBufferString(`{"username":"x","password":"y"}`))
+			req.Header.Set("Content-Type", "text/plain")
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			if tt.site != "" {
+				req.Header.Set("Sec-Fetch-Site", tt.site)
+			}
+			req.AddCookie(cookie)
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			refused := rr.Code == http.StatusForbidden && strings.Contains(rr.Body.String(), "cross-origin")
+			if refused != tt.refused {
+				t.Fatalf("status %d body %q, refused=%v want %v", rr.Code, rr.Body.String(), refused, tt.refused)
+			}
+		})
 	}
 }

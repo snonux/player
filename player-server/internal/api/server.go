@@ -200,7 +200,7 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 		shareRenderer:    web.NewSharePageRenderer(deps.StaticFS),
 		castTickets:      deps.CastTickets,
 		logger:           logger,
-		mw:               NewMiddleware(deps.Services.Auth, deps.SessionManager, deps.Config.ProxyAuth),
+		mw:               NewMiddleware(deps.Services.Auth, deps.SessionManager, deps.Config.ProxyAuth).WithTrustedOrigins(deps.Config.CORSAllowedOrigins),
 	}
 	s.routes()
 	s.handler = withCORS(s.cfg.CORSAllowedOrigins, s.mw.BootstrapRedirect(s.mux))
