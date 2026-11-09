@@ -52,9 +52,16 @@ func (s *podcastEpisodeService) ListEpisodes(ctx context.Context, setID, userID 
 		return nil, ErrNotFound
 	}
 
-	feedIDs := make([]int64, len(feeds))
-	for i, f := range feeds {
-		feedIDs[i] = f.ID
+	// A row merged into another feed no longer refreshes; listing it next
+	// to its winner would show the episodes both held twice.
+	feedIDs := make([]int64, 0, len(feeds))
+	for _, f := range feeds {
+		if f.MergedInto == nil {
+			feedIDs = append(feedIDs, f.ID)
+		}
+	}
+	if len(feedIDs) == 0 {
+		return []model.PodcastEpisodeWithStatus{}, nil
 	}
 	return s.svc.store.ListEpisodesByFeedIDsWithStatus(ctx, userID, feedIDs, limit, offset)
 }

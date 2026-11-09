@@ -103,3 +103,31 @@ func (c checkerProbe) CheckFeeds(ctx context.Context) error {
 	defer c.returned.Store(true)
 	return c.FeedChecker.CheckFeeds(ctx)
 }
+
+// B18: the legacy per-set listing shows an episode once after a merge.
+func TestListEpisodes_NoDuplicatesAfterMerge(t *testing.T) {
+	f := newCheckerFixture(t)
+	ctx := context.Background()
+	if err := f.store.GrantPermission(ctx, &model.SetPermission{SetID: f.setID, UserID: f.admin, Role: model.RoleOwner}); err != nil {
+		t.Fatal(err)
+	}
+	var feeds []*model.PodcastFeed
+	for _, path := range []string{"/old", "/new"} {
+		feed := f.feed(t, path, nil)
+		if _, err := f.store.CreateEpisode(ctx, &model.PodcastEpisode{FeedID: feed.ID, GUID: "shared", Title: "shared",
+			EpisodeURL: "https://cdn.example.com/shared.mp3", CreatedAt: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		feeds = append(feeds, feed)
+	}
+	if move, err := f.store.MoveFeed(ctx, feeds[0].ID, feeds[1].FeedURL); err != nil || move != repository.FeedMerged {
+		t.Fatalf("merge: %v %v", move, err)
+	}
+	eps, err := f.svc.ListEpisodes(ctx, f.setID, f.admin, 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eps) != 1 || eps[0].FeedID != feeds[1].ID {
+		t.Fatalf("episodes after merge: %+v", eps)
+	}
+}
