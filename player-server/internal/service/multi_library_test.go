@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/snonux/player/internal/clock"
 	"github.com/snonux/player/internal/model"
 	"github.com/snonux/player/internal/repository"
 	"github.com/snonux/player/internal/thumb"
@@ -137,5 +139,44 @@ func TestSetCover_UsesOwnLibrary(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// B8: expired trash in a non-default library is purged, and a legacy row
+// without AbsPath resolves inside its own library, never the default one.
+func TestGC_PurgesTrashInEveryLibrary(t *testing.T) {
+	f := newTwoLibraryFixture(t)
+	ctx := context.Background()
+	idB, pathB := f.addMedia(t, f.rootB, f.setB, "song.mp3", model.MediaTypeAudio)
+	_, pathA := f.addMedia(t, f.rootA, f.setA, "legacy.mp3", model.MediaTypeAudio)
+	legacyPathB := filepath.Join(f.rootB, "Rock", "legacy.mp3")
+	writeFile(t, legacyPathB, "B legacy")
+	legacyB, err := f.store.CreateMedia(ctx, &model.Media{SetID: f.setB, RelPath: "legacy.mp3", FileName: "legacy.mp3",
+		Type: model.MediaTypeAudio, CreatedAt: newMockClock().Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{idB, legacyB} {
+		if err := f.store.SoftDeleteMedia(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	later := &clock.MockClock{T: time.Now().Add(8 * 24 * time.Hour)}
+	w := NewGCWorker(f.store, later, f.rootA, time.Minute, nil).WithAge(7 * 24 * time.Hour)
+	if err := w.RunOnce(); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{pathB, legacyPathB} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("expired trash %s still on disk: %v", p, err)
+		}
+	}
+	for _, id := range []int64{idB, legacyB} {
+		if m, _ := f.store.GetMediaByID(ctx, id); m != nil {
+			t.Fatalf("expired row %d not purged", id)
+		}
+	}
+	if _, err := os.Stat(pathA); err != nil {
+		t.Fatalf("default library file with the same relative path touched: %v", err)
 	}
 }

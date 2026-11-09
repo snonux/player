@@ -231,33 +231,34 @@ func (w *GCWorker) purgeExpired(ctx context.Context) {
 // the cache until it happened to be evicted.
 func (w *GCWorker) purge(ctx context.Context, item *model.Media) {
 	absPath := item.AbsPath
+	if absPath == "" && item.RelPath == "" {
+		if w.logger != nil {
+			w.logger.Warn("gc source path missing", "id", item.ID)
+		}
+		return
+	}
+	// Confine to the root of the library the item's set belongs to: trash
+	// in a non-default library is as valid as trash in the default one, and
+	// a legacy row without AbsPath must never resolve into the same-named
+	// set of another library.
+	root, setDir, ok := w.setDirectory(ctx, item)
+	if !ok {
+		return
+	}
 	if absPath == "" {
-		if item.RelPath == "" {
-			if w.logger != nil {
-				w.logger.Warn("gc source path missing", "id", item.ID)
-			}
-			return
-		}
-		set, err := w.store.GetSetByID(ctx, item.SetID)
-		if err != nil || set == nil || set.RootPath == "" {
-			if w.logger != nil {
-				w.logger.Warn("gc cannot resolve source set", "id", item.ID, "set_id", item.SetID, "err", err)
-			}
-			return
-		}
-		absPath = filepath.Clean(filepath.Join(w.mediaRoot, set.RootPath, filepath.FromSlash(item.RelPath)))
+		absPath = filepath.Clean(filepath.Join(setDir, filepath.FromSlash(item.RelPath)))
 	}
 
-	if !confinedPath(w.mediaRoot, absPath) {
+	if !confinedPath(root, absPath) {
 		// An inaccessible ancestor is different from an escaping symlink.
 		// Neither may be unlinked safely, but legacy inaccessible trash can
 		// still lose its row once without touching any filesystem paths.
-		if _, err := os.Lstat(absPath); lexicalPathWithin(w.mediaRoot, absPath) && readonlyError(err) {
+		if _, err := os.Lstat(absPath); lexicalPathWithin(root, absPath) && readonlyError(err) {
 			w.purgeInaccessible(ctx, item)
 			return
 		}
 		if w.logger != nil {
-			w.logger.Warn("gc refusing source outside media root", "id", item.ID, "path", absPath)
+			w.logger.Warn("gc refusing source outside its library root", "id", item.ID, "path", absPath)
 		}
 		return
 	}
@@ -294,7 +295,7 @@ func (w *GCWorker) purge(ctx context.Context, item *model.Media) {
 		}
 		return
 	}
-	if confinedPath(w.mediaRoot, item.ThumbnailPath) || (w.thumbLayout.CacheDir() != "" && confinedPath(w.thumbLayout.CacheDir(), item.ThumbnailPath)) {
+	if confinedPath(root, item.ThumbnailPath) || (w.thumbLayout.CacheDir() != "" && confinedPath(w.thumbLayout.CacheDir(), item.ThumbnailPath)) {
 		removeOwnThumbnail(w.thumbRm, w.thumbLayout, item)
 	}
 	w.removeRenditions(item.ID)
@@ -302,6 +303,36 @@ func (w *GCWorker) purge(ctx context.Context, item *model.Media) {
 	if w.logger != nil {
 		w.logger.Info("gc deleted media", "id", item.ID, "path", absPath)
 	}
+}
+
+// setDirectory resolves the library root and directory of item's set. A
+// row whose set is gone keeps the default media root as its confinement,
+// which is all a stored absolute path can be checked against. ok is false
+// when the set cannot be looked up; the item is retried on the next run.
+func (w *GCWorker) setDirectory(ctx context.Context, item *model.Media) (root, dir string, ok bool) {
+	set, err := w.store.GetSetByID(ctx, item.SetID)
+	if err == nil && set == nil {
+		if item.AbsPath == "" {
+			if w.logger != nil {
+				w.logger.Warn("gc cannot resolve source set", "id", item.ID, "set_id", item.SetID)
+			}
+			return "", "", false
+		}
+		return w.mediaRoot, "", true
+	}
+	if err == nil && item.AbsPath == "" && set.RootPath == "" {
+		err = errors.New("set has no root path")
+	}
+	if err == nil {
+		root, dir, err = setDirectoryIn(ctx, w.store, w.mediaRoot, set)
+	}
+	if err != nil {
+		if w.logger != nil {
+			w.logger.Warn("gc cannot resolve source set", "id", item.ID, "set_id", item.SetID, "err", err)
+		}
+		return "", "", false
+	}
+	return root, dir, true
 }
 
 // purgeInaccessible removes only database/cache state when source confinement

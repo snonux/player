@@ -96,6 +96,8 @@ type GCStore interface {
 	MediaRepo
 	// GetSetByID resolves set-relative paths of legacy rows without AbsPath.
 	GetSetByID(ctx context.Context, id int64) (*model.Set, error)
+	// GetMusicLibrary confines purges to the root of the set's library.
+	GetMusicLibrary(ctx context.Context, id int64) (*model.MusicLibrary, error)
 }
 
 // AuthServiceStore is the subset of Store required by service.AuthService.
