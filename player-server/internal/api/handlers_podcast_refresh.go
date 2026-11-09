@@ -14,11 +14,13 @@ func (s *Server) handlePodcastRefresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "podcast refresh unavailable")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	var req struct {
 		FeedKey string `json:"feed_key"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSONLimit(w, r, &req, 4096); err != nil {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid body")
 		return
 	}

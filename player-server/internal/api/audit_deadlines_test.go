@@ -126,3 +126,22 @@ func TestDownload_SlowClientOutlastsWriteTimeout(t *testing.T) {
 		t.Fatalf("read %d bytes, want %d", n, size)
 	}
 }
+
+// B5: public JSON endpoints refuse oversized bodies with 413 instead of
+// buffering them.
+func TestPublicJSONBodiesAreBounded(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	big := `{"username":"a","password":"` + string(bytes.Repeat([]byte("x"), 1<<20)) + `"}`
+	for _, path := range []string{"/api/login", "/api/bootstrap"} {
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(big))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("%s: status = %d, want 413", path, rr.Code)
+		}
+	}
+}

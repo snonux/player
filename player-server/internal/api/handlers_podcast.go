@@ -39,7 +39,10 @@ func (s *Server) handleSubscribePodcast(w http.ResponseWriter, r *http.Request) 
 		FeedURL string `json:"feed_url"`
 		SetName string `json:"set_name"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid request")
 		return
 	}

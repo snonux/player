@@ -73,7 +73,10 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 		IsAdmin  bool   `json:"is_admin"`
 	}
-	if err := readJSON(r, &req); err != nil || req.Username == "" || req.Password == "" {
+	if err := readJSON(w, r, &req); err != nil || req.Username == "" || req.Password == "" {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid request")
 		return
 	}
@@ -135,7 +138,10 @@ func (s *Server) handleGrantPermission(w http.ResponseWriter, r *http.Request) {
 		UserID int64      `json:"user_id"`
 		Role   model.Role `json:"role"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid request")
 		return
 	}
@@ -154,7 +160,10 @@ func (s *Server) handleRevokePermission(w http.ResponseWriter, r *http.Request) 
 		SetID  int64 `json:"set_id"`
 		UserID int64 `json:"user_id"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid request")
 		return
 	}
