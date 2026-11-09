@@ -1,5 +1,8 @@
 # Isolated test instance: never mount the production Player PVCs or host paths.
-# Build/push a distinct test image, then replace the image with kubectl set image.
+# The app image is pinned to the approved production release (tag plus digest),
+# so the fixture tests what users run. When production moves to a new release,
+# or to try an unreleased build, change the image here and re-apply this file;
+# a `kubectl set image` alone drifts from git (it left the fixture on 0.12.0).
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -61,8 +64,11 @@ spec:
             - {name: media, mountPath: /media}
       containers:
         - name: app
-          image: registry.lan.buetow.org:30001/player:trash-test
-          imagePullPolicy: Always
+          # v0.18.0, same image as production player/xplayer (config
+          # sha256:cad1ae66...). The digest makes the pull immutable, so
+          # IfNotPresent is enough and a restart needs no registry.
+          image: registry.lan.buetow.org:30001/player:7466f0e@sha256:b45891f1552397e2c5f8f41f8cc212e79c505c7b92157d25800d38bc5f89fbd5
+          imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
             runAsUser: 65534

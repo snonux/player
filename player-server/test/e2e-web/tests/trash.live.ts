@@ -1,9 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 import { triggerRescan } from './helpers/server';
+import { cardAction } from './helpers/card-actions';
+import { headerItem } from './helpers/header-menu';
 
 // These tests mutate media. Run only on the isolated instance documented in
 // k8s/test-trash, with its own DB and library. No production credentials.
+// Since the v0.16 web revamp, "Move to trash" lives in the media card's More
+// actions menu and "Open trash" in the header's More options popover, so the
+// tests reach both through the shared helpers like the rest of the suite.
 let adminCookie: string;
 let setId: number;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=', 'base64');
@@ -52,16 +57,16 @@ test('card delete, cancel, trash timestamp, keyboard restore, grid refresh and E
   const card = page.locator(`.media-card[data-id="${item.id}"]`);
   await expect(card).toBeVisible();
   page.once('dialog', dialog => dialog.dismiss());
-  await card.getByRole('button', { name: 'Move to trash', exact: true }).click();
+  await cardAction(page, card, 'Move to trash');
   await expect(card).toBeVisible();
   page.once('dialog', dialog => dialog.accept());
-  await card.getByRole('button', { name: 'Move to trash', exact: true }).click();
+  await cardAction(page, card, 'Move to trash');
   await expect(card).toHaveCount(0);
   expect((await page.request.get(`/api/media/${item.id}`)).status()).toBe(404);
   const trash = await (await page.request.get('/api/trash')).json();
   expect(trash.find((m: any) => m.id === item.id).deleted_at).toBeTruthy();
-  const toggle = page.getByRole('button', { name: 'Open trash', exact: true });
-  await toggle.focus();
+  const toggle = await headerItem(page, '#trash-toggle');
+  await expect(toggle).toHaveAccessibleName('Open trash');
   await toggle.click();
   const modal = page.locator('#trash-modal');
   await expect(modal).toHaveClass(/open/);
@@ -86,8 +91,7 @@ test('trash j/k/arrows and Tab keep focus inside; native Space closes', async ({
     expect((await page.request.delete(`/api/media/${item.id}`, { headers: { Cookie: adminCookie } })).status()).toBe(200);
   }
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open trash', exact: true }).focus();
-  await page.getByRole('button', { name: 'Open trash', exact: true }).click();
+  await (await headerItem(page, '#trash-toggle')).click();
   const buttons = page.locator('#trash-list button[data-id]');
   await expect(buttons.nth(1)).toBeVisible();
   await buttons.first().focus();
@@ -129,8 +133,7 @@ test('owner sees/restores only owned trash; viewer and outsider cannot restore o
     })).status()).toBe(200);
     expect((await page.request.delete(`/api/media/${item.id}`)).status()).toBe(200);
     await page.goto('/');
-    await page.getByRole('button', { name: 'Open trash', exact: true }).focus();
-  await page.getByRole('button', { name: 'Open trash', exact: true }).click();
+    await (await headerItem(page, '#trash-toggle')).click();
     await page.getByRole('button', { name: `Restore ${item.file_name}`, exact: true }).press('Enter');
     expect((await page.request.get(`/api/media/${item.id}`)).status()).toBe(200);
     await page.request.delete('/api/admin/permissions', {

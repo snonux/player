@@ -7,23 +7,38 @@ or another application's library. SQLite lives at `/data/media.db`; generated
 thumbnails and transcodes share that instance's data volume. The media volume
 starts with empty writable sets `trash-tests` and `other-tests`.
 
-Build a separately tagged image from `player-server/` and deploy it:
+`instance.yaml` pins the app image to the approved production release by tag
+and digest (currently v0.18.0, `player:7466f0e`, the same image as the
+production Player and xplayer). It is not a regression baseline: when
+production moves to a new release, update the pin here, re-apply, and rerun
+the browser suite below. Deploy or update it with:
 
 ```sh
-podman build -t registry.lan.buetow.org:30001/player:trash-test .
-podman push --tls-verify=false registry.lan.buetow.org:30001/player:trash-test
 kubectl apply -f k8s/test-trash/instance.yaml
 kubectl -n player-trash-test rollout status deployment/player
+kubectl -n player-trash-test exec deploy/player -c app -- /app/player --version
+```
+
+To test an unreleased build, push it under its own immutable tag (the git
+SHA, never a reused tag) and put that tag in `instance.yaml` for the test
+run; restore the release pin afterwards. Do not use only `kubectl set image`:
+the live deployment then drifts from git, which is how the fixture was left on
+0.12.0 while production moved on.
+
+```sh
+TAG=$(git rev-parse --short HEAD)
+podman build -t registry.lan.buetow.org:30001/player:$TAG .
+podman push --tls-verify=false registry.lan.buetow.org:30001/player:$TAG
 ```
 
 If the controller cannot resolve/reach the LAN registry, forward the registry
 service in a separate terminal (`kubectl -n infra port-forward
-service/docker-registry-service 15001:5000`) and push the same test tag through
+service/docker-registry-service 15001:5000`) and push the same tag through
 that endpoint:
 
 ```sh
-podman push --tls-verify=false registry.lan.buetow.org:30001/player:trash-test \
-  docker://127.0.0.1:15001/player:trash-test
+podman push --tls-verify=false registry.lan.buetow.org:30001/player:$TAG \
+  docker://127.0.0.1:15001/player:$TAG
 ```
 
 The ingress does not create public DNS or a TLS certificate. Those are managed
@@ -38,8 +53,10 @@ kubectl -n player-trash-test rollout status deployment/player
 kubectl -n player-trash-test port-forward service/player 18083:8080
 ```
 
-Run the dedicated browser suite from `test/e2e-web/`. It requires an explicit
-opt-in because it uploads and deletes media and creates temporary accounts:
+Run the dedicated browser suite from `test/e2e-web/`. It runs in Chrome and
+Firefox (`--project chromium` or `--project firefox` picks one). It requires an
+explicit opt-in because it uploads and deletes media and creates temporary
+accounts:
 
 ```sh
 PLAYER_TRASH_TEST_INSTANCE=1 PLAYER_URL=http://127.0.0.1:18083 \
@@ -64,6 +81,7 @@ rescan, and concurrent restore/GC cases are also exercised by the Go suite
 without waiting seven real days.
 
 To rerun with a rebuilt image using the same test database and media, push the
-new tag and restart only this deployment. To remove the test instance and its
+new tag, set it in `instance.yaml` and re-apply; that restarts only this
+deployment. To remove the test instance and its
 test data, explicitly delete namespace `player-trash-test`; the local-path
 PVCs use the storage class's Delete reclaim policy.
