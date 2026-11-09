@@ -27,6 +27,7 @@ func TestPlaybackSyncMigrationResumesPartialUpgrade(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	forgetSchemaMigrations(t, s.db)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}

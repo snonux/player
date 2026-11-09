@@ -105,7 +105,7 @@ func tableSnapshot(t *testing.T, q interface {
 	if err != nil {
 		t.Fatalf("snapshot %s: %v", table, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, err := rows.Columns()
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +180,7 @@ func TestPodcastSyncMigrationFromLegacySchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if again := migratedSnapshot(t, s.db); again != snapshot {
 		t.Fatalf("second start changed state:\n%s\nvs\n%s", snapshot, again)
 	}
@@ -329,7 +329,7 @@ func TestPodcastSyncMigrationClearsLegacyOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatalf("migrate with orphans: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	var media sql.NullInt64
 	if err := s.db.QueryRow(`SELECT media_id FROM podcast_episodes WHERE id = 2`).Scan(&media); err != nil || media.Valid {
 		t.Errorf("dangling media link kept: %v %v", media, err)
@@ -345,7 +345,7 @@ func TestPodcastSyncMigrationClearsLegacyOrphans(t *testing.T) {
 
 func TestCheckEpisodeForeignKeysReportsViolation(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx := context.Background()
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
@@ -392,7 +392,7 @@ func TestPodcastSyncMigrationKeepsEpisodeIDsWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	res, err := s.db.Exec(`INSERT INTO podcast_episodes (feed_id, guid, episode_key, episode_url) VALUES (1, 'f', 'guid:f', 'https://cdn.example.com/f.mp3')`)
 	if err != nil {
 		t.Fatal(err)

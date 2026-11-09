@@ -102,6 +102,7 @@ func TestPodcastDeletionMigrationPreservesOldRegisters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	forgetSchemaMigrations(t, s.db)
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}

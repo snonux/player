@@ -46,6 +46,7 @@ func TestShareQualityM62UpgradeAndOmittedEdit(t *testing.T) {
 	if _, err := store.db.Exec(`ALTER TABLE shares DROP COLUMN audio_quality`); err != nil {
 		t.Fatal(err)
 	}
+	forgetSchemaMigrations(t, store.db)
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}

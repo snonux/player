@@ -55,6 +55,7 @@ CREATE TABLE playback_accumulator (
 	if _, err := store.db.Exec(`ALTER TABLE playback_progress DROP COLUMN accumulated_seconds`); err != nil {
 		t.Fatal(err)
 	}
+	forgetSchemaMigrations(t, store.db)
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
