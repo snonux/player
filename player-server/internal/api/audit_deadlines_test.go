@@ -170,7 +170,11 @@ func TestCrossOriginUnsafeRequestsRefused(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, "/api/admin/users", bytes.NewBufferString(`{"username":"x","password":"y"}`))
+			path := "/api/admin/users"
+			if tt.method == http.MethodDelete {
+				path = "/api/auth/tokens/1"
+			}
+			req := httptest.NewRequest(tt.method, path, bytes.NewBufferString(`{"username":"x","password":"y"}`))
 			req.Header.Set("Content-Type", "text/plain")
 			if tt.origin != "" {
 				req.Header.Set("Origin", tt.origin)
@@ -186,5 +190,51 @@ func TestCrossOriginUnsafeRequestsRefused(t *testing.T) {
 				t.Fatalf("status %d body %q, refused=%v want %v", rr.Code, rr.Body.String(), refused, tt.refused)
 			}
 		})
+	}
+}
+
+// B15: CORS preflights allow every method the API uses.
+func TestCORSPreflightAllowsPutAndPatch(t *testing.T) {
+	h := withCORS([]string{"https://app.example"}, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	for _, method := range []string{http.MethodPut, http.MethodPatch} {
+		req := httptest.NewRequest(http.MethodOptions, "/api/queue", nil)
+		req.Header.Set("Origin", "https://app.example")
+		req.Header.Set("Access-Control-Request-Method", method)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNoContent || !strings.Contains(rr.Header().Get("Access-Control-Allow-Methods"), method) {
+			t.Errorf("%s preflight: %d %q", method, rr.Code, rr.Header().Get("Access-Control-Allow-Methods"))
+		}
+	}
+}
+
+// B16: unknown /api paths answer JSON 404 and wrong methods 405, never the
+// app shell with 200.
+func TestUnknownAPIPathsAreNotIndexHTML(t *testing.T) {
+	store := buildSessionStore(1)
+	sm := auth.NewSessionManager(store, &clock.MockClock{T: time.Now()}, time.Hour)
+	cfg := &internal.Config{SessionTimeoutHours: 24}
+	srv := newTestServer(t, store, nil, sm, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	cookie := sessionCookieForStore(t, store, sm, 1)
+	tests := []struct {
+		method, path string
+		code         int
+	}{
+		{http.MethodPost, "/api/v1/nosuch", http.StatusNotFound},
+		{http.MethodGet, "/api/nosuch/deeper", http.StatusNotFound},
+		{http.MethodPost, "/api/sets", http.StatusMethodNotAllowed},
+		{http.MethodPut, "/api/v1/sets", http.StatusMethodNotAllowed},
+	}
+	for _, tt := range tests {
+		req := httptest.NewRequest(tt.method, tt.path, nil)
+		req.AddCookie(cookie)
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+		if rr.Code != tt.code || !strings.Contains(rr.Header().Get("Content-Type"), "application/json") {
+			t.Errorf("%s %s: %d %q %q", tt.method, tt.path, rr.Code, rr.Header().Get("Content-Type"), rr.Body.String())
+		}
+		if tt.code == http.StatusMethodNotAllowed && !strings.Contains(rr.Header().Get("Allow"), http.MethodGet) {
+			t.Errorf("%s %s: Allow = %q", tt.method, tt.path, rr.Header().Get("Allow"))
+		}
 	}
 }

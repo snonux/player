@@ -3,8 +3,8 @@ package api
 import "net/http"
 
 const (
-	corsAllowMethods = "GET, POST, DELETE, OPTIONS"
-	corsAllowHeaders = "Content-Type, Authorization"
+	corsAllowMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+	corsAllowHeaders = "Content-Type, Authorization, If-None-Match, If-Match, Range"
 )
 
 func withCORS(allowedOrigins []string, next http.Handler) http.Handler {
