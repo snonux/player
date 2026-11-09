@@ -3,7 +3,7 @@
 const SECONDARY =
   '#btn-minimize, #btn-save-position, #btn-bookmarks, #btn-player-notes, #btn-player-favorite, ' +
   '.volume-control, .audio-visual-control, .playback-speed-control, .loudness-control, .sleep-timer-control, ' +
-  '.lyrics-language, .lyrics-provider-controls, #btn-delete-episode';
+  '.lyrics-language, .lyrics-provider-controls';
 
 export function initCompactControls(player) {
   if (!player?.classList.contains('floating') || player.querySelector('#player-options')) return;
@@ -37,6 +37,9 @@ export function initCompactControls(player) {
   header.append(title, close);
   panel.appendChild(header);
   for (const control of player.querySelectorAll(SECONDARY)) panel.appendChild(control);
+  // Destructive, so it comes last, apart from routine playback controls.
+  const deleteEpisode = player.querySelector('#btn-delete-episode');
+  if (deleteEpisode) panel.appendChild(deleteEpisode);
 
   const more = document.createElement('button');
   more.type = 'button';
