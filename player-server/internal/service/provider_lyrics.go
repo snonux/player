@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"syscall"
 	"time"
 
@@ -25,9 +27,13 @@ type ProviderLyrics struct {
 	endpoint string
 	store    repository.ProviderLyricsRepo
 	client   *http.Client
-	gate     chan struct{}
-	memo     map[string]string // accessed only while gate is held; at most 128 entries
+	gate     chan struct{}     // one fetch or hash at a time
+	memoMu   sync.Mutex        // guards memo; never held while hashing
+	memo     map[string]string // content identities by file stamp; at most 128 entries
 }
+
+// errIdentityNotCached: the identity is not memoised and needs hashing.
+var errIdentityNotCached = errors.New("content identity not cached")
 
 // NewProviderLyrics creates an optional adapter. Invalid URLs leave it disabled.
 func NewProviderLyrics(endpoint string, store repository.ProviderLyricsRepo) *ProviderLyrics {
@@ -65,6 +71,18 @@ func (s *browseService) loadLyrics(ctx context.Context, media *model.Media, user
 	// Bound hashing and external work together, and refuse excess concurrent work.
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	if action != "fetch" {
+		// Reading stored lyrics needs no gate while the identity is known:
+		// another user's fetch must not hide everyone's saved lyrics.
+		identity, err := p.contentIdentity(ctx, root, media, false)
+		if err == nil {
+			return p.storedLyrics(ctx, user, media.ID, identity, local)
+		}
+		if !errors.Is(err, errIdentityNotCached) {
+			local.ProviderState = "unavailable"
+			return local
+		}
+	}
 	select {
 	case p.gate <- struct{}{}:
 		defer func() { <-p.gate }()
@@ -72,22 +90,12 @@ func (s *browseService) loadLyrics(ctx context.Context, media *model.Media, user
 		local.ProviderState = "busy"
 		return local
 	}
-	identity, err := p.contentIdentity(ctx, root, media)
+	identity, err := p.contentIdentity(ctx, root, media, true)
 	if err != nil {
 		local.ProviderState = "unavailable"
 		return local
 	}
-	cached, err := p.store.LoadProviderLyrics(ctx, user, media.ID, identity)
-	if err == nil && len(cached) > 0 {
-		if value, e := decodeProviderLyrics(cached); e == nil {
-			local = value
-			local.ProviderEnabled = true
-			local.ProviderState = "ready"
-			if len(local.Lines) == 0 {
-				local.ProviderState = "empty"
-			}
-		}
-	}
+	local = p.storedLyrics(ctx, user, media.ID, identity, local)
 	if action != "fetch" {
 		return local
 	}
@@ -107,7 +115,7 @@ func (s *browseService) loadLyrics(ctx context.Context, media *model.Media, user
 		latest.ProviderEnabled = true
 		return latest
 	}
-	next, err := p.contentIdentity(ctx, root, current)
+	next, err := p.contentIdentity(ctx, root, current, true)
 	if err != nil || next != identity {
 		return &Lyrics{Lines: []LyricsLine{}, ProviderEnabled: true, ProviderState: "unavailable"}
 	}
@@ -205,7 +213,29 @@ func decodeProviderLyrics(data []byte) (*Lyrics, error) {
 	return &value, nil
 }
 
-func (p *ProviderLyrics) contentIdentity(ctx context.Context, root string, media *model.Media) (string, error) {
+// storedLyrics returns the lyrics saved for identity, or local when none are.
+func (p *ProviderLyrics) storedLyrics(ctx context.Context, user, mediaID int64, identity string, local *Lyrics) *Lyrics {
+	cached, err := p.store.LoadProviderLyrics(ctx, user, mediaID, identity)
+	if err != nil || len(cached) == 0 {
+		return local
+	}
+	value, err := decodeProviderLyrics(cached)
+	if err != nil {
+		return local
+	}
+	value.ProviderEnabled = true
+	value.ProviderState = "ready"
+	if len(value.Lines) == 0 {
+		value.ProviderState = "empty"
+	}
+	return value
+}
+
+// contentIdentity hashes the source (with its tags and the endpoint) into
+// the key provider lyrics are stored under. A memoised identity is
+// returned at once; otherwise, without hash, errIdentityNotCached. Hashing
+// runs only while the caller holds the gate.
+func (p *ProviderLyrics) contentIdentity(ctx context.Context, root string, media *model.Media, hash bool) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -241,11 +271,17 @@ func (p *ProviderLyrics) contentIdentity(ctx context.Context, root string, media
 	}
 	tags, _ := json.Marshal(media.Music)
 	stamp := fmt.Sprintf("%s:%d:%v:%s:%s", path, before.Size(), before.Sys(), tags, p.endpoint)
-	if cached := p.memo[stamp]; cached != "" {
+	p.memoMu.Lock()
+	cached := p.memo[stamp]
+	p.memoMu.Unlock()
+	if cached != "" {
 		return cached, nil
 	}
-	hash := sha256.New()
-	_, _ = hash.Write([]byte(p.endpoint + "\x00" + string(tags) + "\x00"))
+	if !hash {
+		return "", errIdentityNotCached
+	}
+	sum := sha256.New()
+	_, _ = sum.Write([]byte(p.endpoint + "\x00" + string(tags) + "\x00"))
 	buf := make([]byte, 64*1024)
 	var total int64
 	for {
@@ -258,7 +294,7 @@ func (p *ProviderLyrics) contentIdentity(ctx context.Context, root string, media
 			if total > 512*1024*1024 {
 				return "", fmt.Errorf("source too large")
 			}
-			_, _ = hash.Write(buf[:n])
+			_, _ = sum.Write(buf[:n])
 		}
 		if e == io.EOF {
 			break
@@ -271,11 +307,13 @@ func (p *ProviderLyrics) contentIdentity(ctx context.Context, root string, media
 	if err != nil || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) || changedFileCheckpoint(before, after) {
 		return "", fmt.Errorf("source changed")
 	}
-	identity := fmt.Sprintf("%x", hash.Sum(nil))
+	identity := fmt.Sprintf("%x", sum.Sum(nil))
+	p.memoMu.Lock()
 	if len(p.memo) >= 128 {
 		clear(p.memo)
 	}
 	p.memo[fmt.Sprintf("%s:%d:%v:%s:%s", path, after.Size(), after.Sys(), tags, p.endpoint)] = identity
+	p.memoMu.Unlock()
 	return identity, nil
 }
 
