@@ -122,12 +122,17 @@ func TestMergedEpisodeViewsDeduplicateAndChooseReadableCopy(t *testing.T) {
 		return out
 	}
 	views := list(f.alice)
-	if len(views) != 3 {
-		t.Fatalf("merged episodes duplicated or missing: %+v", views)
+	// Only the target's own episodes are listed: the merged row keeps its
+	// episodes and copies, but they never join the target's lists (B4).
+	if len(views) != 2 {
+		t.Fatalf("merged episodes duplicated, missing or injected: %+v", views)
 	}
 	for _, v := range views {
 		if v.FeedKey != newFeedKey {
 			t.Fatalf("view kept losing feed key: %+v", v)
+		}
+		if v.EpisodeKey == "guid:old-only" {
+			t.Fatalf("losing feed's episode listed under the target: %+v", v)
 		}
 		if v.EpisodeKey == "guid:shared" && (v.ServerCopy == nil || v.ServerCopy.MediaID != newCopy || v.SetID != otherSet) {
 			t.Fatalf("view did not select readable copy: %+v", v)
@@ -141,8 +146,8 @@ func TestMergedEpisodeViewsDeduplicateAndChooseReadableCopy(t *testing.T) {
 	f.must(f.s.SoftDeleteMedia(ctx, newCopy))
 	f.must(f.s.GrantPermission(ctx, &model.SetPermission{UserID: f.alice, SetID: setID, Role: model.RoleViewer, CreatedAt: f.now}))
 	for _, v := range list(f.alice) {
-		if v.EpisodeKey == "guid:shared" && (v.ServerCopy == nil || v.ServerCopy.MediaID != oldCopy) {
-			t.Fatalf("view missed surviving merged-row copy: %+v", v)
+		if v.EpisodeKey == "guid:shared" && v.ServerCopy != nil && v.ServerCopy.MediaID == oldCopy {
+			t.Fatalf("losing feed's copy served for the target's episode: %+v", v)
 		}
 	}
 }

@@ -20,10 +20,8 @@ rule 4 and read the mirror; a new download seeds it), the remaining §10
 rows (episode listing and toggle on episode state; `podcast_status` is no
 longer read or written), and the §6.3 query (repository
 `ListSubscribedEpisodes`, service `PodcastEpisodeViewer`; its routes are
-`0i3`'s). Not implemented yet: feed and episode merges (§3.3, including
-retiring legacy keys; a move into another catalog feed is only logged), so
-state kept under a state-only key is not moved when an ingest later links
-that key as an alias. The current
+`0i3`'s). Feed and episode merges (§3.3), including the retirement of
+legacy keys, are implemented in `repository/podcast_merge.go`. The current
 API remains documented in [`player-server/docs/api.md`](../player-server/docs/api.md);
 update it as each delivery task (`vh3` … `4i3`) ships its part. Platform
 verification (Chrome, Firefox, two Android clients) belongs to `5i3`.
@@ -180,7 +178,13 @@ The server keeps a global alias table for feeds (`alias_key → feed_key`) and
 per feed for episodes (`(feed_key, alias_key) → episode_key`). Only the
 server's own observations create aliases or merges: what a client sends is
 used to look keys up, never to link two keys, so one user can never merge
-or redirect another user's feeds.
+or redirect another user's feeds. A feed document is still written by
+whoever publishes the feed, and any user may subscribe to any URL, so an
+observation in one feed's document can only move that feed's own
+subscribers and state: it never adds the feed's episodes to another feed's
+lists, and never pulls the registers of users who have no subscription
+register of the redirecting feed into it (such a redirect only changes the
+feed's fetch URL).
 
 - **Permanent redirects** (301, 308) seen while fetching, and an
   `<itunes:new-feed-url>` element, add the target's key as a feed alias and
@@ -250,9 +254,10 @@ or redirect another user's feeds.
   lexicographically smaller key. State rows of the loser are merged into the
   winner with the normal register rules (§4) and get new change sequence
   numbers; the loser key becomes an alias. A losing catalog feed row is
-  marked `merged_into`, stops refreshing, and keeps its episode rows and
-  server copies; availability lookups consult all catalog rows sharing a
-  canonical key. Nothing is deleted.
+  marked `merged_into`, stops refreshing, and keeps its own key, episode rows
+  and server copies; they are not listed under the winner, whose own ingest
+  claims the episodes it really has. Only a retired legacy key moves its
+  catalog row to the new key. Nothing is deleted.
 
 Known limits: an episode whose GUID and enclosure URL both change in one
 fetch becomes a new episode; a GUID-less episode whose enclosure URL changes

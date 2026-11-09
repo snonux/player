@@ -260,19 +260,40 @@ func moveFeedKey(ctx context.Context, tx *sql.Tx, feedID int64, key, targetKey s
 	case owner == key:
 		return FeedMoved, nil
 	case owner != "":
+		// Without a catalog row for owner, feedID would become the row
+		// owner's subscribers read: only allowed when all of them already
+		// relate to this feed.
+		if !hasCatalogRow(ctx, tx, owner) {
+			if foreign, err := foreignSubscribers(ctx, tx, key, owner); err != nil || foreign {
+				return FeedMoved, err
+			}
+		}
 		merged, err := mergeFeedInto(ctx, tx, feedID, key, owner)
 		if err != nil || !merged {
 			return FeedMoved, err
 		}
 		return FeedMerged, nil
 	case strings.HasPrefix(key, legacyFeedPrefix):
-		return FeedMoved, rekeyFeed(ctx, tx, key, targetKey)
+		return FeedMoved, rekeyFeed(ctx, tx, key, targetKey, true)
+	}
+	// State-only registers under targetKey join this feed only when their
+	// users already relate to it; anything else would let the publisher of
+	// this feed's document show its episodes to strangers.
+	if foreign, err := foreignSubscribers(ctx, tx, key, targetKey); err != nil || foreign {
+		return FeedMoved, err
 	}
 	added, err := addFeedAlias(ctx, tx, key, targetKey)
 	if err != nil || !added {
 		return FeedMoved, err
 	}
 	return FeedMoved, moveFeedState(ctx, tx, targetKey, key)
+}
+
+// hasCatalogRow reports whether key is the key of a canonical catalog row.
+func hasCatalogRow(ctx context.Context, tx *sql.Tx, key string) bool {
+	var n int
+	err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM podcast_feeds WHERE feed_key = ? AND merged_into IS NULL`, key).Scan(&n)
+	return err == nil && n > 0
 }
 
 // addFeedAlias records alias, which denotes no catalog feed, as an alias

@@ -19,9 +19,14 @@ import (
 // key that loses becomes an alias of the winner and everything kept under
 // it moves to the winner in the same transaction:
 //
-//   - catalog rows: the loser's rows take the winner's key (a losing feed
-//     row is marked merged_into and keeps its episodes and server copies,
-//     which every lookup by feed key then finds);
+//   - catalog rows: a losing feed row is marked merged_into and keeps its
+//     own key, episodes and server copies. Its episodes are never listed
+//     under the winner's key: the document that caused the merge is
+//     controlled by whoever published the losing feed, so moving its items
+//     would let one user inject episodes into every subscriber's list of
+//     another feed. The winner's own ingest claims the episodes it really
+//     has. Only when the loser is a legacy feed key being retired (§3.1)
+//     does its row take the new key;
 //   - aliases: the loser's aliases point at the winner, each under a new
 //     change sequence number, so clients pull the new target;
 //   - account state of every user: subscription and episode registers are
@@ -30,7 +35,9 @@ import (
 //     deleted. A merge never adds a row, so it can never exceed a quota.
 //
 // Only server observations call these functions; keys a client sends are
-// only looked up, so no user can merge or redirect another user's feeds.
+// only looked up. A merge never pulls other users' subscriptions into the
+// moving feed (see moveFeedKey), so no user can merge or redirect another
+// user's feeds.
 // For feeds the redirect target always wins, so a feed that redirects into
 // another moves only its own subscribers and never rewrites the keys of
 // the target's subscribers. Nothing is deleted except state rows that were
@@ -71,17 +78,21 @@ func mergeFeedInto(ctx context.Context, tx *sql.Tx, feedID int64, from, to strin
 			return false, fmt.Errorf("merge feed: %w", err)
 		}
 	}
-	return merged, rekeyFeed(ctx, tx, from, to)
+	// A merged row keeps its own key so its episodes stay out of the
+	// winner's lists; without a winner row feedID becomes to's catalog row.
+	return merged, rekeyFeed(ctx, tx, from, to, !merged)
 }
 
 // rekeyFeed makes feed key from an alias of feed key to and moves
-// everything kept under from: catalog rows, feed aliases, episode aliases
-// and every user's subscription and episode registers. The caller has
-// marked from's catalog row merged (or to has no catalog row), so the
-// unique index on canonical keys holds.
-func rekeyFeed(ctx context.Context, tx *sql.Tx, from, to string) error {
-	if _, err := tx.ExecContext(ctx, `UPDATE podcast_feeds SET feed_key = ? WHERE feed_key = ?`, to, from); err != nil {
-		return fmt.Errorf("rekey catalog feed: %w", err)
+// everything kept under from: feed aliases, episode aliases and every
+// user's subscription and episode registers. With moveCatalog the catalog
+// rows under from take key to as well; the caller then guarantees that to
+// has no canonical catalog row, so the unique index on canonical keys holds.
+func rekeyFeed(ctx context.Context, tx *sql.Tx, from, to string, moveCatalog bool) error {
+	if moveCatalog {
+		if _, err := tx.ExecContext(ctx, `UPDATE podcast_feeds SET feed_key = ? WHERE feed_key = ?`, to, from); err != nil {
+			return fmt.Errorf("rekey catalog feed: %w", err)
+		}
 	}
 	if err := repointFeedAliases(ctx, tx, from, to); err != nil {
 		return err
@@ -95,8 +106,11 @@ func rekeyFeed(ctx context.Context, tx *sql.Tx, from, to string) error {
 	if err := moveFeedState(ctx, tx, from, to); err != nil {
 		return err
 	}
-	// Existing target listeners also acquire the retained copies from the
-	// losing catalog, without rewriting their subscription/state clocks.
+	if !moveCatalog {
+		return nil
+	}
+	// Listeners of to also acquire the retained copies of the rows that
+	// took its key, without rewriting their subscription/state clocks.
 	ids, err := queryInts(ctx, tx, `SELECT e.id FROM podcast_episodes e
 JOIN podcast_feeds f ON f.id = e.feed_id WHERE f.feed_key = ?`, to)
 	if err != nil {
@@ -114,6 +128,20 @@ JOIN podcast_feeds f ON f.id = e.feed_id WHERE f.feed_key = ?`, to)
 		}
 	}
 	return nil
+}
+
+// foreignSubscribers reports whether a user keeps a subscription register
+// under key to without having any under key from: someone the feed from
+// has nothing to do with. A redirect observed in from's document must not
+// pull such users into from's catalog row.
+func foreignSubscribers(ctx context.Context, tx *sql.Tx, from, to string) (bool, error) {
+	var n int
+	err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM podcast_subscriptions t WHERE t.feed_key = ?
+AND NOT EXISTS (SELECT 1 FROM podcast_subscriptions f WHERE f.user_id = t.user_id AND f.feed_key = ?)`, to, from).Scan(&n)
+	if err != nil {
+		return false, fmt.Errorf("find foreign subscribers: %w", err)
+	}
+	return n > 0, nil
 }
 
 // repointFeedAliases points every alias of from at to and records from
