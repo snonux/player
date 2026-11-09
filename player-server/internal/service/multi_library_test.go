@@ -180,3 +180,90 @@ func TestGC_PurgesTrashInEveryLibrary(t *testing.T) {
 		t.Fatalf("default library file with the same relative path touched: %v", err)
 	}
 }
+
+func musicMedia(f twoLibraryFixture, t *testing.T, root string, set int64, rel string) int64 {
+	t.Helper()
+	path := filepath.Join(root, "Rock", filepath.FromSlash(rel))
+	writeFile(t, path, "audio")
+	id, err := f.store.CreateMedia(context.Background(), &model.Media{SetID: set, RelPath: rel, AbsPath: path, FileName: filepath.Base(rel),
+		Type: model.MediaTypeAudio, Music: &model.MusicMetadata{Title: rel, Album: "Album", Artist: "Artist"}, CreatedAt: newMockClock().Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// B9: M3U import reads only from the caller's set in its own library and
+// matches entries against songs of that library.
+func TestM3UImport_StaysInOwnLibrary(t *testing.T) {
+	f := newTwoLibraryFixture(t)
+	ctx := context.Background()
+	songA := musicMedia(f, t, f.rootA, f.setA, "song.mp3")
+	songB := musicMedia(f, t, f.rootB, f.setB, "song.mp3")
+	if err := f.store.GrantPermission(ctx, &model.SetPermission{SetID: f.setA, UserID: f.admin, Role: model.RoleOwner}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewPlaylistService(f.store, NewMediaService(f.store, newMockClock(), f.rootA, nil, nil)).WithImportRoot(f.rootA)
+	writeFile(t, filepath.Join(f.rootA, "Rock", "a.m3u"), "song.mp3\n")
+	req := PlaylistImportRequest{Path: "Rock/a.m3u", Base: "folder", Preview: true}
+	if got, err := svc.ImportM3U(ctx, f.bob, req); err == nil {
+		t.Fatalf("bob read library A's playlist file: %+v", got)
+	}
+
+	writeFile(t, filepath.Join(f.rootB, "Rock", "b.m3u"), "song.mp3\n")
+	req.Path = "Rock/b.m3u"
+	for _, user := range []int64{f.bob, f.admin} {
+		preview, err := svc.ImportM3U(ctx, user, req)
+		if err != nil || preview.Available != 1 {
+			t.Fatalf("user %d preview: %+v, %v", user, preview, err)
+		}
+		req.Preview, req.Fingerprint = false, preview.Fingerprint
+		imported, err := svc.ImportM3U(ctx, user, req)
+		req.Preview, req.Fingerprint = true, ""
+		if err != nil || len(imported.Playlist.Entries) != 1 {
+			t.Fatalf("user %d import: %+v, %v", user, imported, err)
+		}
+		if got := imported.Playlist.Entries[0].MediaID; got != songB {
+			t.Fatalf("user %d imported media %d, want B's %d (A's is %d)", user, got, songB, songA)
+		}
+	}
+}
+
+// B9: sidecar lyrics of a song in a non-default library are found.
+func TestLyrics_NonDefaultLibrary(t *testing.T) {
+	f := newTwoLibraryFixture(t)
+	ctx := context.Background()
+	id := musicMedia(f, t, f.rootB, f.setB, "song.mp3")
+	writeFile(t, filepath.Join(f.rootB, "Rock", "song.lrc"), "[00:01.00]hello from B\n")
+	svc := NewMediaService(f.store, newMockClock(), f.rootA, nil, nil)
+	lyrics, err := svc.GetLyrics(ctx, id, f.bob)
+	if err != nil || len(lyrics.Lines) != 1 || lyrics.Lines[0].Text != "hello from B" {
+		t.Fatalf("lyrics = %+v, %v", lyrics, err)
+	}
+}
+
+// B9: regenerating a thumbnail in a non-default library removes the one it
+// replaced.
+func TestReplacedThumbnail_RemovedInNonDefaultLibrary(t *testing.T) {
+	f := newTwoLibraryFixture(t)
+	ctx := context.Background()
+	id, src := f.addMedia(t, f.rootB, f.setB, "clip.mp4", model.MediaTypeVideo)
+	old := filepath.Join(f.rootB, "Rock", thumb.DirName, "old-clip.jpg")
+	writeFile(t, old, "old")
+	m, err := f.store.GetMediaByID(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.ThumbnailPath = old
+	if err := f.store.UpdateMedia(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewMediaService(f.store, newMockClock(), f.rootA, writingThumbGen(), &mockProber{}).
+		WithThumbnailLayout(thumb.NewLayout(f.rootA, ""))
+	if err := svc.RegenerateThumbnail(ctx, id, f.bob); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("replaced thumbnail of %s kept: %v", src, err)
+	}
+}

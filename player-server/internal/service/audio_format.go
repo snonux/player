@@ -19,7 +19,7 @@ func (s *browseService) GetAudioFormat(ctx context.Context, mediaID, userID int6
 	if err != nil {
 		return nil, err
 	}
-	return localAudioFormat(ctx, s.mediaRoot, media), nil
+	return localAudioFormat(ctx, mediaLibraryRoot(ctx, s.store, s.mediaRoot, media), media), nil
 }
 
 func (s *shareService) GetSharedAudioFormat(ctx context.Context, token string, credentials ...string) (*AudioFormat, error) {
@@ -27,7 +27,7 @@ func (s *shareService) GetSharedAudioFormat(ctx context.Context, token string, c
 	if err != nil {
 		return nil, err
 	}
-	return localAudioFormat(ctx, s.lyricsRoot, media), nil
+	return localAudioFormat(ctx, mediaLibraryRoot(ctx, s.store, s.lyricsRoot, media), media), nil
 }
 
 // Missing, unreadable, unsafe and non-audio sources all answer an empty

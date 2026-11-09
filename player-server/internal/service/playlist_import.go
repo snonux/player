@@ -155,22 +155,30 @@ func (s *PlaylistService) readM3U(ctx context.Context, user int64, source, base 
 	if err != nil {
 		return nil, nil, err
 	}
-	setRoot := ""
-	for _, set := range sets {
-		if m3uLocalPath(set.RootPath) && !strings.Contains(set.RootPath, "/") && strings.HasPrefix(source, set.RootPath+"/") {
-			setRoot = set.RootPath
-			break
+	// Two libraries may hold sets with the same RootPath. Read only from a
+	// set the caller can access, resolved against that set's own library.
+	setRoot, libRoot := "", ""
+	setLibrary := make(map[int64]string, len(sets))
+	for i := range sets {
+		set := &sets[i]
+		root, err := setLibraryRoot(ctx, s.repo, s.mediaRoot, set)
+		if err != nil {
+			return nil, nil, err
+		}
+		setLibrary[set.ID] = root
+		if setRoot != "" || !m3uLocalPath(set.RootPath) || strings.Contains(set.RootPath, "/") || !strings.HasPrefix(source, set.RootPath+"/") {
+			continue
+		}
+		// Root limits symlink resolution to the authorized set. Reject lexical
+		// symlinks as well, including the set itself; never read another set via links.
+		if plainLibraryPath(root, source) {
+			setRoot, libRoot = set.RootPath, root
 		}
 	}
 	if setRoot == "" {
 		return invalid()
 	}
-	// Root limits symlink resolution to the authorized set. Reject lexical
-	// symlinks as well, including the set itself; never read another set via links.
-	if !plainLibraryPath(s.mediaRoot, source) {
-		return invalid()
-	}
-	setPath := filepath.Join(s.mediaRoot, filepath.FromSlash(setRoot))
+	setPath := filepath.Join(libRoot, filepath.FromSlash(setRoot))
 	before, err := os.Lstat(setPath)
 	if err != nil || !before.IsDir() || before.Mode()&os.ModeSymlink != 0 {
 		return invalid()
@@ -208,6 +216,11 @@ func (s *PlaylistService) readM3U(ctx context.Context, user int64, source, base 
 	}
 	for _, song := range songs {
 		r := roots[song.SetID]
+		// Paths in the file are relative to its library; a same-named set
+		// in another library must not match.
+		if !sameDir(setLibrary[song.SetID], libRoot) {
+			continue
+		}
 		if m3uLocalPath(r) && m3uLocalPath(song.RelPath) {
 			paths[path.Join(r, song.RelPath)] = song.ID
 		}
@@ -242,7 +255,7 @@ func (s *PlaylistService) readM3U(ctx context.Context, user int64, source, base 
 			continue
 		}
 		mediaID, ok := paths[rel]
-		if !ok || !plainLibraryPath(s.mediaRoot, rel) {
+		if !ok || !plainLibraryPath(libRoot, rel) {
 			result.Unavailable++
 			if len(result.UnavailableLines) < 30 {
 				result.UnavailableLines = append(result.UnavailableLines, line)

@@ -71,3 +71,28 @@ func sameDir(a, b string) bool {
 	}
 	return absA == absB
 }
+
+type setGetter interface {
+	GetSetByID(ctx context.Context, id int64) (*model.Set, error)
+}
+
+// mediaLibraryRoot returns the root of the library media belongs to, the
+// directory its local files (sidecar lyrics, format probes) are confined
+// to. Whenever the set or library cannot be resolved it answers
+// defaultRoot, which keeps media of the default library working and simply
+// finds nothing for media elsewhere.
+func mediaLibraryRoot(ctx context.Context, store any, defaultRoot string, media *model.Media) string {
+	sets, ok := store.(setGetter)
+	if !ok || media == nil {
+		return defaultRoot
+	}
+	set, err := sets.GetSetByID(ctx, media.SetID)
+	if err != nil || set == nil {
+		return defaultRoot
+	}
+	root, err := setLibraryRoot(ctx, store, defaultRoot, set)
+	if err != nil {
+		return defaultRoot
+	}
+	return root
+}

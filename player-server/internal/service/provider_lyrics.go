@@ -39,7 +39,8 @@ func NewProviderLyrics(endpoint string, store repository.ProviderLyricsRepo) *Pr
 }
 
 func (s *browseService) loadLyrics(ctx context.Context, media *model.Media, user int64, action string) *Lyrics {
-	local := localLyrics(ctx, s.mediaRoot, media)
+	root := mediaLibraryRoot(ctx, s.store, s.mediaRoot, media)
+	local := localLyrics(ctx, root, media)
 	p := s.lyricsProvider
 	if p == nil || media.Type != model.MediaTypeAudio {
 		return local
@@ -71,7 +72,7 @@ func (s *browseService) loadLyrics(ctx context.Context, media *model.Media, user
 		local.ProviderState = "busy"
 		return local
 	}
-	identity, err := p.contentIdentity(ctx, s.mediaRoot, media)
+	identity, err := p.contentIdentity(ctx, root, media)
 	if err != nil {
 		local.ProviderState = "unavailable"
 		return local
@@ -100,12 +101,13 @@ func (s *browseService) loadLyrics(ctx context.Context, media *model.Media, user
 	if current.Type != model.MediaTypeAudio {
 		return &Lyrics{Lines: []LyricsLine{}}
 	}
-	latest := localLyrics(ctx, s.mediaRoot, current)
+	root = mediaLibraryRoot(ctx, s.store, s.mediaRoot, current)
+	latest := localLyrics(ctx, root, current)
 	if len(latest.Lines) > 0 {
 		latest.ProviderEnabled = true
 		return latest
 	}
-	next, err := p.contentIdentity(ctx, s.mediaRoot, current)
+	next, err := p.contentIdentity(ctx, root, current)
 	if err != nil || next != identity {
 		return &Lyrics{Lines: []LyricsLine{}, ProviderEnabled: true, ProviderState: "unavailable"}
 	}

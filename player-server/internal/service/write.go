@@ -341,7 +341,7 @@ func (s *writeService) removeReplacedThumbnail(ctx context.Context, media *model
 	if previous == media.ThumbnailPath || !thumb.IsGenerated(previous) {
 		return
 	}
-	setDir, ok := setDirOf(s.mediaRoot, media)
+	setDir, ok := setDirOf(mediaLibraryRoot(ctx, s.store, s.mediaRoot, media), media)
 	if !ok || !pathWithin(setDir, previous) {
 		return
 	}
