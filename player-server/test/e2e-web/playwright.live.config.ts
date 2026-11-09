@@ -11,7 +11,10 @@ import webConfig from './playwright.config';
 // a real user's browser plays.
 export default defineConfig({
   ...webConfig,
-  testIgnore: [],
+  // trash.live.ts mutates media and users: it belongs to the isolated
+  // k8s/test-trash instance only (playwright.trash.config.ts), never to this
+  // production live suite, which runs with real production admin credentials.
+  testIgnore: ['**/trash.live.ts'],
   testMatch: /.*\.live\.ts$/,
   timeout: 120_000,
   reporter: [['list'], ['json', { outputFile: process.env.LIVE_REPORT || 'live-results.json' }]],

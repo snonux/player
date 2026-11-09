@@ -6,7 +6,7 @@ import { headerItem } from './helpers/header-menu';
 
 // These tests mutate media. Run only on the isolated instance documented in
 // k8s/test-trash, with its own DB and library. No production credentials.
-// Since the v0.16 web revamp, "Move to trash" lives in the media card's More
+// Since v0.11.1, "Move to trash" lives in the media card's More
 // actions menu and "Open trash" in the header's More options popover, so the
 // tests reach both through the shared helpers like the rest of the suite.
 let adminCookie: string;
@@ -15,6 +15,10 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 
 test.beforeAll(async ({ request }) => {
   expect(process.env.PLAYER_TRASH_TEST_INSTANCE, 'explicit isolated-instance opt-in').toBe('1');
+  // Second guard besides the opt-in: refuse any host but a local server or the
+  // isolated test instance, so a stray export can never mutate production.
+  const host = new URL(process.env.PLAYER_URL || 'http://127.0.0.1:18083').hostname;
+  expect(['127.0.0.1', 'localhost', 'player-test.f3s.buetow.org'], 'isolated trash-test host only').toContain(host);
   const username = process.env.E2E_ADMIN_USER;
   const password = process.env.E2E_ADMIN_PASS;
   expect(username, 'isolated admin username required').toBeTruthy();
@@ -22,7 +26,7 @@ test.beforeAll(async ({ request }) => {
   let auth = await request.post('/api/bootstrap', { data: { username, password } });
   if (auth.status() === 403) auth = await request.post('/api/login', { data: { username, password } });
   expect(auth.status()).toBe(200);
-  if (new URL(process.env.PLAYER_URL!).protocol === 'https:') expect(auth.headers()['set-cookie']).toContain('Secure');
+  if (new URL(process.env.PLAYER_URL || 'http://127.0.0.1:18083').protocol === 'https:') expect(auth.headers()['set-cookie']).toContain('Secure');
   const session = auth.headers()['set-cookie']?.match(/session=([^;]+)/)?.[1];
   expect(session).toBeTruthy();
   adminCookie = `session=${session}`;
