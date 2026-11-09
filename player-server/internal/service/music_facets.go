@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"net/url"
 	"sort"
 	"strconv"
@@ -27,15 +26,15 @@ func ParseMusicFilter(values url.Values) (MusicFilter, error) {
 			switch key {
 			case "role":
 				if !containsRole([]string{"artists", "track_artist", "album_artist", "composer", "performer"}, value) {
-					return nil, fmt.Errorf("Unknown artist role.")
+					return nil, badRequestError("Unknown artist role.")
 				}
 			case "compilation":
 				if value != "true" && value != "false" {
-					return nil, fmt.Errorf("Invalid compilation filter.")
+					return nil, badRequestError("Invalid compilation filter.")
 				}
 			case "year":
 				if _, _, ok := musicYearRange(value); !ok {
-					return nil, fmt.Errorf("Year must be a year or inclusive year range.")
+					return nil, badRequestError("Year must be a year or inclusive year range.")
 				}
 			}
 			result[key] = append(result[key], value)
@@ -144,9 +143,7 @@ func musicSongFacets(song model.Media) map[string][]string {
 		result["year"] = []string{strconv.Itoa(m.Year)}
 	}
 	for _, person := range MusicCredits(song) {
-		for _, role := range person.Roles {
-			result["role"] = append(result["role"], role)
-		}
+		result["role"] = append(result["role"], person.Roles...)
 	}
 	return result
 }
