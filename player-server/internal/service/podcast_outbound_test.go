@@ -271,7 +271,7 @@ func TestCheckFeedMoveIntoAnotherCatalogFeedMerges(t *testing.T) {
 	if err := f.svc.checkFeed(context.Background(), *source); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.reload(t, source.ID); got.MergedInto == nil || *got.MergedInto != target.ID || got.FeedKey != target.FeedKey {
+	if got := f.reload(t, source.ID); got.MergedInto == nil || *got.MergedInto != target.ID || got.FeedKey != source.FeedKey {
 		t.Fatalf("source not merged into redirect target: %+v", got)
 	}
 	if got := f.reload(t, target.ID); got.FeedKey != target.FeedKey {
@@ -314,8 +314,9 @@ func TestCheckFeedAppliesNewFeedURLAfterIntermediateMerge(t *testing.T) {
 	if err := f.svc.checkFeed(ctx, *source); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []int64{source.ID, target.ID} {
-		if got := f.reload(t, id); got.MergedInto == nil || *got.MergedInto != final.ID || got.FeedKey != final.FeedKey {
+	for _, row := range []*model.PodcastFeed{source, target} {
+		// Merged rows keep their own keys (B4).
+		if got := f.reload(t, row.ID); got.MergedInto == nil || *got.MergedInto != final.ID || got.FeedKey != row.FeedKey {
 			t.Fatalf("explicit final target not applied: %+v", got)
 		}
 	}

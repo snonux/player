@@ -200,7 +200,8 @@ func (s *SQLite) ClearEpisodeDownloads(ctx context.Context, feedID int64) error 
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE podcast_episodes SET is_downloaded = 0, file_name = NULL
 WHERE media_id IS NULL AND feed_id IN
- (SELECT id FROM podcast_feeds WHERE feed_key = (SELECT feed_key FROM podcast_feeds WHERE id = ?))`, feedID)
+ (SELECT id FROM podcast_feeds WHERE feed_key = (SELECT feed_key FROM podcast_feeds WHERE id = ?1)
+  OR merged_into IN (SELECT id FROM podcast_feeds WHERE feed_key = (SELECT feed_key FROM podcast_feeds WHERE id = ?1)))`, feedID)
 	if err != nil {
 		return fmt.Errorf("clear episode downloads: %w", err)
 	}

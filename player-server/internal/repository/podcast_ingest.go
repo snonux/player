@@ -23,10 +23,10 @@ type ingestFeed struct {
 // state. Publisher metadata and the latest enclosure (key and URL) are refreshed, so a
 // rotating signed URL neither creates episodes nor accumulates aliases.
 //
-// The episodes known to the feed are those of every catalog row sharing its
-// key (rows merged into it keep theirs, contract §3.3), so a feed that
-// absorbed another never mints a second episode for one the other row
-// holds. The feed's key is read inside the transaction: a row merged into
+// The episodes known to the feed are those of the catalog rows with its
+// key. Rows merged into it keep their own key and episodes (contract §3.3),
+// so a feed that absorbed another mints its own episodes for what its
+// document really holds. The feed's key is read inside the transaction: a row merged into
 // another since the caller loaded it is not refreshed any more, and a
 // retired legacy key is not used.
 func (s *SQLite) IngestFeedEpisodes(ctx context.Context, feed *model.PodcastFeed, episodes []model.PodcastEpisode, now time.Time) error {

@@ -185,7 +185,8 @@ func (rv *episodeResolver) episodes(ctx context.Context, tx *sql.Tx, feedKey str
 }
 
 // loadKnownEpisodesByKey lists the catalog episodes of every catalog row
-// with the feed key (merged rows share it), each key once, oldest first.
+// with the feed key, each key once, oldest first. Rows merged into the feed
+// keep their own key and are not included (contract §3.3).
 func loadKnownEpisodesByKey(ctx context.Context, tx *sql.Tx, feedKey string) ([]podcast.KnownEpisode, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT COALESCE(a.episode_key, e.episode_key), e.enclosure_key FROM podcast_episodes e
 JOIN podcast_feeds f ON f.id = e.feed_id

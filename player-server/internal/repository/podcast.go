@@ -306,8 +306,10 @@ func (s *SQLite) ListEpisodeMediaIDs(ctx context.Context, feedIDs []int64) ([]in
 		return nil, nil
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT media_id FROM podcast_episodes WHERE media_id IS NOT NULL AND feed_id IN (SELECT id FROM podcast_feeds WHERE feed_key IN
- (SELECT feed_key FROM podcast_feeds WHERE id IN (`+placeholders(len(feedIDs))+`))) ORDER BY media_id`,
+		`WITH k(key) AS (SELECT feed_key FROM podcast_feeds WHERE id IN (`+placeholders(len(feedIDs))+`))
+SELECT media_id FROM podcast_episodes WHERE media_id IS NOT NULL AND feed_id IN (SELECT id FROM podcast_feeds
+ WHERE feed_key IN (SELECT key FROM k) OR merged_into IN (SELECT id FROM podcast_feeds WHERE feed_key IN (SELECT key FROM k)))
+ORDER BY media_id`,
 		anySlice(feedIDs)...)
 	if err != nil {
 		return nil, fmt.Errorf("list episode media ids: %w", err)
