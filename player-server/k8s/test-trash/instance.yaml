@@ -64,10 +64,10 @@ spec:
             - {name: media, mountPath: /media}
       containers:
         - name: app
-          # v0.18.0, same image as production player/xplayer (config
-          # sha256:cad1ae66...). The digest makes the pull immutable, so
+          # v0.19.0, same image as production player/xplayer (config
+          # sha256:07fbcac0...). The digest makes the pull immutable, so
           # IfNotPresent is enough and a restart needs no registry.
-          image: registry.lan.buetow.org:30001/player:7466f0e@sha256:b45891f1552397e2c5f8f41f8cc212e79c505c7b92157d25800d38bc5f89fbd5
+          image: registry.lan.buetow.org:30001/player:4cf7f5d@sha256:c4b2f8dc3217151767fd95a6b56b248593631ddf23313eeb8b903295b83a3734
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
