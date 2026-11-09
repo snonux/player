@@ -274,7 +274,13 @@ func rebuildEpisodesOn(ctx context.Context, conn *sql.Conn) error {
 			return err
 		}
 	}
-	// Ids of deleted episodes are never handed out again.
+	// Ids of deleted episodes are never handed out again. Dropping the old
+	// table removed its sqlite_sequence entry; the renamed table has one only
+	// when a row was copied, so create it first when no episode survived.
+	if _, err := tx.ExecContext(ctx, `INSERT INTO sqlite_sequence (name, seq) SELECT 'podcast_episodes', ?
+WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'podcast_episodes')`, oldSeq); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'podcast_episodes'`, oldSeq); err != nil {
 		return err

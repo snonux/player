@@ -368,3 +368,36 @@ func TestCheckEpisodeForeignKeysReportsViolation(t *testing.T) {
 		t.Fatalf("violation not reported: %v", err)
 	}
 }
+
+// B17: the rebuild keeps the AUTOINCREMENT high-water mark even when no
+// episode survives, so ids of deleted episodes are never handed out again.
+func TestPodcastSyncMigrationKeepsEpisodeIDsWhenEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "empty.db")
+	db := legacyPodcastDB(t, path)
+	for _, q := range []string{
+		`INSERT INTO sets (id, name, root_path, is_podcast) VALUES (1, 'podcast', 'podcast', 1)`,
+		`INSERT INTO podcast_feeds (id, set_id, feed_url, title) VALUES (1, 1, 'https://example.com/rss', 'Show')`,
+		`INSERT INTO podcast_episodes (feed_id, guid, episode_url) VALUES (1, 'a', 'https://cdn.example.com/a.mp3'), (1, 'b', 'https://cdn.example.com/b.mp3'),
+ (1, 'c', 'https://cdn.example.com/c.mp3'), (1, 'd', 'https://cdn.example.com/d.mp3'), (1, 'e', 'https://cdn.example.com/e.mp3')`,
+		`DELETE FROM podcast_episodes`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	res, err := s.db.Exec(`INSERT INTO podcast_episodes (feed_id, guid, episode_key, episode_url) VALUES (1, 'f', 'guid:f', 'https://cdn.example.com/f.mp3')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, _ := res.LastInsertId(); id <= 5 {
+		t.Fatalf("new episode id %d reuses a deleted episode's id", id)
+	}
+}
