@@ -112,7 +112,8 @@ type podcastService struct {
 	hostFailures   map[string]time.Time
 	hostFailuresMu sync.Mutex
 	refreshMu      sync.Mutex
-	refreshing     map[int64]bool
+	refreshing     map[int64]bool // feeds being fetched, by manual refresh or the checker
+	manualRefresh  int            // manual refreshes in flight (at most 2)
 
 	*podcastSubscriptionService
 	*podcastEpisodeService

@@ -37,14 +37,20 @@ func (s *podcastService) RefreshSubscribedFeed(ctx context.Context, userID int64
 		return nil, ErrPodcastRefreshMissing
 	}
 	s.refreshMu.Lock()
-	if s.refreshing[feed.ID] || len(s.refreshing) >= 2 {
+	if s.refreshing[feed.ID] || s.manualRefresh >= 2 {
 		s.refreshMu.Unlock()
 		return nil, ErrPodcastRefreshBusy
 	}
 	refreshID := feed.ID
 	s.refreshing[refreshID] = true
+	s.manualRefresh++
 	s.refreshMu.Unlock()
-	defer func() { s.refreshMu.Lock(); delete(s.refreshing, refreshID); s.refreshMu.Unlock() }()
+	defer func() {
+		s.refreshMu.Lock()
+		delete(s.refreshing, refreshID)
+		s.manualRefresh--
+		s.refreshMu.Unlock()
+	}()
 	// Reload after claiming the slot: a prior request may have just completed.
 	feed, err = s.store.GetSubscribedPodcastFeed(ctx, userID, key)
 	if err != nil {

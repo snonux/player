@@ -37,24 +37,26 @@ import (
 // wiring stage and the server-start stage so that the two concerns remain
 // clearly separated.
 type Deps struct {
-	trashLock       *sync.Mutex
-	Store           repository.Store
-	Hasher          auth.Hasher
-	SM              auth.SessionManager
-	Cfg             *internal.Config
-	Clk             clock.Clock
-	MediaSvc        service.MediaService
-	Playlists       *service.PlaylistService
-	AdminSvc        service.AdminService
-	PluginSvc       service.PluginService
-	PluginMgr       *plugin.Manager
-	JukeboxSvc      service.JukeboxService
-	MusicLibs       *service.MusicLibraryService
-	MusicIdentity   *service.MusicIdentityService
-	PathRoots       *service.PathRoots
-	ProgressSvc     service.ProgressService
-	AuthSvc         service.AuthService
-	PodcastSvc      service.PodcastEpisodeService
+	trashLock     *sync.Mutex
+	Store         repository.Store
+	Hasher        auth.Hasher
+	SM            auth.SessionManager
+	Cfg           *internal.Config
+	Clk           clock.Clock
+	MediaSvc      service.MediaService
+	Playlists     *service.PlaylistService
+	AdminSvc      service.AdminService
+	PluginSvc     service.PluginService
+	PluginMgr     *plugin.Manager
+	JukeboxSvc    service.JukeboxService
+	MusicLibs     *service.MusicLibraryService
+	MusicIdentity *service.MusicIdentityService
+	PathRoots     *service.PathRoots
+	ProgressSvc   service.ProgressService
+	AuthSvc       service.AuthService
+	PodcastSvc    service.PodcastEpisodeService
+	// PodcastChecker runs PodcastSvc.CheckFeeds in the background.
+	PodcastChecker  *service.PodcastCheckWorker
 	PodcastSyncSvc  service.PodcastSyncService
 	PlaybackHintSvc service.PlaybackHintsService
 	CompatSvc       service.CompatStreamService
@@ -173,24 +175,26 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	jukeboxSvc := service.NewJukeboxService(jukeboxEngine)
 
 	deps := &Deps{
-		trashLock:       trashLock,
-		Store:           store,
-		Hasher:          hasher,
-		SM:              sm,
-		Cfg:             cfg,
-		Clk:             clk,
-		MediaSvc:        mediaSvc,
-		Playlists:       playlists,
-		AdminSvc:        adminSvc,
-		PluginMgr:       pluginMgr,
-		PluginSvc:       service.NewPluginService(pluginMgr),
-		JukeboxSvc:      jukeboxSvc,
-		MusicLibs:       musicLibs,
-		MusicIdentity:   musicIdentity,
-		PathRoots:       pathRoots,
-		ProgressSvc:     service.NewProgressService(store, clk),
-		AuthSvc:         service.NewAuthService(store, clk, hasher, sm, tm),
-		PodcastSvc:      podcastSvc,
+		trashLock:     trashLock,
+		Store:         store,
+		Hasher:        hasher,
+		SM:            sm,
+		Cfg:           cfg,
+		Clk:           clk,
+		MediaSvc:      mediaSvc,
+		Playlists:     playlists,
+		AdminSvc:      adminSvc,
+		PluginMgr:     pluginMgr,
+		PluginSvc:     service.NewPluginService(pluginMgr),
+		JukeboxSvc:    jukeboxSvc,
+		MusicLibs:     musicLibs,
+		MusicIdentity: musicIdentity,
+		PathRoots:     pathRoots,
+		ProgressSvc:   service.NewProgressService(store, clk),
+		AuthSvc:       service.NewAuthService(store, clk, hasher, sm, tm),
+		PodcastSvc:    podcastSvc,
+		PodcastChecker: service.NewPodcastCheckWorker(appCtx, podcastSvc,
+			time.Duration(cfg.PodcastCheckMinutes)*time.Minute, service.DefaultPodcastCheckDelay, logger),
 		PodcastSyncSvc:  service.NewPodcastSyncService(store, clk, cfg.PodcastCheckMinutes, cfg.MediaRoot),
 		PlaybackHintSvc: service.NewPlaybackHintsService(helper),
 		Scanner:         fsScanner,
@@ -322,30 +326,9 @@ func StartBackgroundWorkers(deps *Deps) {
 		deps.Scans.StartScanAutomation()
 	}
 
-	// Start podcast feed background checker. It runs on a fixed ticker and
-	// exits when the application context is cancelled.
-	go func() {
-		ticker := time.NewTicker(time.Duration(deps.Cfg.PodcastCheckMinutes) * time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				func() {
-					// Use the unified service.RecoverWorker helper so this
-					// matches every other background-worker panic path in
-					// the codebase (gc, rescan, podcast feed check).
-					defer func() {
-						service.RecoverWorker(deps.Logger, "podcast checker", recover())
-					}()
-					if err := deps.PodcastSvc.CheckFeeds(context.Background()); err != nil {
-						deps.Logger.Error("podcast feed check failed", "err", err)
-					}
-				}()
-			case <-deps.AppCtx.Done():
-				return
-			}
-		}
-	}()
+	// The podcast feed checker runs inside the worker lifecycle: Stop (deferred
+	// before the store closes) cancels in-flight fetches and waits for them.
+	deps.PodcastChecker.Start()
 
 	// Signal to callers (typically tests) that all workers are running.
 	if deps.WorkersStarted != nil {
@@ -499,6 +482,7 @@ func RunWithSignal(cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Si
 	deps := WireWithRunner(cfg, store, logger, appCtx, runner)
 	defer deps.Scans.StopScans()
 	defer deps.GCWorker.Stop()
+	defer deps.PodcastChecker.Stop()
 	defer stopTranscoding(deps)
 	if deps.PluginMgr != nil {
 		defer func() { _ = deps.PluginMgr.Close(context.Background()) }()
