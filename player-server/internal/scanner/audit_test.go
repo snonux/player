@@ -67,3 +67,98 @@ func TestScan_FileVanishingDuringProbeIsSkipped(t *testing.T) {
 		t.Fatalf("indexed %v", got)
 	}
 }
+
+func activePaths(t *testing.T, store *repository.SQLite) map[string]bool {
+	t.Helper()
+	rows, err := store.ListMedia(context.Background(), repository.MediaFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, r := range rows {
+		if r.DeletedAt == nil {
+			got[r.RelPath] = true
+		}
+	}
+	return got
+}
+
+// B11: rows of a set directory that was deleted or renamed are retired by
+// a full scan, but an empty or unreadable root (a disconnected mount)
+// retires nothing.
+func TestScan_VanishedSetDirectory(t *testing.T) {
+	ctx := context.Background()
+	meta := func(context.Context, string) (*model.Metadata, error) { return &model.Metadata{}, nil }
+	t.Run("deleted set", func(t *testing.T) {
+		root := t.TempDir()
+		touch(t, filepath.Join(root, "set", "a.mp4"))
+		touch(t, filepath.Join(root, "keep", "b.mp4"))
+		s, store := auditScanner(t, root, meta)
+		if err := s.Scan(ctx, root, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.RemoveAll(filepath.Join(root, "set")); err != nil {
+			t.Fatal(err)
+		}
+		touch(t, filepath.Join(root, "other", "c.mp4"))
+		if err := s.Scan(ctx, root, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := activePaths(t, store); got["a.mp4"] || !got["b.mp4"] || !got["c.mp4"] {
+			t.Fatalf("active rows %v", got)
+		}
+	})
+	t.Run("inventory scan keeps rows", func(t *testing.T) {
+		root := t.TempDir()
+		touch(t, filepath.Join(root, "set", "a.mp4"))
+		touch(t, filepath.Join(root, "keep", "b.mp4"))
+		s, store := auditScanner(t, root, meta)
+		if err := s.Scan(ctx, root, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.RemoveAll(filepath.Join(root, "set")); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.ScanInventory(ctx, root, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := activePaths(t, store); !got["a.mp4"] {
+			t.Fatalf("inventory scan retired rows: %v", got)
+		}
+	})
+	t.Run("empty root keeps rows", func(t *testing.T) {
+		root := t.TempDir()
+		touch(t, filepath.Join(root, "set", "a.mp4"))
+		s, store := auditScanner(t, root, meta)
+		if err := s.Scan(ctx, root, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.RemoveAll(filepath.Join(root, "set")); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Scan(ctx, root, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := activePaths(t, store); !got["a.mp4"] {
+			t.Fatalf("empty root retired rows: %v", got)
+		}
+	})
+	t.Run("unreadable root keeps rows", func(t *testing.T) {
+		parent := t.TempDir()
+		root := filepath.Join(parent, "mnt")
+		touch(t, filepath.Join(root, "set", "a.mp4"))
+		s, store := auditScanner(t, root, meta)
+		if err := s.Scan(ctx, root, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.RemoveAll(root); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Scan(ctx, root, nil); err == nil {
+			t.Fatal("scan of a missing root succeeded")
+		}
+		if got := activePaths(t, store); !got["a.mp4"] {
+			t.Fatalf("unreadable root retired rows: %v", got)
+		}
+	})
+}
