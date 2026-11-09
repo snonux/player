@@ -77,7 +77,7 @@ func TestUpload_SlowBodyOutlastsReadTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status = %d (%s), want 200", resp.StatusCode, b)
@@ -112,7 +112,7 @@ func TestDownload_SlowClientOutlastsWriteTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var n int64
 	buf := make([]byte, 1<<20)
 	for {

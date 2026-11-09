@@ -102,7 +102,7 @@ func readJSONLimit(w http.ResponseWriter, r *http.Request, dst interface{}, limi
 		return errors.New("missing body")
 	}
 	body := http.MaxBytesReader(w, r.Body, limit)
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	return json.NewDecoder(body).Decode(dst)
 }
 

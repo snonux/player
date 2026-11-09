@@ -82,7 +82,7 @@ func (w *PodcastCheckWorker) loop() {
 
 func (w *PodcastCheckWorker) runOnce() {
 	defer func() {
-		RecoverWorker(w.logger, "podcast checker", recover())
+		_ = RecoverWorker(w.logger, "podcast checker", recover())
 	}()
 	if err := w.checker.CheckFeeds(w.ctx); err != nil && w.ctx.Err() == nil {
 		w.logger.Error("podcast feed check failed", "err", err)
