@@ -92,15 +92,18 @@ func (s *SQLite) UpdateFeed(ctx context.Context, feed *model.PodcastFeed) error 
 	return nil
 }
 
-// DeleteFeed removes every catalog row sharing the given row's key only
-// while no active subscription exists. Checking and deleting in a single
-// statement serializes this decision with a concurrent subscription edit.
+// DeleteFeed removes every catalog row sharing the given row's key, and the
+// rows merged into them (they keep their own keys), only while no active
+// subscription exists. Checking and deleting in a single statement
+// serializes this decision with a concurrent subscription edit.
 func (s *SQLite) DeleteFeed(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM podcast_feeds
-WHERE feed_key = (SELECT feed_key FROM podcast_feeds WHERE id = ?)
+	_, err := s.db.ExecContext(ctx, `WITH k(key) AS (SELECT feed_key FROM podcast_feeds WHERE id = ?1)
+DELETE FROM podcast_feeds
+WHERE (feed_key = (SELECT key FROM k)
+  OR merged_into IN (SELECT id FROM podcast_feeds WHERE feed_key = (SELECT key FROM k)))
  AND NOT EXISTS (SELECT 1 FROM podcast_subscriptions s WHERE s.subscribed = 1
- AND (s.feed_key = podcast_feeds.feed_key OR s.feed_key IN
-  (SELECT alias_key FROM podcast_feed_aliases a WHERE a.feed_key = podcast_feeds.feed_key)))`, id)
+ AND (s.feed_key = (SELECT key FROM k) OR s.feed_key IN
+  (SELECT alias_key FROM podcast_feed_aliases a WHERE a.feed_key = (SELECT key FROM k))))`, id)
 	if err != nil {
 		return fmt.Errorf("delete podcast feed: %w", err)
 	}
@@ -303,8 +306,10 @@ func (s *SQLite) ListEpisodeMediaIDs(ctx context.Context, feedIDs []int64) ([]in
 		return nil, nil
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT media_id FROM podcast_episodes WHERE media_id IS NOT NULL AND feed_id IN (SELECT id FROM podcast_feeds WHERE feed_key IN
- (SELECT feed_key FROM podcast_feeds WHERE id IN (`+placeholders(len(feedIDs))+`))) ORDER BY media_id`,
+		`WITH k(key) AS (SELECT feed_key FROM podcast_feeds WHERE id IN (`+placeholders(len(feedIDs))+`))
+SELECT media_id FROM podcast_episodes WHERE media_id IS NOT NULL AND feed_id IN (SELECT id FROM podcast_feeds
+ WHERE feed_key IN (SELECT key FROM k) OR merged_into IN (SELECT id FROM podcast_feeds WHERE feed_key IN (SELECT key FROM k)))
+ORDER BY media_id`,
 		anySlice(feedIDs)...)
 	if err != nil {
 		return nil, fmt.Errorf("list episode media ids: %w", err)

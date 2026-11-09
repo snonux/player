@@ -87,6 +87,13 @@ func (pw *probeWorker) run(
 		// Use scanCtx (not ctx) so ffprobe/ffmpeg subprocesses cancel promptly
 		// when another worker fails or TriggerRescan restarts the scan.
 		result, err := pw.probeFile(scanCtx, path, setPath, setID, setName, existing, coverImages, progress)
+		if errors.Is(err, fs.ErrNotExist) {
+			// The file was removed or renamed after the walk listed it (an
+			// import tool moving files, say). Like an unprobeable file it is
+			// skipped; it must not abort the scan of every other file.
+			pw.logger.Warn("scanner skipping file that vanished during the scan", "path", path, "err", err)
+			continue
+		}
 		if err != nil {
 			sendErr(err)
 			return

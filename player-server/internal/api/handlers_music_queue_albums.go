@@ -17,12 +17,13 @@ func (s *Server) handleMusicQueueAlbums(w http.ResponseWriter, r *http.Request) 
 	if !requireService(w, s.media.Browse) {
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 200000)
-	defer r.Body.Close()
 	var incoming struct {
 		IDs []int64 `json:"media_ids"`
 	}
-	if err := readJSON(r, &incoming); err != nil || incoming.IDs == nil || len(incoming.IDs) > 10000 {
+	if err := readJSONLimit(w, r, &incoming, 200000); err != nil || incoming.IDs == nil || len(incoming.IDs) > 10000 {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid queue media IDs")
 		return
 	}

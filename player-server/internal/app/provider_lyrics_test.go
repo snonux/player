@@ -29,7 +29,7 @@ func TestProviderLyricsExplicitAccountAndContentBoundaries(t *testing.T) {
 		}
 		switch mode.Load() {
 		case 1:
-			http.Error(w, "fixture failure", 502)
+			http.Error(w, "fixture failure", http.StatusBadGateway)
 			return
 		case 2:
 			if err := os.WriteFile(sidecar, []byte("[00:00]Local wins"), 0600); err != nil {
@@ -44,11 +44,11 @@ func TestProviderLyricsExplicitAccountAndContentBoundaries(t *testing.T) {
 			if err := os.WriteFile(sidecar, []byte("[00:00]Local after failure"), 0600); err != nil {
 				t.Error(err)
 			}
-			http.Error(w, "fixture failure", 503)
+			http.Error(w, "fixture failure", http.StatusServiceUnavailable)
 			return
 		case 6:
 			replace()
-			http.Error(w, "fixture failure", 503)
+			http.Error(w, "fixture failure", http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

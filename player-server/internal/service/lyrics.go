@@ -60,7 +60,7 @@ func (s *shareService) GetSharedLyrics(ctx context.Context, token string, creden
 	if err != nil {
 		return nil, err
 	}
-	return localLyrics(ctx, s.lyricsRoot, media), nil
+	return localLyrics(ctx, mediaLibraryRoot(ctx, s.store, s.lyricsRoot, media), media), nil
 }
 
 // localAudioSource validates an audio item for local metadata reads. It

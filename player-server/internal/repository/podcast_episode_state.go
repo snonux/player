@@ -234,8 +234,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 
 // rewriteAllEpisodeMirrors is step 7: project the episode state of every
 // downloaded episode onto its playback_progress row, so legacy readers see
-// the migrated history from the first request on. Catalog rows merged into
-// another share its feed key and are projected too.
+// the migrated history from the first request on.
 func rewriteAllEpisodeMirrors(ctx context.Context, tx *sql.Tx) error {
 	rows, err := tx.QueryContext(ctx, `SELECT s.user_id, e.media_id, s.position_seconds, s.position_ms,
  s.completed, s.completion_ms

@@ -14,10 +14,11 @@ func (s *Server) handlePlaybackSync(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid media id")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
-	defer r.Body.Close()
 	var incoming model.PlaybackSync
-	if err := readJSON(r, &incoming); err != nil {
+	if err := readJSONLimit(w, r, &incoming, 2<<20); err != nil {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid body")
 		return
 	}

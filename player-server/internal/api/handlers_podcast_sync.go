@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/snonux/player/internal/model"
@@ -20,12 +19,9 @@ func (s *Server) handlePodcastSync(w http.ResponseWriter, r *http.Request) {
 	if !requireService(w, s.podcastSync) {
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxPodcastSyncBody)
 	var req model.PodcastSyncRequest
-	if err := readJSON(r, &req); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+	if err := readJSONLimit(w, r, &req, maxPodcastSyncBody); err != nil {
+		if bodyTooLarge(w, err) {
 			return
 		}
 		badRequest(w, "invalid body")

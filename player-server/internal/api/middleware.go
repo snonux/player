@@ -54,6 +54,9 @@ type Middleware struct {
 	proxyAuth      *auth.ProxyAuth
 	publicPaths    map[string]bool
 	publicPrefixes []string
+	// csrf refuses cross-origin unsafe requests that ride on ambient
+	// credentials (session cookie, reverse-proxy identity).
+	csrf *http.CrossOriginProtection
 }
 
 // NewMiddleware creates middleware handlers.
@@ -75,7 +78,30 @@ func NewMiddleware(authSvc Authenticator, sm auth.SessionManager, proxyAuth *aut
 		sm:          sm,
 		proxyAuth:   proxyAuth,
 		publicPaths: make(map[string]bool),
+		csrf:        http.NewCrossOriginProtection(),
 	}
+}
+
+// WithTrustedOrigins lets browser clients on these origins (the configured
+// CORS origins) make state-changing requests with ambient credentials.
+// Invalid origins are skipped.
+func (mw *Middleware) WithTrustedOrigins(origins []string) *Middleware {
+	for _, origin := range origins {
+		_ = mw.csrf.AddTrustedOrigin(origin)
+	}
+	return mw
+}
+
+// crossOriginRefused reports whether r is a state-changing browser request
+// from another origin (or another site) that carries ambient credentials.
+// Bearer-token requests are exempt: a browser never attaches that header
+// on its own. Requests without Sec-Fetch-Site and Origin (native clients)
+// pass, as do safe methods.
+func (mw *Middleware) crossOriginRefused(r *http.Request) bool {
+	if _, bearer := bearerToken(r); bearer || mw.csrf == nil {
+		return false
+	}
+	return mw.csrf.Check(r) != nil
 }
 
 // RegisterPublic marks an exact path as public (bypasses BootstrapRedirect).
@@ -112,6 +138,10 @@ func (mw *Middleware) isPublic(path string) bool {
 // For HTML page requests (Accept: text/html), redirects to /login.html instead of returning 401.
 func (mw *Middleware) RequireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if mw.crossOriginRefused(r) {
+			http.Error(w, "cross-origin request refused", http.StatusForbidden)
+			return
+		}
 		sess, err := mw.authenticate(r)
 		if err != nil || sess == nil {
 			if wantsHTML(r) {

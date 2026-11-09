@@ -200,7 +200,7 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 		shareRenderer:    web.NewSharePageRenderer(deps.StaticFS),
 		castTickets:      deps.CastTickets,
 		logger:           logger,
-		mw:               NewMiddleware(deps.Services.Auth, deps.SessionManager, deps.Config.ProxyAuth),
+		mw:               NewMiddleware(deps.Services.Auth, deps.SessionManager, deps.Config.ProxyAuth).WithTrustedOrigins(deps.Config.CORSAllowedOrigins),
 	}
 	s.routes()
 	s.handler = withCORS(s.cfg.CORSAllowedOrigins, s.mw.BootstrapRedirect(s.mux))
@@ -556,6 +556,30 @@ func (s *Server) routes() {
 	s.routesShares()
 	s.routesAdmin()
 	s.routesPodcast()
+	s.routesAPINotFound()
+}
+
+// routesAPINotFound answers every /api path no route serves with JSON
+// instead of letting it fall through to the app shell (200 index.html): a
+// path that exists for other methods gets 405 with an Allow header, any
+// other path 404.
+func (s *Server) routesAPINotFound() {
+	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		var allow []string
+		for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+			probe := r.Clone(r.Context())
+			probe.Method = method
+			if _, pattern := s.mux.Handler(probe); pattern != "" && pattern != "/api/" {
+				allow = append(allow, method)
+			}
+		}
+		if len(allow) > 0 {
+			w.Header().Set("Allow", strings.Join(allow, ", "))
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		writeError(w, http.StatusNotFound, "not found")
+	})
 }
 
 // routesSubsonic wires the optional Subsonic/OpenSubsonic /rest surface (A01a).

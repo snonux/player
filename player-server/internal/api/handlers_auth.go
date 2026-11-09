@@ -50,7 +50,10 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req bootstrapRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid request body")
 		return
 	}
@@ -78,7 +81,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req loginRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid request body")
 		return
 	}
@@ -150,7 +156,10 @@ func (s *Server) handleCreateAPIToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createAPITokenRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid request body")
 		return
 	}

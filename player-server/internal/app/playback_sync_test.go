@@ -260,7 +260,7 @@ func TestPlaybackSyncAccessAndValidation(t *testing.T) {
 		{"past end", "alice", path, `{"bookmarks":[{"sync_key":"bad","position_seconds":121,"observed_ms":1000}]}`, 400},
 		{"image bookmark", "alice", fmt.Sprintf("/api/v1/media/%d/playback-sync", e.media["pic.png"]), `{"bookmarks":[{"sync_key":"bad","position_seconds":1,"observed_ms":1000}]}`, 400},
 		{"atomic validation", "alice", path, `{"progress":{"position_seconds":42,"observed_ms":1000},"bookmarks":[{"sync_key":"bad","position_seconds":-1,"observed_ms":1000}]}`, 400},
-		{"oversized body", "alice", path, `{"bookmarks":[{"sync_key":"bad","position_seconds":1,"observed_ms":1000,"label":"` + strings.Repeat("x", 3<<20) + `"}]}`, 400},
+		{"oversized body", "alice", path, `{"bookmarks":[{"sync_key":"bad","position_seconds":1,"observed_ms":1000,"label":"` + strings.Repeat("x", 3<<20) + `"}]}`, 413},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rr := e.request(ctx, "POST", tc.route, tc.user, tc.body)

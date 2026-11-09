@@ -85,12 +85,36 @@ func handleError(w http.ResponseWriter, err error) {
 	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 }
 
-func readJSON(r *http.Request, dst interface{}) error {
+// maxJSONBody bounds every JSON request body read through readJSON. Login
+// and bootstrap are public, so without a bound an anonymous caller could
+// make the server buffer arbitrarily large bodies.
+const maxJSONBody = 64 << 10
+
+// readJSON decodes a JSON request body of at most maxJSONBody bytes.
+func readJSON(w http.ResponseWriter, r *http.Request, dst interface{}) error {
+	return readJSONLimit(w, r, dst, maxJSONBody)
+}
+
+// readJSONLimit decodes a JSON request body of at most limit bytes. A larger
+// body fails with *http.MaxBytesError; bodyTooLarge answers it with 413.
+func readJSONLimit(w http.ResponseWriter, r *http.Request, dst interface{}, limit int64) error {
 	if r.Body == nil {
 		return errors.New("missing body")
 	}
-	defer r.Body.Close()
-	return json.NewDecoder(r.Body).Decode(dst)
+	body := http.MaxBytesReader(w, r.Body, limit)
+	defer func() { _ = body.Close() }()
+	return json.NewDecoder(body).Decode(dst)
+}
+
+// bodyTooLarge answers 413 and reports true when err is a body that
+// exceeded its size limit.
+func bodyTooLarge(w http.ResponseWriter, err error) bool {
+	var tooLarge *http.MaxBytesError
+	if !errors.As(err, &tooLarge) {
+		return false
+	}
+	writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+	return true
 }
 
 // pathID parses a path variable as an int64. It returns the parsed id together

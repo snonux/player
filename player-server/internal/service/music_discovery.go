@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"math/rand/v2"
 	"sort"
 )
@@ -16,7 +15,7 @@ func DiscoverAlbums(albums []Album, collection string) ([]Album, error) {
 	switch collection {
 	case "recently_added", "recently_played", "most_played", "random", "favorites", "top_rated":
 	default:
-		return nil, fmt.Errorf("Unknown album collection.")
+		return nil, badRequestError("Unknown album collection.")
 	}
 	result := make([]Album, 0, len(albums))
 	for _, album := range albums {

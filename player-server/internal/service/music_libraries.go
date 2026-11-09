@@ -302,7 +302,7 @@ func ParseLibraryIDs(raw string) ([]int64, error) {
 		}
 		var id int64
 		if _, err := fmt.Sscan(part, &id); err != nil || id <= 0 {
-			return nil, fmt.Errorf("Invalid library_ids.")
+			return nil, badRequestError("Invalid library_ids.")
 		}
 		ids = append(ids, id)
 	}

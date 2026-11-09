@@ -8,16 +8,15 @@ All settings are environment variables. Unset variables use defaults.
 | `PORT` | `8080` | 0–65535 | HTTP listen port (0 = ephemeral, used in tests) |
 | `MEDIA_ROOT` | `./media` | — | Root path for media set directories |
 | `DB_PATH` | `data.db` | — | SQLite database file path |
-| `MAX_UPLOAD_SIZE_MB` | `100` | ≥ 1 | Max upload size per file (MB) |
+| `MAX_UPLOAD_SIZE_MB` | `10240` | ≥ 1 | Max upload size per file (MB); an upload may take as long as it needs (no read timeout) |
 | `SESSION_TIMEOUT_HOURS` | `24` | ≥ 1 | Cookie / session expiry |
 | `SCAN_WATCH_SECONDS` | `30` | 0 or 10–86400 | Poll source names, sizes and modification times; 0 disables polling. Quick inventory also runs once at startup |
 | `SCAN_INTERVAL_MINUTES` | `0` | 0–10080 | Additional scheduled quick inventory interval; 0 disables scheduling |
 | `GC_INTERVAL_MINUTES` | `30` | ≥ 1 | Garbage collector tick interval |
 | `SHARE_DEFAULT_EXPIRY_DAYS` | `7` | ≥ 1 | Default share link lifetime |
-| `PODCAST_CHECK_INTERVAL_MINUTES` | `60` | ≥ 1 | Podcast feed refresh interval |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` | Log verbosity |
 | `SECURE_COOKIES` | `true` | `true` / `false` | Set `Secure` flag on session cookies and share viewing cookies; set to `false` for plain-HTTP local deployments |
-| `PLAYER_CORS_ORIGINS` | unset | comma-separated origins | Allowed browser origins for credentialed CORS requests; unset/empty emits no CORS headers |
+| `PLAYER_CORS_ORIGINS` | unset | comma-separated origins | Allowed browser origins for credentialed CORS requests; unset/empty emits no CORS headers. Other origins (and other sites) cannot make state-changing requests with the session cookie or proxy identity: they get `403` |
 | `TRANSCODE_CACHE_DIR` | `<DB_PATH>.transcode-cache` | writable directory outside `MEDIA_ROOT` | Cache for compatibility renditions (H.264/AAC) of legacy media; created on first use |
 | `TRANSCODE_CACHE_MAX_MB` | `4096` | ≥ 1 | Size the transcode cache is pruned back to (least recently used first); also the largest single rendition |
 | `TRANSCODE_MAX_JOBS` | `1` | ≥ 1 | Parallel ffmpeg transcodes; each needs about 400 MB of memory at 1080p |
@@ -25,6 +24,17 @@ All settings are environment variables. Unset variables use defaults.
 | `RADIO_BROWSER_URL` | `https://all.api.radio-browser.info` | http(s) URL | Radio Browser API that web radio searches |
 | `RADIO_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let the radio relay connect to loopback/private addresses (stations on your own network); off by default because station entries come from a public directory |
 | `PODCAST_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let podcast feed, cover and episode downloads connect to loopback/private addresses (feeds on your own network); off by default because feeds are third-party documents whose URLs must not reach services on the server's network |
+| `PODCAST_CHECK_INTERVAL_MINUTES` | `60` | ≥ 1 | Podcast feed refresh interval; the first background check runs one minute after start |
+| `MEDIA_PAGE_SIZE` | `100` | ≥ 1 | Items displayed per thumbnail grid page |
+| `PROXY_AUTH_TRUSTED_SOURCES` | unset | comma-separated IPs/CIDRs, `@` for a UNIX socket peer | Enables reverse-proxy authentication: only requests whose immediate peer is listed may assert a user through `PROXY_AUTH_USER_HEADER`. Unset disables it (the other two `PROXY_AUTH_*` settings then must be unset too) |
+| `PROXY_AUTH_USER_HEADER` | `Remote-User` | header name; requires `PROXY_AUTH_TRUSTED_SOURCES` | Header carrying the username of an existing account from a trusted proxy |
+| `PROXY_AUTH_LOGOUT_URL` | unset | URL; requires `PROXY_AUTH_TRUSTED_SOURCES` | Where the web UI sends the browser after logout when the proxy owns the login |
+| `SUBSONIC_ENABLED` | `false` | `true` / `false` | Serve the Subsonic/OpenSubsonic API under `/rest/` |
+| `JUKEBOX_ENABLED` | `false` | `true` / `false` | Server-side jukebox playback through mpv (admin-only controls) |
+| `JUKEBOX_MPV_PATH` | `mpv` | executable name or path | mpv binary the jukebox starts |
+| `PLUGIN_DIR` | unset | directory | Directory of WASM plugins; unset disables plugins |
+| `LYRICS_PROVIDER_URL` | unset | http(s) URL without credentials or fragment | Optional external lyrics provider; unset disables provider lyrics |
+| `MUSIC_ENRICHMENT_URL` | unset | URL | Optional music metadata enrichment service; unset disables enrichment |
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
 
@@ -46,5 +56,5 @@ All settings are environment variables. Unset variables use defaults.
 - After switching the setting on, run one admin **Rescan**: thumbnails beside the media are generated anew in the cache and the old files deleted where the set is writable (an emptied `.thumbnails` directory may stay behind; in a read-only set the old file stays and one warning per item is logged). A deleted or emptied cache directory heals the same way.
 - After changing the directory or switching the setting off, run a **Rescan** as well. Thumbnails in the former directory are not shown any more (only `MEDIA_ROOT` and the current cache are ever served); the rescan generates new ones at the current place. The former directory is never touched by the server: delete it yourself.
 - Use an absolute path. Stored thumbnail paths are absolute, so a relative setting only keeps working while the server is started from the same directory.
-- Generated set and folder covers ("regenerate cover") use `<cache>/<set>/<folder>/.cover.jpg` when this setting is configured, so they work on read-only sets too. Existing source artwork (`cover.jpg`, `folder.jpg`, etc.) remains readable. Regenerate a cover after switching the cache setting; the server only reads generated covers from the current location and leaves older copies alone.
+- Generated set and folder covers ("regenerate cover") use `<cache>/<set>/<folder>/.cover.jpg` when this setting is configured, so they work on read-only sets too. The cache mirrors only the default library (`MEDIA_ROOT`); covers of sets in other music libraries are generated beside the set's files, since two libraries may hold sets of the same name. Existing source artwork (`cover.jpg`, `folder.jpg`, etc.) remains readable. Regenerate a cover after switching the cache setting; the server only reads generated covers from the current location and leaves older copies alone.
 - Upload and soft-delete require a writable source directory and return HTTP `403` (`set is read-only`) when it refuses writes. Metadata edits and restore remain available. For trash already present before a set became read-only, GC purges only the database row on permission/read-only errors and keeps the source file; a later rescan can import that file again. Other unlink failures keep the row for retry.

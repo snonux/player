@@ -197,8 +197,9 @@ FROM podcast_episode_state WHERE user_id = ? AND feed_key = ? AND episode_key = 
 }
 
 // writeEpisodeMirrors projects the registers of k onto the user's
-// playback_progress row of every server copy of the episode. Catalog rows
-// merged into another share its feed key, so their copies are included.
+// playback_progress row of every server copy of the episode in the catalog
+// rows with the feed key. Rows merged into another keep their own key, so
+// their copies are not projected (they never join the winner, §3.3).
 func writeEpisodeMirrors(ctx context.Context, q sqlTx, k episodeStateKey, r *episodeRegisters) error {
 	rows, err := q.QueryContext(ctx, `SELECT DISTINCT e.media_id FROM podcast_episodes e
 JOIN podcast_feeds f ON f.id = e.feed_id

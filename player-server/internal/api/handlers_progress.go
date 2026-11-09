@@ -17,7 +17,10 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 		MediaID            int64   `json:"media_id"`
 		Position           float64 `json:"position_seconds"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid body")
 		return
 	}
@@ -65,7 +68,10 @@ func (s *Server) handleBatchProgress(w http.ResponseWriter, r *http.Request) {
 			ObservedAt         time.Time `json:"observed_at"`
 		} `json:"updates"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid body")
 		return
 	}
@@ -109,7 +115,10 @@ func (s *Server) handleProgressStatus(w http.ResponseWriter, r *http.Request) {
 		Status     string    `json:"status"`
 		ObservedAt time.Time `json:"observed_at"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "invalid body")
 		return
 	}

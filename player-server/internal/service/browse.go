@@ -433,8 +433,12 @@ func (s *browseService) browseSet(ctx context.Context, setID, userID int64, pare
 		return nil, ErrNotFound
 	}
 
+	root, err := setLibraryRoot(ctx, s.store, s.mediaRoot, set)
+	if err != nil {
+		return nil, fmt.Errorf("library root: %w", err)
+	}
 	folderMap, items := buildFolderMap(media, parent)
-	folders, items := buildFoldersIn(s.thumbLayout, folderMap, media, items, s.mediaRoot, set.RootPath, parent)
+	folders, items := buildFoldersIn(coverLayoutFor(s.thumbLayout, s.mediaRoot, root), folderMap, media, items, root, set.RootPath, parent)
 
 	result := &BrowseResult{
 		CurrentPath: parent,
@@ -486,7 +490,12 @@ func (s *browseService) GetSetCover(ctx context.Context, setID int64, folder str
 	}
 
 	prefix := filepath.ToSlash(strings.Trim(folder, "/"))
-	baseDir, coverPath, err := coverDestination(s.mediaRoot, s.thumbLayout, set.RootPath, folder)
+	root, err := setLibraryRoot(ctx, s.store, s.mediaRoot, set)
+	if err != nil {
+		return nil, fmt.Errorf("library root: %w", err)
+	}
+	layout := coverLayoutFor(s.thumbLayout, s.mediaRoot, root)
+	baseDir, coverPath, err := coverDestination(root, layout, set.RootPath, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +509,7 @@ func (s *browseService) GetSetCover(ctx context.Context, setID int64, folder str
 		}, nil
 	}
 	if fr, ok := folderCoverFile(baseDir); ok {
-		if !confinedPath(s.mediaRoot, fr.Path) {
+		if !confinedPath(root, fr.Path) {
 			return nil, ErrForbidden
 		}
 		return fr, nil
@@ -514,7 +523,7 @@ func (s *browseService) GetSetCover(ctx context.Context, setID int64, folder str
 	if candidate == "" {
 		return nil, ErrNotFound
 	}
-	if !confinedPath(s.mediaRoot, candidate) && !(s.thumbLayout.CacheDir() != "" && confinedPath(s.thumbLayout.CacheDir(), candidate)) {
+	if !confinedPath(root, candidate) && !(s.thumbLayout.CacheDir() != "" && confinedPath(s.thumbLayout.CacheDir(), candidate)) {
 		return nil, ErrForbidden
 	}
 	info, err = os.Stat(candidate)

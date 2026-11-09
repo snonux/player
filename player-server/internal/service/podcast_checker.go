@@ -18,6 +18,10 @@ import (
 const (
 	baseFeedRetryBackoff = 15 * time.Minute
 	maxFeedRetryBackoff  = 24 * time.Hour
+	// maxConcurrentFeedChecks bounds the feeds one CheckFeeds run fetches
+	// and parses at once: every document is held in memory and every
+	// ingest waits for the single SQLite connection.
+	maxConcurrentFeedChecks = 4
 )
 
 // errHostBackoff is returned by fetchFeedWithRetry when the host is still
@@ -48,10 +52,26 @@ func (s *podcastFeedChecker) CheckFeeds(ctx context.Context) error {
 	s.logger.Info("podcast feed check starting", "count", len(feeds))
 
 	var wg sync.WaitGroup
+	slots := make(chan struct{}, maxConcurrentFeedChecks)
 	for _, feed := range feeds {
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		// A manual refresh of the same feed is running: it fetches the
+		// document anyway, so this run leaves the feed to it.
+		if !s.claimFeed(feed.ID) {
+			<-slots
+			continue
+		}
 		wg.Add(1)
 		go func(f model.PodcastFeed) {
 			defer wg.Done()
+			defer func() { <-slots }()
+			defer s.releaseFeed(f.ID)
 			defer func() {
 				RecoverWorker(s.logger, "podcast feed check", recover())
 			}()
@@ -65,7 +85,28 @@ func (s *podcastFeedChecker) CheckFeeds(ctx context.Context) error {
 	wg.Wait()
 
 	s.logger.Info("podcast feed check finished", "count", len(feeds))
-	return nil
+	return ctx.Err()
+}
+
+// claimFeed marks feedID as being fetched; false when a manual refresh (or
+// another check) already holds it.
+func (s *podcastFeedChecker) claimFeed(feedID int64) bool {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	if s.refreshing[feedID] {
+		return false
+	}
+	if s.refreshing == nil {
+		s.refreshing = make(map[int64]bool)
+	}
+	s.refreshing[feedID] = true
+	return true
+}
+
+func (s *podcastFeedChecker) releaseFeed(feedID int64) {
+	s.refreshMu.Lock()
+	delete(s.refreshing, feedID)
+	s.refreshMu.Unlock()
 }
 
 // checkFeed fetches one catalog feed (conditional GET, through the client

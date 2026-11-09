@@ -37,6 +37,7 @@ func TestShareCollectionMigrationPreservesLegacy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	forgetSchemaMigrations(t, store.db)
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}

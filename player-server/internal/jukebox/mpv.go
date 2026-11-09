@@ -28,8 +28,11 @@ type MPV struct {
 	sock   string
 	cmd    *exec.Cmd
 	conn   net.Conn
+	reader *bufio.Reader // the one reader of conn
 	reqID  int
 	closed bool
+	// launch replaces startProcess in tests (a fake mpv).
+	launch func(socket string) (*exec.Cmd, error)
 }
 
 // NewMPV prepares an MPV adapter. The process starts lazily on first use.
@@ -146,15 +149,7 @@ func (m *MPV) Close(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.closed = true
-	if m.conn != nil {
-		_ = m.conn.Close()
-		m.conn = nil
-	}
-	if m.cmd != nil && m.cmd.Process != nil {
-		_ = m.cmd.Process.Kill()
-		_, _ = m.cmd.Process.Wait()
-		m.cmd = nil
-	}
+	m.resetLocked()
 	if m.sock != "" {
 		dir := filepath.Dir(m.sock)
 		_ = os.Remove(m.sock)
@@ -164,50 +159,19 @@ func (m *MPV) Close(ctx context.Context) error {
 }
 
 func (m *MPV) command(ctx context.Context, name string, args ...any) error {
-	if err := m.ensure(ctx); err != nil {
-		return err
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.closed || m.conn == nil {
-		return ErrUnavailable
-	}
-	m.reqID++
-	id := m.reqID
-	payload := map[string]any{"command": append([]any{name}, args...), "request_id": id}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	body = append(body, '\n')
-	_ = m.conn.SetDeadline(time.Now().Add(mpvIPCTimeout))
-	if _, err := m.conn.Write(body); err != nil {
-		return err
-	}
-	reader := bufio.NewReader(m.conn)
-	for {
-		line, err := reader.ReadBytes('\n')
-		if err != nil {
-			return err
-		}
-		var resp struct {
-			RequestID int    `json:"request_id"`
-			Error     string `json:"error"`
-		}
-		if err := json.Unmarshal(line, &resp); err != nil {
-			continue
-		}
-		if resp.RequestID != id {
-			continue
-		}
-		if resp.Error != "" && resp.Error != "success" {
-			return fmt.Errorf("mpv: %s", resp.Error)
-		}
-		return nil
-	}
+	_, err := m.request(ctx, append([]any{name}, args...))
+	return err
 }
 
 func (m *MPV) getProperty(ctx context.Context, name string) (any, error) {
+	return m.request(ctx, []any{"get_property", name})
+}
+
+// request sends one IPC command and waits for its reply. A failed write or
+// read means mpv died or the socket broke: the connection and process are
+// dropped (and the process reaped) so the next call starts a fresh mpv
+// instead of failing forever.
+func (m *MPV) request(ctx context.Context, command []any) (any, error) {
 	if err := m.ensure(ctx); err != nil {
 		return nil, err
 	}
@@ -218,20 +182,22 @@ func (m *MPV) getProperty(ctx context.Context, name string) (any, error) {
 	}
 	m.reqID++
 	id := m.reqID
-	payload := map[string]any{"command": []any{"get_property", name}, "request_id": id}
-	body, err := json.Marshal(payload)
+	body, err := json.Marshal(map[string]any{"command": command, "request_id": id})
 	if err != nil {
 		return nil, err
 	}
 	body = append(body, '\n')
 	_ = m.conn.SetDeadline(time.Now().Add(mpvIPCTimeout))
 	if _, err := m.conn.Write(body); err != nil {
+		m.resetLocked()
 		return nil, err
 	}
-	reader := bufio.NewReader(m.conn)
 	for {
-		line, err := reader.ReadBytes('\n')
+		// One reader per connection: bytes buffered past this reply (events,
+		// other replies) belong to the next read, not to a discarded reader.
+		line, err := m.reader.ReadBytes('\n')
 		if err != nil {
+			m.resetLocked()
 			return nil, err
 		}
 		var resp struct {
@@ -252,6 +218,26 @@ func (m *MPV) getProperty(ctx context.Context, name string) (any, error) {
 	}
 }
 
+// resetLocked closes the connection and kills and reaps the process. The
+// caller holds m.mu.
+func (m *MPV) resetLocked() {
+	if m.conn != nil {
+		_ = m.conn.Close()
+		m.conn = nil
+		m.reader = nil
+	}
+	m.reapLocked()
+}
+
+// reapLocked kills mpv and waits for it so no zombie is left behind.
+func (m *MPV) reapLocked() {
+	if m.cmd != nil && m.cmd.Process != nil {
+		_ = m.cmd.Process.Kill()
+		_ = m.cmd.Wait()
+	}
+	m.cmd = nil
+}
+
 func (m *MPV) ensure(ctx context.Context) error {
 	m.mu.Lock()
 	if m.closed {
@@ -268,6 +254,9 @@ func (m *MPV) ensure(ctx context.Context) error {
 
 // startProcess launches idle mpv. Named for the ffsafe command allowlist.
 func (m *MPV) startProcess(socket string) (*exec.Cmd, error) {
+	if m.launch != nil {
+		return m.launch(socket)
+	}
 	cmd := exec.Command(m.bin,
 		"--idle=yes",
 		"--no-video",
@@ -293,6 +282,9 @@ func (m *MPV) start(ctx context.Context) error {
 	if m.conn != nil {
 		return nil
 	}
+	// A previous mpv may have died without removing its socket.
+	m.reapLocked()
+	_ = os.Remove(m.sock)
 	cmd, err := m.startProcess(m.sock)
 	if err != nil {
 		return err
@@ -302,7 +294,7 @@ func (m *MPV) start(ctx context.Context) error {
 	var conn net.Conn
 	for time.Now().Before(deadline) {
 		if ctx.Err() != nil {
-			_ = cmd.Process.Kill()
+			m.reapLocked()
 			return ctx.Err()
 		}
 		conn, err = net.DialTimeout("unix", m.sock, 200*time.Millisecond)
@@ -312,10 +304,11 @@ func (m *MPV) start(ctx context.Context) error {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if conn == nil {
-		_ = cmd.Process.Kill()
+		m.reapLocked()
 		return errors.New("jukebox: mpv ipc socket did not become ready")
 	}
 	m.conn = conn
+	m.reader = bufio.NewReader(conn)
 	return nil
 }
 

@@ -205,6 +205,7 @@ func (s *FSScanner) scan(ctx context.Context, root string, progress *model.ScanP
 		if err != nil {
 			return fmt.Errorf("read media root %q: %w", r.path, err)
 		}
+		visited := map[string]bool{}
 		for _, entry := range entries {
 			if !isSetDir(entry) || ignoredPath(filepath.Join(r.path, entry.Name()), s.ignoredPaths) {
 				continue
@@ -213,8 +214,16 @@ func (s *FSScanner) scan(ctx context.Context, root string, progress *model.ScanP
 			if err := s.scanSetMode(ctx, r.id, r.path, setPath, progress, ledger, inventory); err != nil {
 				return err
 			}
+			visited[entry.Name()] = true
 			if progress != nil {
 				progress.IncrementSet()
+			}
+		}
+		// An empty root says nothing reliable (an unmounted volume looks
+		// the same), and inventory scans never reconcile.
+		if !inventory && len(visited) > 0 {
+			if err := s.reconcileVanishedSets(ctx, r, visited, ledger); err != nil {
+				return err
 			}
 		}
 		s.log().Info("scanner library finished", "library_id", r.id, "root", r.path)
@@ -380,6 +389,50 @@ func (s *FSScanner) reconcileOrphans(ctx context.Context, existing map[string]mo
 		}
 		s.log().Info("scanner soft-deleted orphan", "set", setName, "rel_path", relPath, "id", media.ID)
 	}
+}
+
+// reconcileVanishedSets soft-deletes the active media of sets of library r
+// whose directory no longer exists: a set directory deleted or renamed
+// between scans. It runs only after r was read and found to hold at least
+// one set, so a disconnected mount never empties the library. A set
+// directory that cannot be checked for any reason other than "does not
+// exist", ignored paths and podcast sets (managed by the podcast service)
+// are left alone.
+func (s *FSScanner) reconcileVanishedSets(ctx context.Context, r scanRoot, visited map[string]bool, ledger *identityLedger) error {
+	sets, err := s.store.ListSets(ctx)
+	if err != nil {
+		return fmt.Errorf("list sets: %w", err)
+	}
+	for _, set := range sets {
+		if set.LibraryID != r.id || set.IsPodcast || set.RootPath == "" || visited[set.RootPath] {
+			continue
+		}
+		dir := filepath.Join(r.path, filepath.FromSlash(set.RootPath))
+		if ignoredPath(dir, s.ignoredPaths) {
+			continue
+		}
+		if _, err := s.fs.Stat(dir); !errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		rows, err := s.store.ListMedia(ctx, repository.MediaFilter{SetID: &set.ID})
+		if err != nil {
+			return fmt.Errorf("list media for set %q: %w", set.Name, err)
+		}
+		for _, row := range rows {
+			if row.DeletedAt != nil {
+				continue
+			}
+			if err := s.store.SoftDeleteMedia(ctx, row.ID); err != nil {
+				s.log().Warn("scanner vanished-set soft-delete failed", "set", set.Name, "id", row.ID, "err", err)
+				continue
+			}
+			ledger.noteMissing(row)
+		}
+		if len(rows) > 0 {
+			s.log().Info("scanner soft-deleted media of vanished set", "set", set.Name, "path", dir, "media", len(rows))
+		}
+	}
+	return nil
 }
 
 // belowSkippedDirectory matches complete path components, so skipping "private"

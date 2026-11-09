@@ -194,6 +194,9 @@ func (s *Server) subsonicSearch(r *http.Request, user *model.User, folderID stri
 	albumOffset, _ := subsonic.ParseIntParam(r, "albumOffset", 0)
 	songCount, _ := subsonic.ParseIntParam(r, "songCount", 20)
 	songOffset, _ := subsonic.ParseIntParam(r, "songOffset", 0)
+	if min(artistCount, artistOffset, albumCount, albumOffset, songCount, songOffset) < 0 {
+		return subsonic.Fail(version, subsonic.ErrGeneric, "Counts and offsets must not be negative"), nil
+	}
 	result, err := s.subsonicSvc.Search(r.Context(), user.ID, query, folderID,
 		artistCount, artistOffset, albumCount, albumOffset, songCount, songOffset)
 	if err != nil {

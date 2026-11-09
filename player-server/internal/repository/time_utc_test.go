@@ -205,6 +205,7 @@ func TestNormalizeStoredTimes_OldRows(t *testing.T) {
 		"utc":        stored["utc"],
 		"junk":       stored["junk"],
 	}
+	forgetSchemaMigrations(t, f.store.db)
 	for round := 1; round <= 2; round++ {
 		f.reopen()
 		for token, text := range want {

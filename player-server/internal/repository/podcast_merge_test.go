@@ -71,9 +71,10 @@ func TestFeedMergeTargetWinsAndMovesOnlyItsOwnSubscribers(t *testing.T) {
 	if move, err := f.s.MoveFeed(ctx, old.ID, newFeedURL); move != FeedMerged || err != nil {
 		t.Fatalf("move into another catalog feed: %v %v", move, err)
 	}
-	// The old row is merged into the target and keeps its episodes under
-	// the target's key; the old key is an alias of the target.
-	if got, _ := f.s.GetFeedByID(ctx, old.ID); got.MergedInto == nil || *got.MergedInto != target.ID || got.FeedKey != newFeedKey {
+	// The old row is merged into the target and keeps its own key and
+	// episodes, which never join the target's catalog (B4); the old key is
+	// an alias of the target.
+	if got, _ := f.s.GetFeedByID(ctx, old.ID); got.MergedInto == nil || *got.MergedInto != target.ID || got.FeedKey != oldFeedKey {
 		t.Fatalf("merged row: %+v", got)
 	}
 	if got, _ := f.s.GetFeedByKey(ctx, oldFeedKey); got == nil || got.ID != target.ID {
@@ -108,13 +109,13 @@ func TestFeedMergeTargetWinsAndMovesOnlyItsOwnSubscribers(t *testing.T) {
 	if !hasAlias(out.Aliases, model.PodcastKeyKindFeed, oldFeedKey, newFeedKey) {
 		t.Fatalf("alias not pulled: %+v", out.Aliases)
 	}
-	// The old episodes are part of the target's catalog for resolution.
+	// Only the target's own episodes form its catalog.
 	tx, err := f.s.db.BeginTx(ctx, nil)
 	f.must(err)
 	known, err := loadKnownEpisodesByKey(ctx, tx, newFeedKey)
 	f.must(err)
 	_ = tx.Rollback()
-	if len(known) != 2 {
+	if len(known) != 1 {
 		t.Fatalf("known episodes after the merge: %+v", known)
 	}
 }
@@ -146,37 +147,32 @@ func TestFeedMergeMergesEpisodesTwoKeysDenote(t *testing.T) {
 	if move, err := f.s.MoveFeed(ctx, old.ID, newFeedURL); move != FeedMerged || err != nil {
 		t.Fatalf("merge: %v %v", move, err)
 	}
-	// The older catalog entry (the old feed's row) wins: the new row takes
-	// guid:old and guid:new becomes its alias.
-	if got, _ := f.s.GetEpisodeByID(ctx, newIDs["new"]); got.EpisodeKey != "guid:old" {
-		t.Fatalf("newer episode row: %+v", got)
+	// The old feed's row keeps its own episode (it never joins the target's
+	// catalog, B4); the target's alias guid:old → guid:new resolves state
+	// users kept under the old key.
+	if got, _ := f.s.GetEpisodeByID(ctx, newIDs["new"]); got.EpisodeKey != "guid:new" {
+		t.Fatalf("target episode row: %+v", got)
 	}
-	if got, _ := f.s.GetEpisodeByID(ctx, oldIDs["old"]); got.EpisodeKey != "guid:old" {
-		t.Fatalf("older episode row: %+v", got)
+	if got, _ := f.s.GetEpisodeByID(ctx, oldIDs["old"]); got == nil || got.EpisodeKey != "guid:old" {
+		t.Fatalf("merged row's episode: %+v", got)
 	}
-	if n := f.rowCount(`SELECT COUNT(*) FROM podcast_episode_aliases WHERE feed_key = ? AND alias_key = 'guid:new' AND episode_key = 'guid:old'`, newFeedKey); n != 1 {
-		t.Fatal("guid:new is no alias of guid:old")
-	}
-	if n := f.rowCount(`SELECT COUNT(*) FROM podcast_episode_aliases WHERE alias_key = 'guid:old'`); n != 0 {
-		t.Fatal("the winning key is still an alias")
-	}
-	if r, _ := f.state(f.alice, newFeedKey, "guid:old"); r.position != 30 || !r.completed || r.completionSource != "auto" {
+	if r, _ := f.state(f.alice, newFeedKey, "guid:new"); r.position != 30 || !r.completed || r.completionSource != "auto" {
 		t.Fatalf("alice's merged episode: %+v", r)
 	}
-	if r, _ := f.state(f.bob, newFeedKey, "guid:old"); r.position != 5 {
-		t.Fatalf("bob's state did not follow its episode: %+v", r)
+	if r, _ := f.state(f.bob, newFeedKey, "guid:new"); r.position != 5 {
+		t.Fatalf("bob's state changed: %+v", r)
 	}
-	if n := f.rowCount(`SELECT COUNT(*) FROM podcast_episode_state WHERE episode_key = 'guid:new'`); n != 0 {
-		t.Fatal("state left under the losing episode key")
+	if n := f.rowCount(`SELECT COUNT(*) FROM podcast_episode_state WHERE episode_key = 'guid:old'`); n != 0 {
+		t.Fatal("state left under the aliased episode key")
 	}
-	// The server copy now projects the merged registers.
+	// The server copy projects the merged registers.
 	if m := f.mirror(f.alice, mediaID); m == nil || m.PositionSeconds != 30 || !m.Finished {
 		t.Fatalf("alice's mirror: %+v", m)
 	}
-	// A client still holding guid:new resolves to guid:old.
-	out := f.episodes(f.alice, posItem("a4", newFeedKey, "guid:new", 40, 80))
-	if len(out.Resolved) != 1 || out.Resolved[0].To != "guid:old" {
-		t.Fatalf("resolution of the losing key: %+v", out.Resolved)
+	// A client still holding guid:old resolves to guid:new.
+	out := f.episodes(f.alice, posItem("a4", newFeedKey, "guid:old", 40, 80))
+	if len(out.Resolved) != 1 || out.Resolved[0].To != "guid:new" {
+		t.Fatalf("resolution of the aliased key: %+v", out.Resolved)
 	}
 }
 
@@ -498,4 +494,57 @@ WHERE feed_key = ? AND alias_key = 'guid:extra' AND episode_key = 'guid:a'`, new
 	if n := f.rowCount(`SELECT COUNT(*) FROM podcast_episode_state WHERE episode_key = 'guid:b'`); n != 0 {
 		t.Fatal("incoming alias edit recreated the losing history")
 	}
+}
+
+// B4: a feed whose document redirects (itunes:new-feed-url) into another
+// catalog feed must not inject its episodes into that feed's subscribers'
+// lists, nor pull strangers' state-only subscriptions into itself.
+func TestFeedRedirectCannotInjectEpisodesIntoOtherUsersFeeds(t *testing.T) {
+	list := func(f *syncFixture, user int64) []string {
+		t.Helper()
+		views, err := f.s.ListSubscribedEpisodes(context.Background(), user, PodcastEpisodeQuery{Filter: model.PodcastFilterAll, Limit: 50})
+		f.must(err)
+		var keys []string
+		for _, v := range views {
+			keys = append(keys, v.EpisodeKey)
+		}
+		return keys
+	}
+	t.Run("into a catalog feed", func(t *testing.T) {
+		f := newSyncFixture(t)
+		ctx := context.Background()
+		setID := f.podcastSet()
+		evil, _ := f.catalogFeed(setID, oldFeedURL, "evil-1", "evil-2")
+		f.catalogFeed(setID, newFeedURL, "real")
+		f.sync(f.alice, 0, 0, edit("a1", oldFeedKey, true, 10))
+		f.sync(f.bob, 0, 0, edit("b1", newFeedKey, true, 10))
+		before := list(f, f.bob)
+		if move, err := f.s.MoveFeed(ctx, evil.ID, newFeedURL); move != FeedMerged || err != nil {
+			t.Fatalf("move: %v %v", move, err)
+		}
+		if after := list(f, f.bob); len(after) != 1 || len(before) != 1 || after[0] != "guid:real" {
+			t.Fatalf("bob's list %v → %v", before, after)
+		}
+	})
+	t.Run("into a state-only key", func(t *testing.T) {
+		f := newSyncFixture(t)
+		ctx := context.Background()
+		setID := f.podcastSet()
+		evil, _ := f.catalogFeed(setID, oldFeedURL, "evil-1")
+		f.sync(f.alice, 0, 0, edit("a1", oldFeedKey, true, 10))
+		f.must(execSQL(f, `INSERT INTO podcast_subscriptions (user_id, feed_key, subscribed, subscription_ms, change_seq)
+VALUES (?, ?, 1, 20, 0)`, f.bob, newFeedKey))
+		if _, err := f.s.MoveFeed(ctx, evil.ID, newFeedURL); err != nil {
+			t.Fatal(err)
+		}
+		if sub := f.sub(f.bob, newFeedKey); sub == nil || !sub.Subscribed {
+			t.Fatalf("bob's subscription moved: %+v", sub)
+		}
+		if f.sub(f.bob, oldFeedKey) != nil {
+			t.Fatal("bob pulled into the redirecting feed")
+		}
+		if got := list(f, f.bob); len(got) != 0 {
+			t.Fatalf("bob sees %v", got)
+		}
+	})
 }

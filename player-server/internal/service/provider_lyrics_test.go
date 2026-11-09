@@ -83,7 +83,7 @@ func TestProviderLyricsIdentityMemoAndCancellation(t *testing.T) {
 	media := &model.Media{AbsPath: path, Music: &model.MusicMetadata{Title: "Song", Artist: "Artist"}}
 	identity := func() string {
 		t.Helper()
-		value, err := p.contentIdentity(context.Background(), root, media)
+		value, err := p.contentIdentity(context.Background(), root, media, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -104,13 +104,41 @@ func TestProviderLyricsIdentityMemoAndCancellation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := p.contentIdentity(ctx, root, &model.Media{AbsPath: path}); err == nil {
+	if _, err := p.contentIdentity(ctx, root, &model.Media{AbsPath: path}, true); err == nil {
 		t.Fatal("ignored cancellation")
 	}
 	if err := os.Truncate(path, 512*1024*1024+1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.contentIdentity(context.Background(), root, media); err == nil {
+	if _, err := p.contentIdentity(context.Background(), root, media, true); err == nil {
 		t.Fatal("unbounded source hashing")
+	}
+}
+
+type storedLyricFixture struct{ lyricStoreFixture }
+
+func (storedLyricFixture) HasProviderLyrics(context.Context, int64, int64) (bool, error) {
+	return true, nil
+}
+func (storedLyricFixture) LoadProviderLyrics(context.Context, int64, int64, string) ([]byte, error) {
+	return []byte(`{"synced":false,"lines":[{"text":"saved"}]}`), nil
+}
+
+// D2: reading saved provider lyrics does not wait for (or fail on) another
+// user's fetch holding the gate, once the identity is known.
+func TestProviderLyrics_SavedLyricsServedWhileFetchRuns(t *testing.T) {
+	f := newTwoLibraryFixture(t)
+	ctx := context.Background()
+	id := musicMedia(f, t, f.rootA, f.setA, "song.mp3")
+	p := NewProviderLyrics("https://provider.test/lookup", storedLyricFixture{})
+	svc := NewMediaService(f.store, newMockClock(), f.rootA, nil, nil).WithLyricsProvider(p)
+	if got, err := svc.GetLyrics(ctx, id, f.admin); err != nil || got.ProviderState != "ready" {
+		t.Fatalf("first read: %+v %v", got, err)
+	}
+	p.gate <- struct{}{} // another user's fetch is running
+	defer func() { <-p.gate }()
+	got, err := svc.GetLyrics(ctx, id, f.admin)
+	if err != nil || got.ProviderState != "ready" || len(got.Lines) != 1 || got.Lines[0].Text != "saved" {
+		t.Fatalf("read during a fetch: %+v %v", got, err)
 	}
 }

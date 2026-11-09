@@ -188,7 +188,7 @@ func Test_readJSON_nilBody(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Body = nil
 	var dst map[string]any
-	if err := readJSON(req, &dst); err == nil {
+	if err := readJSON(httptest.NewRecorder(), req, &dst); err == nil {
 		t.Fatal("expected error for nil body")
 	}
 }

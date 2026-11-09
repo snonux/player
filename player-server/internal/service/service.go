@@ -29,6 +29,10 @@ func (e *apiError) Error() string { return e.msg }
 // HTTPStatus returns the HTTP status code this sentinel should map to.
 func (e *apiError) HTTPStatus() int { return e.status }
 
+// badRequestError is a 400 error whose message is shown to the client as
+// written (a full sentence, unlike a Go error string).
+func badRequestError(msg string) error { return &apiError{msg: msg, status: 400} }
+
 // Sentinel errors returned by the service layer. Each one carries the HTTP
 // status that the API layer should emit, so handleError stays open for
 // extension (new sentinel) but closed for modification.

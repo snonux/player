@@ -80,7 +80,10 @@ func (s *Server) handleInvokePlugin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Capability string `json:"capability"`
 	}
-	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Capability) == "" {
+	if err := readJSON(w, r, &req); err != nil || strings.TrimSpace(req.Capability) == "" {
+		if bodyTooLarge(w, err) {
+			return
+		}
 		badRequest(w, "capability is required")
 		return
 	}

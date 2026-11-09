@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -345,82 +346,145 @@ func enableForeignKeys(db *sql.DB) error {
 	return nil
 }
 
-// initializeSchema creates the database schema for a fresh database and applies pending migrations.
+// schemaStep is one named step of the schema bootstrap. A step whose
+// everyStart is false is a migration: it runs once and is recorded in
+// schema_migrations. Steps that create missing tables or indexes, purge by
+// retention or repair invariants run on every start.
+//
+// Databases from before schema_migrations existed have applied some
+// migrations without a record. Every migration therefore keeps its own
+// guard (a column probe, CREATE ... IF NOT EXISTS, a "duplicate column"
+// error) and is recorded the first time it runs here, applied or not.
+// Downgrades are not supported: several migrations rebuild tables one way.
+type schemaStep struct {
+	name       string
+	run        func(*sql.DB) error
+	everyStart bool
+}
+
+// schemaSteps is the one ordered list the bootstrap runs. Order matters
+// where noted; append new migrations at the end of their group, and give
+// every entry a new, never reused name.
+var schemaSteps = func() []schemaStep {
+	steps := []schemaStep{
+		{name: "tables", run: func(db *sql.DB) error { return execSchema(db, "tables", tablesSchema) }, everyStart: true},
+	}
+	for _, m := range migrations {
+		steps = append(steps, schemaStep{name: "sql:" + m.name, run: m.apply})
+	}
+	return append(steps,
+		schemaStep{name: "collection_shares", run: migrateCollectionShares},
+		schemaStep{name: "playback_progress_accumulated", run: migratePlaybackProgress},
+		schemaStep{name: "playback_accumulator", run: migratePlaybackAccumulator},
+		// Before the indexes: the episode rebuild drops the old table's
+		// indexes, which indexesSchema recreates on the new one. The deletion
+		// columns are needed before and after the podcast sync rebuild.
+		schemaStep{name: "podcast_episode_deletion_before_sync", run: migratePodcastEpisodeDeletion},
+		schemaStep{name: "podcast_sync", run: migratePodcastSync},
+		schemaStep{name: "podcast_episode_deletion", run: migratePodcastEpisodeDeletion},
+		schemaStep{name: "podcast_retention", run: migratePodcastRetention},
+		schemaStep{name: "podcast_episode_artwork", run: migratePodcastEpisodeArtwork},
+		schemaStep{name: "indexes", run: createIndexes, everyStart: true},
+		schemaStep{name: "podcast_catalog_creations", run: migratePodcastCatalogCreations},
+		schemaStep{name: "music_libraries", run: migrateMusicLibraries},
+		schemaStep{name: "music_identity_conflicts", run: migrateMusicIdentityConflicts},
+		// The sets rebuild of the music library migration drops the sets
+		// indexes; recreate them in the same start.
+		schemaStep{name: "indexes_after_rebuilds", run: createIndexes, everyStart: true},
+		// Needs the final podcast tables and the episode state index.
+		schemaStep{name: "repair_podcast_identities", run: repairPodcastIdentities, everyStart: true},
+		schemaStep{name: "saved_queues", run: initializeSavedQueues},
+		// Creates its tables and applies the history retention.
+		schemaStep{name: "music_history", run: initializeMusicHistory, everyStart: true},
+		// Last, when every table has its final shape.
+		schemaStep{name: "normalize_stored_times", run: normalizeStoredTimes},
+		schemaStep{name: "bookmark_sync_times", run: backfillBookmarkSyncTimes, everyStart: true},
+		schemaStep{name: "remove_orphan_rows", run: removeOrphanRows, everyStart: true},
+	)
+}()
+
+func createIndexes(db *sql.DB) error { return execSchema(db, "indexes", indexesSchema) }
+
+// initializeSchema creates the database schema for a fresh database and
+// applies pending migrations (schemaSteps).
 func initializeSchema(db *sql.DB) error {
 	if err := enableForeignKeys(db); err != nil {
 		return err
 	}
-	if err := execSchema(db, "tables", tablesSchema); err != nil {
+	return runSchemaSteps(db, schemaSteps)
+}
+
+// runSchemaSteps runs steps in order: every-start steps always, migrations
+// only when schema_migrations has no record of them, recording each after
+// it succeeded.
+func runSchemaSteps(db *sql.DB, steps []schemaStep) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+ name TEXT PRIMARY KEY,
+ applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {
+		return fmt.Errorf("create schema_migrations: %w", err)
+	}
+	applied := map[string]bool{}
+	rows, err := db.Query(`SELECT name FROM schema_migrations`)
+	if err != nil {
+		return fmt.Errorf("read schema_migrations: %w", err)
+	}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		applied[name] = true
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return err
 	}
-	if err := runMigrations(db); err != nil {
-		return fmt.Errorf("apply migrations: %w", err)
-	}
-	if err := migrateCollectionShares(db); err != nil {
-		return fmt.Errorf("migrate collection shares: %w", err)
-	}
-	if err := migratePlaybackProgress(db); err != nil {
-		return fmt.Errorf("migrate playback progress: %w", err)
-	}
-	if err := migratePlaybackAccumulator(db); err != nil {
-		return fmt.Errorf("migrate playback accumulator: %w", err)
-	}
-	// Before the indexes: the episode rebuild drops the old table's
-	// indexes, which indexesSchema recreates on the new one.
-	if err := migratePodcastEpisodeDeletion(db); err != nil {
-		return fmt.Errorf("prepare podcast deletion: %w", err)
-	}
-	if err := migratePodcastSync(db); err != nil {
-		return fmt.Errorf("migrate podcast sync: %w", err)
-	}
-	if err := migratePodcastEpisodeDeletion(db); err != nil {
-		return fmt.Errorf("migrate podcast deletion: %w", err)
-	}
-	if err := migratePodcastRetention(db); err != nil {
-		return fmt.Errorf("migrate podcast retention: %w", err)
-	}
-	if err := migratePodcastEpisodeArtwork(db); err != nil {
-		return fmt.Errorf("migrate podcast artwork: %w", err)
-	}
-	if err := execSchema(db, "indexes", indexesSchema); err != nil {
-		return err
-	}
-	if err := migratePodcastCatalogCreations(db); err != nil {
-		return fmt.Errorf("migrate podcast catalog quota: %w", err)
-	}
-	if err := migrateMusicLibraries(db); err != nil {
-		return fmt.Errorf("migrate music libraries: %w", err)
-	}
-	if err := migrateMusicIdentityConflicts(db); err != nil {
-		return fmt.Errorf("migrate music identity conflicts: %w", err)
-	}
-	// Needs the final podcast tables and the episode state index.
-	if err := repairPodcastIdentities(db); err != nil {
-		return fmt.Errorf("repair podcast identities: %w", err)
-	}
-	if err := initializeSavedQueues(db); err != nil {
-		return fmt.Errorf("initialize saved queues: %w", err)
-	}
-	if err := initializeMusicHistory(db); err != nil {
-		return err
-	}
-	// Last, when every table has its final shape.
-	if err := normalizeStoredTimes(db); err != nil {
-		return fmt.Errorf("normalize stored times: %w", err)
-	}
-	if err := backfillBookmarkSyncTimes(db); err != nil {
-		return err
-	}
-	if err := removeOrphanRows(db); err != nil {
-		return fmt.Errorf("remove orphan rows: %w", err)
+	seen := map[string]bool{}
+	for _, step := range steps {
+		if seen[step.name] {
+			return fmt.Errorf("schema step %q listed twice", step.name)
+		}
+		seen[step.name] = true
+		if !step.everyStart && applied[step.name] {
+			continue
+		}
+		if err := step.run(db); err != nil {
+			return fmt.Errorf("schema step %s: %w", step.name, err)
+		}
+		if step.everyStart {
+			continue
+		}
+		if _, err := db.Exec(`INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)`, step.name); err != nil {
+			return fmt.Errorf("record schema step %s: %w", step.name, err)
+		}
 	}
 	return nil
 }
 
-// migration is a idempotent schema change applied after the base schema.
+// migration is a single-statement schema change applied after the base
+// schema, inside a transaction. One statement per entry: a multi-statement
+// migration could stop half applied, and its guard would then skip the rest.
 type migration struct {
 	name string
 	sql  string
+}
+
+// apply runs the migration in a transaction. A column or table that
+// already exists means the change was applied before schema_migrations
+// recorded it.
+func (m migration) apply(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(m.sql); err != nil {
+		if isDuplicateColumnError(err) {
+			return nil
+		}
+		return fmt.Errorf("migration %q: %w", m.name, err)
+	}
+	return tx.Commit()
 }
 
 var migrations = []migration{
@@ -459,12 +523,15 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 		name: "add_sets_is_podcast",
 		sql:  `ALTER TABLE sets ADD COLUMN is_podcast INTEGER NOT NULL DEFAULT 0;`,
 	},
+	// The two backoff columns were once one two-statement migration, which a
+	// crash could leave half applied; one statement each heals that case.
 	{
-		name: "add_podcast_feed_backoff_columns",
-		sql: `
-ALTER TABLE podcast_feeds ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE podcast_feeds ADD COLUMN next_check_at DATETIME;
-`,
+		name: "add_podcast_feed_backoff_failures",
+		sql:  `ALTER TABLE podcast_feeds ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0;`,
+	},
+	{
+		name: "add_podcast_feed_backoff_next_check",
+		sql:  `ALTER TABLE podcast_feeds ADD COLUMN next_check_at DATETIME;`,
 	},
 	{
 		// Adds the "finished" flag used by GetProgress / SetProgress on the
@@ -478,8 +545,7 @@ ALTER TABLE podcast_feeds ADD COLUMN next_check_at DATETIME;
 	{
 		// Heals existing databases that ingested macOS AppleDouble sidecars
 		// (file names starting with "._") before the scanner learned to skip
-		// them. Idempotent: a re-run on a clean database simply deletes zero
-		// rows. The underscore in LIKE is a wildcard matching any single
+		// them. The underscore in LIKE is a wildcard matching any single
 		// character, so we escape it via ESCAPE '\' to anchor the literal
 		// "._" prefix and avoid sweeping up unrelated dot-prefixed names
 		// such as ".gitignore" or ".hidden.mp3".
@@ -488,15 +554,12 @@ ALTER TABLE podcast_feeds ADD COLUMN next_check_at DATETIME;
 	},
 }
 
-// runMigrations applies each migration in order, skipping ones whose SQL
-// has already been partially applied (e.g. column already exists).
+// runMigrations applies every single-statement migration without
+// recording it (test fixtures that build older database shapes use it).
 func runMigrations(db *sql.DB) error {
 	for _, m := range migrations {
-		if _, err := db.Exec(m.sql); err != nil {
-			if isDuplicateColumnError(err) {
-				continue
-			}
-			return fmt.Errorf("migration %q: %w", m.name, err)
+		if err := m.apply(db); err != nil {
+			return err
 		}
 	}
 	return nil

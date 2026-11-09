@@ -10,7 +10,7 @@ The project is a **self-hosted media player** designed for simplicity (KISS): mi
 
 ### Backend
 
-- **Language / Runtime:** Go 1.23
+- **Language / Runtime:** Go 1.25 (see `go.mod`)
 - **HTTP Server:** `net/http` stdlib only; `http.ServeMux` with pattern matching
 - **Database:** SQLite via `modernc.org/sqlite`
 - **Media Processing:** `ffmpeg` / `ffprobe` installed in runtime container
@@ -20,7 +20,18 @@ The project is a **self-hosted media player** designed for simplicity (KISS): mi
 
 | Layer | Package | Role |
 |-------|---------|------|
-| Entrypoint | `cmd/player` | Flags, config, dependency wiring, server start |
+| Entrypoint | `cmd/player` | Flags, config, starts `internal/app` |
+| Wiring | `internal/app` | Builds every dependency, starts and stops background workers (GC, scans, podcast checker, transcodes, jukebox, plugins) before the database closes; the only importer of `api` |
+| HTTP | `internal/api` | Routes, middleware (sessions, CSRF, CORS), request decoding and response encoding; calls services |
+| Business logic | `internal/service` | Authorization and use cases; no mutable package-level state |
+| Persistence | `internal/repository` | SQLite schema, migrations and queries; imports only `clock`, `model` and `podcast` |
+| Domain | `internal/model` | Plain data types shared by every layer; imports nothing from the project |
+| Media pipeline | `internal/scanner`, `probe`, `ffsafe`, `thumb`, `transcode` | Library scanning, ffprobe/ffmpeg (always through `ffsafe`), thumbnails, compatibility renditions |
+| Integrations | `internal/podcast`, `radio`, `renderer`, `jukebox`, `plugin`, `subsonic`, `auth` | Feed parsing, web radio, DLNA renderers, mpv, WASM plugins, Subsonic protocol, password/session/proxy auth |
+| Leaf helpers | `internal/clock`, `mediatype`, `fileversion`, `setassign`, `web` | Small dependency-free helpers and embedded web assets |
+
+Dependencies point downwards only: `app` → `api` → `service` → `repository` → `model`. Never import `api` or `app` from a lower layer, and keep `repository` free of `service`. `go list -deps` must show no cycles.
+
 
 | `mage build` | Compile the binary (`go build -o player ./cmd/player`) |
 | `mage test` | Run `go test -race ./...` and the web JS unit tests (`mage webTest`) |
@@ -195,6 +206,16 @@ This triggers `FSScanner.Scan()`, which:
 5. Inserts new records into the `media` table
 6. Regenerates thumbnails of indexed media that are still stored under an
    older naming scheme
+7. Soft-deletes rows whose file is gone, and the rows of a set whose whole
+   directory is gone (deleted or renamed). The latter happens only when the
+   library root was read and holds at least one set: an empty or unreadable
+   root (an unmounted volume) retires nothing, and the automatic quick
+   inventory (`ScanInventory`) never retires rows. A file that vanishes
+   while it is being probed is skipped, not an error.
+
+Every set directory is resolved against the root of the set's own music
+library (`service.setLibraryRoot` / `setDirectoryIn`), never `MEDIA_ROOT`:
+two libraries may hold sets with the same `root_path`.
 
 Generated thumbnails live in `.thumbnails` next to the source file, named
 `<full source name>.jpg` (`holiday.mp4` -> `.thumbnails/holiday.mp4.jpg`),
@@ -237,16 +258,15 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 | `PORT` | `8080` | 0–65535 | HTTP listen port (0 = ephemeral, used in tests) |
 | `MEDIA_ROOT` | `./media` | — | Root path for media set directories |
 | `DB_PATH` | `data.db` | — | SQLite database file path |
-| `MAX_UPLOAD_SIZE_MB` | `100` | ≥ 1 | Max upload size per file (MB) |
+| `MAX_UPLOAD_SIZE_MB` | `10240` | ≥ 1 | Max upload size per file (MB); an upload may take as long as it needs (no read timeout) |
 | `SESSION_TIMEOUT_HOURS` | `24` | ≥ 1 | Cookie / session expiry |
 | `SCAN_WATCH_SECONDS` | `30` | 0 or 10–86400 | Poll source names, sizes and modification times; 0 disables polling. Quick inventory also runs once at startup |
 | `SCAN_INTERVAL_MINUTES` | `0` | 0–10080 | Additional scheduled quick inventory interval; 0 disables scheduling |
 | `GC_INTERVAL_MINUTES` | `30` | ≥ 1 | Garbage collector tick interval |
 | `SHARE_DEFAULT_EXPIRY_DAYS` | `7` | ≥ 1 | Default share link lifetime |
-| `MEDIA_PAGE_SIZE` | `100` | ≥ 1 | Items displayed per thumbnail grid page |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` | Log verbosity |
 | `SECURE_COOKIES` | `true` | `true` / `false` | Set `Secure` flag on session cookies and share viewing cookies; set to `false` for plain-HTTP local deployments |
-| `PLAYER_CORS_ORIGINS` | unset | comma-separated origins | Allowed browser origins for credentialed CORS requests; unset/empty emits no CORS headers |
+| `PLAYER_CORS_ORIGINS` | unset | comma-separated origins | Allowed browser origins for credentialed CORS requests; unset/empty emits no CORS headers. Other origins (and other sites) cannot make state-changing requests with the session cookie or proxy identity: they get `403` |
 | `TRANSCODE_CACHE_DIR` | `<DB_PATH>.transcode-cache` | writable directory outside `MEDIA_ROOT` | Cache for compatibility renditions (H.264/AAC) of legacy media; created on first use |
 | `TRANSCODE_CACHE_MAX_MB` | `4096` | ≥ 1 | Size the transcode cache is pruned back to (least recently used first); also the largest single rendition |
 | `TRANSCODE_MAX_JOBS` | `1` | ≥ 1 | Parallel ffmpeg transcodes; each needs about 400 MB of memory at 1080p |
@@ -254,6 +274,17 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 | `RADIO_BROWSER_URL` | `https://all.api.radio-browser.info` | http(s) URL | Radio Browser API that web radio searches |
 | `RADIO_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let the radio relay connect to loopback/private addresses (stations on your own network); off by default because station entries come from a public directory |
 | `PODCAST_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let podcast feed, cover and episode downloads connect to loopback/private addresses (feeds on your own network); off by default because feeds are third-party documents whose URLs must not reach services on the server's network |
+| `PODCAST_CHECK_INTERVAL_MINUTES` | `60` | ≥ 1 | Podcast feed refresh interval; the first background check runs one minute after start |
+| `MEDIA_PAGE_SIZE` | `100` | ≥ 1 | Items displayed per thumbnail grid page |
+| `PROXY_AUTH_TRUSTED_SOURCES` | unset | comma-separated IPs/CIDRs, `@` for a UNIX socket peer | Enables reverse-proxy authentication: only requests whose immediate peer is listed may assert a user through `PROXY_AUTH_USER_HEADER`. Unset disables it (the other two `PROXY_AUTH_*` settings then must be unset too) |
+| `PROXY_AUTH_USER_HEADER` | `Remote-User` | header name; requires `PROXY_AUTH_TRUSTED_SOURCES` | Header carrying the username of an existing account from a trusted proxy |
+| `PROXY_AUTH_LOGOUT_URL` | unset | URL; requires `PROXY_AUTH_TRUSTED_SOURCES` | Where the web UI sends the browser after logout when the proxy owns the login |
+| `SUBSONIC_ENABLED` | `false` | `true` / `false` | Serve the Subsonic/OpenSubsonic API under `/rest/` |
+| `JUKEBOX_ENABLED` | `false` | `true` / `false` | Server-side jukebox playback through mpv (admin-only controls) |
+| `JUKEBOX_MPV_PATH` | `mpv` | executable name or path | mpv binary the jukebox starts |
+| `PLUGIN_DIR` | unset | directory | Directory of WASM plugins; unset disables plugins |
+| `LYRICS_PROVIDER_URL` | unset | http(s) URL without credentials or fragment | Optional external lyrics provider; unset disables provider lyrics |
+| `MUSIC_ENRICHMENT_URL` | unset | URL | Optional music metadata enrichment service; unset disables enrichment |
 
 **Important:** The K8s `Deployment` overrides `DB_PATH` to `/data/media.db` and `MEDIA_ROOT` to `/media` so the PVC mounts are used. Do not rely on the local defaults in a container.
 
@@ -275,7 +306,7 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 - After switching the setting on, run one admin **Rescan**: thumbnails beside the media are generated anew in the cache and the old files deleted where the set is writable (an emptied `.thumbnails` directory may stay behind; in a read-only set the old file stays and one warning per item is logged). A deleted or emptied cache directory heals the same way.
 - After changing the directory or switching the setting off, run a **Rescan** as well. Thumbnails in the former directory are not shown any more (only `MEDIA_ROOT` and the current cache are ever served); the rescan generates new ones at the current place. The former directory is never touched by the server: delete it yourself.
 - Use an absolute path. Stored thumbnail paths are absolute, so a relative setting only keeps working while the server is started from the same directory.
-- Generated set and folder covers ("regenerate cover") use `<cache>/<set>/<folder>/.cover.jpg` when this setting is configured, so they work on read-only sets too. Existing source artwork (`cover.jpg`, `folder.jpg`, etc.) remains readable. Regenerate a cover after switching the cache setting; the server only reads generated covers from the current location and leaves older copies alone.
+- Generated set and folder covers ("regenerate cover") use `<cache>/<set>/<folder>/.cover.jpg` when this setting is configured, so they work on read-only sets too. The cache mirrors only the default library (`MEDIA_ROOT`); covers of sets in other music libraries are generated beside the set's files, since two libraries may hold sets of the same name. Existing source artwork (`cover.jpg`, `folder.jpg`, etc.) remains readable. Regenerate a cover after switching the cache setting; the server only reads generated covers from the current location and leaves older copies alone.
 - Upload and soft-delete require a writable source directory and return HTTP `403` (`set is read-only`) when it refuses writes. Metadata edits and restore remain available. For trash already present before a set became read-only, GC purges only the database row on permission/read-only errors and keeps the source file; a later rescan can import that file again. Other unlink failures keep the row for retry.
 
 ---
@@ -299,7 +330,7 @@ Episodes are stored in `podcast_episodes` and rendered in the browse grid under 
 
 ### Background Feed Checker
 
-A background goroutine (`CheckFeeds`) refreshes feeds every hour (configurable via `PODCAST_CHECK_INTERVAL_MINUTES`). It uses conditional GET (`If-None-Match`, `If-Modified-Since`) to avoid re-downloading unchanged feeds.
+`service.PodcastCheckWorker` runs `CheckFeeds` one minute after start and then every hour (configurable via `PODCAST_CHECK_INTERVAL_MINUTES`). It is part of the worker lifecycle: `RunWithSignal` stops it (cancelling in-flight fetches and waiting for them) before the database closes. One run fetches at most four feeds at once and skips a feed a manual refresh is fetching. It uses conditional GET (`If-None-Match`, `If-Modified-Since`) to avoid re-downloading unchanged feeds.
 
 ### New Endpoints
 
@@ -404,6 +435,7 @@ A share's `max_uses` counts **viewings**, not HTTP requests. Browsers and player
 - Do not introduce package-level mutable state; inject via constructors.
 - All repository access goes through the `repository.Store` interface.
 - SQLite settings that must hold for every query (foreign keys, busy timeout, UTC timestamps) are DSN options built by `repository.connectionDSN`, never a `PRAGMA` run once with `db.Exec`: `database/sql` replaces a pooled connection after a driver error or a cancelled query, and the replacement would not have it. Foreign keys silently switching off is how deleted users once kept their sessions. `DeleteUser` also removes a user's rows explicitly, session and API-token lookups join `users`, and `removeOrphanRows` cleans up at startup; keep all three when adding a table that references `users` or `media` (list it in `repository/orphans.go`).
+- **Schema changes are ordered, named steps** in `schemaSteps` (`internal/repository/schema.go`). A migration (`everyStart: false`) runs once and is recorded in the `schema_migrations` table; add new ones at the end with a new, never-reused name, and keep them idempotent, because databases from before `schema_migrations` existed re-run every migration once. Steps that create missing tables or indexes, or repair data, set `everyStart: true`. `TestReleaseDatabasesUpgradeToFreshSchema` upgrades databases written by past releases (`testdata/releases/*.db.gz`) and requires the result to match a fresh schema.
 - Frontend modules are plain ES modules — no transpilation step. Keep JS vanilla.
 - CSS changes must use `var(--*)` tokens from `theme.css`.
 - If you add new env vars, update both `internal/config.go` and this document.
@@ -423,6 +455,14 @@ cookie-only routes — doing so would create duplicate auth logic and silently
 break the unified contract. If you need to handle a new auth mechanism, extend
 `authenticate()` inside `Middleware` and keep the single `RequireSession`
 wrapper as the sole gate for session-required routes.
+
+`RequireSession` also refuses (`403`) state-changing requests a browser
+marks as cross-origin or same-site (`Sec-Fetch-Site`, else `Origin` against
+the host) unless they carry a Bearer token or come from an origin in
+`PLAYER_CORS_ORIGINS` (`http.CrossOriginProtection`). Native clients send
+neither header and are unaffected. JSON bodies are read with `readJSON`
+(64 KiB) or `readJSONLimit`; `bodyTooLarge` answers an oversized body with
+`413`. Unknown `/api` paths answer JSON `404`/`405`, never the app shell.
 
 ## Route Registration — `handleBoth` Convention
 
