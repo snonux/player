@@ -8,7 +8,7 @@ thumbnails and transcodes share that instance's data volume. The media volume
 starts with empty writable sets `trash-tests` and `other-tests`.
 
 `instance.yaml` pins the app image to the approved production release by tag
-and digest (currently v0.19.0, `player:4cf7f5d`, the same image as the
+and digest (currently v0.20.0, `player:021e6fe`, the same image as the
 production Player and xplayer). It is not a regression baseline: when
 production moves to a new release, update the pin here, re-apply, and rerun
 the browser suite below. Deploy or update it with:
