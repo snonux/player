@@ -11,6 +11,7 @@ import '../services/music_sequence.dart';
 import '../services/playback_request.dart';
 import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
+import 'resume_podcast_bar.dart';
 
 final _currentItem = StreamProvider.autoDispose<MediaItem?>(
     (ref) => ref.watch(audioHandlerProvider).mediaItem);
@@ -66,18 +67,21 @@ class MusicMiniPlayer extends ConsumerWidget {
     }
     ref.watch(_currentMusicState);
     final item = ref.watch(_currentItem).valueOrNull;
-    if (item == null) return const SizedBox.shrink();
+    // Nothing playing (such as right after app start): offer the podcast
+    // episode in progress in the same slot.
+    if (item == null) return const ResumePodcastBar();
     final handler = ref.read(audioHandlerProvider);
     final state = handler.musicState;
     final lease = handler.sequenceLease;
     final podcast = handler.currentMetadataRequest;
     if (state == null &&
         podcast is PodcastPlaybackRequest &&
-        podcast.identity == item.id &&
-        (ref.watch(_processingState).valueOrNull ??
-                handler.playbackState.value.processingState) !=
-            AudioProcessingState.idle) {
-      return _PodcastMiniPlayer(item: item, request: podcast);
+        podcast.identity == item.id) {
+      return (ref.watch(_processingState).valueOrNull ??
+                  handler.playbackState.value.processingState) !=
+              AudioProcessingState.idle
+          ? _PodcastMiniPlayer(item: item, request: podcast)
+          : const ResumePodcastBar();
     }
     if (state == null ||
         lease?.isCurrent != true ||

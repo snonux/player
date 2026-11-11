@@ -110,7 +110,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Episode 0'), findsNothing);
     expect(repository.queries.last, (null, 'uncompleted', 0));
-    expect(find.byType(ChoiceChip), findsNWidgets(3));
+    expect(find.byType(ChoiceChip), findsNWidgets(4));
+    await tester.tap(find.widgetWithText(ChoiceChip, 'In progress'));
+    await tester.pumpAndSettle();
+    expect(repository.queries.last, (null, 'started', 0));
+    expect(find.text('Episode 0'), findsNothing);
+    expect(find.text('Recently played first'), findsOneWidget);
     await tester.tap(find.widgetWithText(ChoiceChip, 'Completed'));
     await tester.pumpAndSettle();
     expect(find.text('Episode 0'), findsOneWidget);

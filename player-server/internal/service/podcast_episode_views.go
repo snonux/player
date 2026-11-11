@@ -81,7 +81,7 @@ func normalizeEpisodeQuery(q repository.PodcastEpisodeQuery) (repository.Podcast
 	switch q.Filter {
 	case "":
 		q.Filter = model.PodcastFilterUncompleted
-	case model.PodcastFilterUncompleted, model.PodcastFilterCompleted, model.PodcastFilterAll:
+	case model.PodcastFilterUncompleted, model.PodcastFilterCompleted, model.PodcastFilterAll, model.PodcastFilterStarted:
 	default:
 		return q, ErrInvalidEpisodeView
 	}
