@@ -73,7 +73,7 @@ jobs:
           fi
           echo "flutter=$(tr -d '[:space:]' < .flutter-version)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: player-server/go.mod
           cache-dependency-path: player-server/go.sum
