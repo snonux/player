@@ -602,3 +602,27 @@ body:has(#player.open.minimized) .main-content { padding-bottom: 4.5rem; }
 /* Right-to-left touch swipe on an episode row asks to delete it. */
 .swipe-delete { touch-action: pan-y; transition: transform .15s ease-out; }
 .swipe-delete.swipe-delete-active { transition: none; outline: 2px solid var(--danger); background: var(--danger-soft); }
+
+/* Continue listening: start-page shortcut back into the podcast in progress. */
+.podcast-resume {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 8px);
+  margin: 0 0 12px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+.podcast-resume[hidden] { display: none; }
+.podcast-resume-icon { font-size: 1.5rem; flex-shrink: 0; }
+.podcast-resume-text { flex: 1; min-width: 0; }
+.podcast-resume-title,
+.podcast-resume-subtitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.podcast-resume-title { font-weight: 600; }
+.podcast-resume .btn,
+.podcast-resume .icon-btn { min-height: 44px; min-width: 44px; flex-shrink: 0; }
+@media (max-width: 600px) {
+  .podcast-resume-icon { display: none; }
+  .podcast-resume-subtitle { white-space: normal; }
+}

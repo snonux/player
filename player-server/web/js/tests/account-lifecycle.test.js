@@ -24,6 +24,8 @@ const mountMusicPresence=host=>{
 const env={state,setAuthenticatedUser:trackedIdentity,closeMusicPresence:null,mountMusicPresence,document:{querySelector:selector=>{assert.equal(selector,'.main-content');return presenceHost;}},loggingOut:false,API:{config:async()=>({user_id:17}),sets:async()=>[],users:async()=>[],logout:async()=>{}},setPlaybackCacheAccount:noop,setListeningProgressAccount:noop,initSongNotifications:noop,setMediaPageSize:noop,showAdmin:noop,renderSets:()=>assert.equal(state.user?.id,17,'identity must exist before library rendering'),initNavigation:()=>({restore:async()=>{}}),isShuffle:noop,setShuffle:noop,syncChromeVirtualSets:noop,restoreQueue:async()=>{},queueState:()=>({}),toast:noop,navigatedDuringStartup:false,initialCollection:'library',openCollection:noop,stopRenderer:async()=>{},clearSongNotifications:noop,releasePlaybackCache:noop,location:{origin:'http://fixture',search:'',hash:''}};
 env.loadMedia=async()=>{};
 env.setPodcastAccount=noop;
+env.mountPodcastResume=noop;
+env.currentMediaId=noop;
 env.initGlobalSyncControls=noop;
 env.toast=(message,kind)=>assert.notEqual(kind,'error',message);
 const startup=source.slice(startupStart,startupEnd),logout=source.slice(logoutBodyStart,logoutEnd);

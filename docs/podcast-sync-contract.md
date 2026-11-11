@@ -566,8 +566,9 @@ carries `feed_key`, `episode_key`, `completed`, `completion_source`,
 `position_seconds`, and `server_copy` (`{"media_id": n}` only when a
 non-deleted media row is linked and the caller may read the podcast set,
 else `null`). Filters: `uncompleted` (default; includes started),
-`completed`, `all`; order newest first by `published_at`, then
-`episode_key` for a stable page order. Exact routes are defined by `0i3` and
+`completed`, `all`, and `started` (uncompleted with a saved position);
+order newest first by `published_at`, then `episode_key` for a stable page
+order. `started` orders the most recently listened (`position_ms`) first. Exact routes are defined by `0i3` and
 documented in `api.md`. `server_copy` exists only in web listings; the sync
 API never returns server media ids.
 

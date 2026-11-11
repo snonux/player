@@ -57,10 +57,10 @@ func TestHandleListSubscribedEpisodes(t *testing.T) {
 		},
 		{
 			name:   "invalid filter",
-			url:    "/api/v1/podcasts/episodes?filter=started",
+			url:    "/api/v1/podcasts/episodes?filter=bogus",
 			err:    service.ErrInvalidEpisodeView,
 			status: http.StatusBadRequest,
-			want:   repository.PodcastEpisodeQuery{Filter: "started"},
+			want:   repository.PodcastEpisodeQuery{Filter: "bogus"},
 		},
 		{
 			name:   "store failure",

@@ -55,6 +55,7 @@ export function rememberEpisodeMedia(index, media) {
 
 const FILTERS = [
   { id: 'uncompleted', label: 'Uncompleted' },
+  { id: 'started', label: 'In progress' },
   { id: 'completed', label: 'Completed' },
   { id: 'all', label: 'All' },
 ];
@@ -68,6 +69,8 @@ let episodeSelection;
 let episodeLayout = 'grid';
 let stateUpdateTimer;
 let sidebarRefreshRevision = 0;
+// Episode to start once the In progress view has rendered (resume shortcut).
+let pendingResume = null;
 
 export function initPodcastViews({ onLoadMedia, playMediaById: playFn, pageSize: size } = {}) {
   loadMediaCallback = onLoadMedia || (() => {});
@@ -114,6 +117,16 @@ export function openPodcastOverview() {
 }
 
 export function openAllPodcastEpisodes() {
+  openPodcastView('');
+}
+
+// Resume shortcut: show In progress, then play the episode from its card so
+// it starts exactly like the card's own Play button (resume position, queue
+// continuation and podcast player chrome included).
+export function resumePodcastEpisode(ep) {
+  if (!ep?.feed_key || !ep?.episode_key) return;
+  pendingResume = { feed_key: ep.feed_key, episode_key: ep.episode_key };
+  state.podcastFilter = 'started';
   openPodcastView('');
 }
 
@@ -274,7 +287,8 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
   const hasNext = episodes.length >= pageSize;
   // Pending deletions remain hidden even when a stale server listing arrives.
   episodes = episodes.filter(ep => !episodeSnapshot(ep).deletion?.deleted);
-  episodes.sort((a, b) => (Date.parse(b.published_at) || 0) - (Date.parse(a.published_at) || 0));
+  // In progress keeps the server's most recently listened order.
+  if (filter !== 'started') episodes.sort((a, b) => (Date.parse(b.published_at) || 0) - (Date.parse(a.published_at) || 0));
   const hasPrev = page > 0;
   const start = episodes.length ? offset + 1 : 0;
   const end = offset + episodes.length;
@@ -375,6 +389,14 @@ export async function renderPodcastVirtualView(grid, { revision, alive, pageSize
   clearSelection();
   updatePodcastSidebarUI();
   updatePendingHint();
+  const resume = pendingResume;
+  pendingResume = null;
+  const target = resume && visibleEpisodes.find(({ ep }) =>
+    ep.feed_key === resume.feed_key && ep.episode_key === resume.episode_key);
+  if (target) {
+    selectByElement(target.card);
+    void playEpisode(target.card, target.ep);
+  } else if (resume) toast('This episode is no longer in progress', 'info');
   return pageInfo;
 }
 
@@ -578,7 +600,7 @@ async function markCompletion(card, ep, completed) {
     ep.completed = result?.completion?.completed ?? ep.completed;
     toast(ep.completed === completed ? (completed ? 'Marked completed' : 'Marked uncompleted') : 'A newer completion change was kept');
     const filter = state.podcastFilter || 'uncompleted';
-    const leaves = (filter === 'uncompleted' && ep.completed) || (filter === 'completed' && !ep.completed);
+    const leaves = (filter !== 'completed' && filter !== 'all' && ep.completed) || (filter === 'completed' && !ep.completed);
     if (leaves) {
       focusAfterRemoval(card);
       card.remove();
@@ -655,7 +677,7 @@ function updateVisibleEpisodeState() {
     ep.position_seconds = snapshot.position?.seconds ?? ep.position_seconds;
     ep.completed = completed;
     const filter = state.podcastFilter || 'uncompleted';
-    if (snapshot.deletion?.deleted || (filter === 'uncompleted' && completed) || (filter === 'completed' && !completed)) {
+    if (snapshot.deletion?.deleted || (filter !== 'completed' && filter !== 'all' && completed) || (filter === 'completed' && !completed)) {
       if (card.contains(document.activeElement) || card.classList.contains('selected')) focusAfterRemoval(card);
       clearEpisodeSlot(card);
       card.remove();

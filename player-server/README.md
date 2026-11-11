@@ -104,6 +104,16 @@ with Show notes. Device podcast playback uses its cached episode description.
 Verify Chrome and Firefox with `npx playwright test -c playwright.podcast-notes.config.ts`
 from `test/e2e-web/`; this runs against a disposable local static server.
 
+## Continue listening
+
+When the app opens and nothing is playing, a **Continue listening** banner at
+the top of the library shows the podcast episode you listened to most recently
+and have not finished, with its podcast and saved position. **Resume** opens
+the **In progress** episode filter (unfinished episodes with a saved position,
+most recently listened first) and continues that episode where it stopped.
+The banner disappears once anything plays; ✕ hides it. The Android app shows
+the same shortcut in its mini-player slot.
+
 ## Podcast episode layouts
 
 Choose **List** or **Grid** above an episode list. Both layouts keep the existing titles,

@@ -88,7 +88,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(repository.queries.last.$1, 'feed:example/feed');
     expect(repository.queries.last.$2, 'uncompleted');
-    expect(find.textContaining('In progress'), findsOneWidget);
+    expect(find.textContaining('In progress ·'), findsOneWidget);
     await tester.tap(find.byTooltip('More episode actions'));
     await tester.pumpAndSettle();
     expect(find.text('Mark completed'), findsOneWidget);

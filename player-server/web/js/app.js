@@ -5,6 +5,8 @@ import { initPodcastPlayerDelete } from './podcast-player-delete.js';
 import { initLanguage } from './i18n.js';
 import { initOfflinePinLibrary } from './offline-pin-library.js';
 import { mountMusicPresence } from './music-presence.js';
+import { mountPodcastResume } from './podcast-resume.js';
+import { currentMediaId } from './playback.js';
 import { initRadio } from './radio.js';
 import { stopRenderer } from './renderer.js';
 import { setListeningProgressAccount } from './listening-progress.js';
@@ -390,6 +392,8 @@ async function initApp() {
     if (queueState().restored) toast('Queue restored, paused. Open Now Playing to resume.', 'info');
     await navigation.restore();
     if (!navigatedDuringStartup && initialCollection !== 'library' && !location.search && !location.hash) openCollection(initialCollection);
+    // Start page shortcut back into the podcast episode in progress.
+    if (state.user && !location.search && !location.hash) mountPodcastResume(presenceHost, { isPlaying: () => Boolean(currentMediaId()) });
   } catch (err) {
     toast(err.message || 'Error loading sets', 'error');
   }

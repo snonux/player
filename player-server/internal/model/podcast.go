@@ -82,6 +82,9 @@ const (
 	PodcastFilterCompleted = "completed"
 	// PodcastFilterAll lists every episode.
 	PodcastFilterAll = "all"
+	// PodcastFilterStarted lists unfinished episodes with a saved position,
+	// most recently listened first: the "continue listening" view.
+	PodcastFilterStarted = "started"
 )
 
 // PodcastEpisodeView is one episode of a subscription or all-episodes view

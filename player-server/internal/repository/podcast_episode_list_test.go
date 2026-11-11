@@ -66,6 +66,7 @@ func TestListSubscribedEpisodesFiltersAndPages(t *testing.T) {
 	}{
 		{"uncompleted includes started", PodcastEpisodeQuery{Filter: model.PodcastFilterUncompleted, Limit: 10}, "[a3 a2]"},
 		{"completed", PodcastEpisodeQuery{Filter: model.PodcastFilterCompleted, Limit: 10}, "[a1]"},
+		{"started", PodcastEpisodeQuery{Filter: model.PodcastFilterStarted, Limit: 10}, "[a2]"},
 		{"all, newest first", PodcastEpisodeQuery{Filter: model.PodcastFilterAll, Limit: 10}, "[a3 a2 a1]"},
 		{"second page", PodcastEpisodeQuery{Filter: model.PodcastFilterAll, Limit: 2, Offset: 2}, "[a1]"},
 		{"feed by alias key", PodcastEpisodeQuery{FeedKey: "feed:old-a.example.com/rss", Filter: model.PodcastFilterAll, Limit: 10}, "[a3 a2 a1]"},
@@ -77,8 +78,22 @@ func TestListSubscribedEpisodesFiltersAndPages(t *testing.T) {
 			t.Errorf("%s: %s, want %s", tc.name, got, tc.want)
 		}
 	}
+	// Started lists the most recently listened episode first, not the newest.
+	started := PodcastEpisodeQuery{Filter: model.PodcastFilterStarted, Limit: 10}
+	f.episodes(f.alice, posItem("newer", feedA, "guid:a3", 5, 20))
+	if got := titles(list(started)); got != "[a3 a2]" {
+		t.Errorf("started after a3: %s", got)
+	}
+	f.episodes(f.alice, posItem("resumed", feedA, "guid:a2", 40, 30))
+	if got := titles(list(started)); got != "[a2 a3]" {
+		t.Errorf("started after resuming a2: %s", got)
+	}
+	f.episodes(f.alice, posItem("reset", feedA, "guid:a3", 0, 40))
+	if got := titles(list(started)); got != "[a2]" {
+		t.Errorf("started after a3 back at 0: %s", got)
+	}
 	all := list(PodcastEpisodeQuery{Filter: model.PodcastFilterAll, Limit: 10})
-	if a2 := all[1]; a2.PositionSeconds != 33 || a2.Completed || a2.FeedKey != feedA || a2.EpisodeKey != "guid:a2" || a2.FeedTitle != "a" {
+	if a2 := all[1]; a2.PositionSeconds != 40 || a2.Completed || a2.FeedKey != feedA || a2.EpisodeKey != "guid:a2" || a2.FeedTitle != "a" {
 		t.Fatalf("a2: %+v", a2)
 	}
 	if a1 := all[2]; !a1.Completed || a1.CompletionSource != "auto" || a1.ServerCopy != nil {

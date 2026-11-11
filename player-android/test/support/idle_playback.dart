@@ -6,6 +6,7 @@ import 'package:player_android/providers/audio_handler_provider.dart';
 import 'package:player_android/providers/playback_cache_provider.dart';
 import 'package:player_android/services/audio_handler.dart';
 import 'package:player_android/services/playback_cache.dart';
+import 'package:player_android/widgets/resume_podcast_bar.dart';
 
 /// Playback dependencies for screens whose tests do not start media.
 ///
@@ -18,6 +19,8 @@ List<Override> idlePlaybackOverrides() => [
         return PlayerAudioHandler(player);
       }),
       playbackCacheProvider.overrideWith((ref) => _EmptyCache()),
+      // No podcast library on disk: the resume shortcut stays hidden.
+      resumePodcastProvider.overrideWith((ref) async => null),
     ];
 
 class _IdlePlayer extends AudioPlayer {
