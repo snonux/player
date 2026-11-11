@@ -32,6 +32,8 @@ final continueListeningProvider = FutureProvider.autoDispose
       ? ref.watch(authStateProvider).valueOrNull
       : null;
   final settings = ref.watch(settingsProvider).valueOrNull;
+  final repository = ref.watch(podcastRepositoryProvider);
+  final librarySelection = ref.watch(podcastDeviceScopeSelectionProvider);
   final account = !deviceOnly &&
       settings?.destination == LibraryDestination.server &&
       auth?.isAuthenticated == true &&
@@ -53,11 +55,17 @@ final continueListeningProvider = FutureProvider.autoDispose
       if (items.length == 5) break;
     }
   }
+  // Podcast rows resume the library the Podcasts screen shows. Using files
+  // on this device keeps the account library last used online, so offline
+  // and online playback continue from the same saved position. A locked
+  // server account (sign-in screen) still exposes device-only history.
   final scope = account
       ? podcastAccountScope(
           ref.watch(playerBaseUrlProvider).origin, auth!.user!.id)
-      : 'local';
-  final repository = ref.watch(podcastRepositoryProvider);
+      : settings?.destination == LibraryDestination.local
+          ? await devicePodcastScope(repository, settings!,
+              selection: librarySelection)
+          : 'local';
   final downloads = ref.watch(podcastDownloadsProvider);
   final episodes =
       await repository.browseEpisodes(scope, filter: 'started', limit: 200);

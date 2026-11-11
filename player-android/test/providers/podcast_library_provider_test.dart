@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,12 +7,30 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/podcast_library_provider.dart';
+import 'package:player_android/models/user.dart';
 import 'package:player_android/providers/settings_provider.dart';
 import 'package:player_android/services/podcast_repository.dart';
 
 class _SignedOut extends AuthStateNotifier {
   @override
   Future<AuthState> build() async => const AuthState.unauthenticated();
+}
+
+class _SlowSignedIn extends AuthStateNotifier {
+  _SlowSignedIn(this.ready);
+  final Completer<void> ready;
+  @override
+  Future<AuthState> build() async {
+    await ready.future;
+    return const AuthState.authenticated(
+        user: User(id: 7, username: 'paul', isAdmin: false), isOffline: true);
+  }
+}
+
+class _Server extends SettingsNotifier {
+  @override
+  Future<AppSettings> build() async =>
+      const AppSettings(serverBaseUrl: 'https://saved.example');
 }
 
 class _Local extends SettingsNotifier {
@@ -110,5 +130,37 @@ void main() {
     final container = await open();
     addTearDown(container.dispose);
     expect(await container.read(podcastScopeProvider.future), 'local');
+  });
+  test('device mode reads the account library without starting auth',
+      () async {
+    final container = ProviderContainer(overrides: [
+      settingsProvider.overrideWith(_Local.new),
+      authStateProvider.overrideWith(
+          () => throw StateError('Device podcasts initialized auth')),
+      podcastRepositoryProvider.overrideWithValue(repository),
+    ]);
+    addTearDown(container.dispose);
+    await container.read(settingsProvider.future);
+    expect(await container.read(podcastScopeProvider.future), account);
+    expect(container.exists(authStateProvider), isFalse);
+  });
+  test(
+      'a slow saved session never resolves to the device-only library meanwhile',
+      () async {
+    final ready = Completer<void>();
+    final container = ProviderContainer(overrides: [
+      settingsProvider.overrideWith(_Server.new),
+      authStateProvider.overrideWith(() => _SlowSignedIn(ready)),
+      podcastRepositoryProvider.overrideWithValue(repository),
+    ]);
+    addTearDown(container.dispose);
+    await container.read(settingsProvider.future);
+    // The Podcasts screen watches the library while the session restores.
+    final watched = container.listen(podcastScopeProvider, (_, __) {});
+    addTearDown(watched.close);
+    final scope = container.read(podcastScopeProvider.future);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    ready.complete();
+    expect(await scope, account);
   });
 }

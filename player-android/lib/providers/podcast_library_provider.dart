@@ -51,13 +51,19 @@ final podcastDeviceScopeSelectionProvider =
 final podcastScopeProvider = FutureProvider<String>((ref) async {
   final selection = ref.watch(podcastDeviceScopeSelectionProvider);
   final settings = ref.watch(settingsProvider).valueOrNull;
-  final auth = ref.watch(authStateProvider).valueOrNull;
-  if (settings == null || auth == null) return 'local';
-  final prefs = await SharedPreferences.getInstance();
+  if (settings == null) return 'local';
   final origin = settings.serverBaseUrl == null
       ? null
       : Uri.parse(settings.serverBaseUrl!).origin;
   if (settings.destination == LibraryDestination.server && origin != null) {
+    // Wait for the saved session instead of briefly answering 'local': a
+    // slow (offline) start must not open, play or save the wrong library.
+    final session = ref.watch(authStateProvider);
+    if (session.hasError) return 'local';
+    final auth = session.valueOrNull ??
+        await ref.watch(authStateProvider.future).catchError(
+            (Object _) => const AuthState.unauthenticated());
+    final prefs = await SharedPreferences.getInstance();
     final userId = auth.user?.id;
     if (auth.isAuthenticated && userId != null) {
       final scope = podcastAccountScope(origin, userId);
@@ -72,8 +78,23 @@ final podcastScopeProvider = FutureProvider<String>((ref) async {
         ? 'local'
         : podcastAccountScope(origin, remembered);
   }
-  final cached =
-      await ref.watch(podcastRepositoryProvider).cachedAccountScopes();
+  return devicePodcastScope(ref.watch(podcastRepositoryProvider), settings,
+      selection: selection);
+});
+
+/// The podcast library shown while the app uses files on this device. It is
+/// the account library last used online (or the one picked in the library
+/// switcher), so progress saved without a connection is the same progress
+/// the signed-in app resumes, and the other way round. Reads only cached
+/// state: no credential, auth or network access.
+Future<String> devicePodcastScope(
+    PodcastRepository repository, AppSettings settings,
+    {String? selection}) async {
+  final prefs = await SharedPreferences.getInstance();
+  final origin = settings.serverBaseUrl == null
+      ? null
+      : Uri.parse(settings.serverBaseUrl!).origin;
+  final cached = await repository.cachedAccountScopes();
   final chosen = prefs.getString('podcast_device_scope') ?? selection;
   if (chosen == 'local' || cached.contains(chosen)) return chosen!;
   // Migrate existing installs which only remembered an identity per server.
@@ -83,7 +104,7 @@ final podcastScopeProvider = FutureProvider<String>((ref) async {
       remembered == null ? null : podcastAccountScope(origin!, remembered);
   if (cached.contains(previous)) return previous!;
   return cached.length == 1 ? cached.single : 'local';
-});
+}
 
 final podcastDeviceLibrariesProvider =
     FutureProvider<Map<String, String>>((ref) async {

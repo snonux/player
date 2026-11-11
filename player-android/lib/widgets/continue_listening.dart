@@ -66,7 +66,10 @@ class _ContinueListeningState extends ConsumerState<ContinueListening> {
 
   Future<void> _open(ContinueListeningItem item) async {
     setState(() => _opening = true);
-    final accountOwned = item.scope?.startsWith('account:') == true;
+    // Device mode has no signed-in session to outlive; reading auth there
+    // would start the server graph the device shortcuts avoid.
+    final accountOwned =
+        !widget.deviceOnly && item.scope?.startsWith('account:') == true;
     final auth = accountOwned ? ref.read(authStateProvider).valueOrNull : null;
     final origin = accountOwned ? ref.read(playerBaseUrlProvider).origin : null;
     try {
