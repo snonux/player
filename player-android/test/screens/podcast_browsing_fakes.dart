@@ -56,7 +56,7 @@ class BrowsingRepository extends PodcastRepository {
     queries.add((feed, filter, offset));
     if (deleted) return [];
     if (filter == 'completed' && !completed ||
-        filter == 'uncompleted' && completed) {
+        (filter == 'uncompleted' || filter == 'started') && completed) {
       return [];
     }
     return List.generate(

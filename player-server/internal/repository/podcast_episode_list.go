@@ -18,7 +18,8 @@ type PodcastEpisodeQuery struct {
 	// FeedKey limits the view to one feed (a canonical key or an alias);
 	// "" lists the episodes of every subscribed feed.
 	FeedKey string
-	// Filter is model.PodcastFilterUncompleted, ...Completed or ...All.
+	// Filter is model.PodcastFilterUncompleted, ...Completed, ...All or
+	// ...Started (unfinished with a position, most recently listened first).
 	Filter        string
 	Limit, Offset int
 }
@@ -28,7 +29,8 @@ type PodcastEpisodeViewRepo interface {
 	// ListSubscribedEpisodes returns the episodes of the user's subscribed
 	// catalog feeds (subscription under the feed key or an alias of it)
 	// with the user's registers, newest first by publication date, then by
-	// episode key. Server copies are reported when not deleted; whether
+	// episode key (the started filter lists the most recently listened
+	// first). Server copies are reported when not deleted; whether
 	// the user may read them is the caller's decision.
 	ListSubscribedEpisodes(ctx context.Context, userID int64, q PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error)
 }
@@ -42,7 +44,7 @@ const subscribedEpisodesQuery = `WITH candidates AS (
 SELECT e.id, f.feed_key, COALESCE(a.episode_key, e.episode_key) AS episode_key, COALESCE(f.title, '') AS feed_title, COALESCE(e.title, '') AS title,
  COALESCE(e.description, '') AS description, COALESCE(e.image_url, '') AS image_url, COALESCE(f.image_url, '') AS feed_image_url, e.published_at, e.duration_seconds, e.episode_url,
  COALESCE(s.completed, 0) AS completed, COALESCE(s.completion_source, '') AS completion_source,
- COALESCE(s.position_seconds, 0) AS position_seconds,
+ COALESCE(s.position_seconds, 0) AS position_seconds, COALESCE(s.position_ms, 0) AS position_ms,
  CASE WHEN m.id IS NOT NULL AND m.deleted_at IS NULL AND
   (EXISTS (SELECT 1 FROM users u WHERE u.id = ?1 AND u.is_admin = 1)
    OR EXISTS (SELECT 1 FROM set_permissions p WHERE p.user_id = ?1 AND p.set_id = m.set_id))
@@ -59,13 +61,14 @@ WHERE f.merged_into IS NULL
  AND COALESCE(s.deleted,0)=0
  AND (?2 = '' OR f.feed_key = ?2)
  AND (?3 = 'all' OR COALESCE(s.completed, 0) = (?3 = 'completed'))
+ AND (?3 != 'started' OR COALESCE(s.position_seconds, 0) > 0)
 ), ranked AS (
  SELECT *, ROW_NUMBER() OVER (PARTITION BY feed_key, episode_key ORDER BY readable_copy IS NULL, id) AS rank FROM candidates
 )
 SELECT id, feed_key, episode_key, feed_title, title, description, image_url, feed_image_url, published_at, duration_seconds, episode_url,
  completed, completion_source, position_seconds, readable_copy, set_id
 FROM ranked WHERE rank = 1
-ORDER BY published_at IS NULL, published_at DESC, episode_key, feed_key
+ORDER BY CASE WHEN ?3 = 'started' THEN position_ms END DESC, published_at IS NULL, published_at DESC, episode_key, feed_key
 LIMIT ?4 OFFSET ?5`
 
 // ListSubscribedEpisodes implements PodcastEpisodeViewRepo. A feed key that

@@ -1,1 +1,1 @@
-Delete a podcast episode from the podcast player's menu, or by swiping its row from right to left in the episode list. After deleting from the player, the next episode plays, or playback stops when none is left.
+Continue listening: when nothing is playing, such as right after the app starts, the bottom bar offers the podcast episode you were listening to. One tap resumes it where you stopped. A new In progress filter lists every unfinished episode you started.

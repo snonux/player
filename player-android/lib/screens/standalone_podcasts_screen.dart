@@ -1073,12 +1073,16 @@ class _LocalPodcastEpisodesScreenState
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                 child: Row(children: [
-                  for (final option in ['uncompleted', 'completed', 'all'])
+                  for (final (option, label) in const [
+                    ('uncompleted', 'Uncompleted'),
+                    ('started', 'In progress'),
+                    ('completed', 'Completed'),
+                    ('all', 'All'),
+                  ])
                     Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: ChoiceChip(
-                            label: Text(
-                                '${option[0].toUpperCase()}${option.substring(1)}'),
+                            label: Text(label),
                             selected: filter == option,
                             onSelected: bulkBusy
                                 ? null
@@ -1093,7 +1097,10 @@ class _LocalPodcastEpisodesScreenState
                             : 'Refreshing feeds $refreshDone of $refreshTotal',
                         style: Theme.of(context).textTheme.bodySmall)
                   else if (widget.feedKey == null)
-                    Text('Newest first',
+                    Text(
+                        filter == 'started'
+                            ? 'Recently played first'
+                            : 'Newest first',
                         style: Theme.of(context).textTheme.bodySmall),
                 ])),
             if (error != null) PodcastNotice(error!, isError: true),

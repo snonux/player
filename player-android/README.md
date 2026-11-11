@@ -190,6 +190,13 @@ Back returns to browsing. Deleting episodes removes them from your podcast lists
 and removes their device downloads, retaining listening history; deleting only
 downloaded files keeps the episodes in your lists and never deletes server files.
 
+**Continue listening:** whenever nothing is playing (for example right after
+the app starts), the mini-player slot at the bottom of the library screens shows
+the podcast episode you listened to most recently and have not finished. Tap it,
+or its play button, to resume where you stopped; it streams when there is no
+device copy. The **In progress** filter lists every unfinished episode with a
+saved position, most recently listened first.
+
 **Mark completed / Mark uncompleted** saves locally and queues synchronization
 for the selected account, retaining the saved position. Playing to the natural
 end marks an episode completed automatically; completed episodes leave the
