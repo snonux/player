@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/providers/auth_state_provider.dart';
@@ -27,6 +28,13 @@ class _Settings extends SettingsNotifier {
   @override
   Future<AppSettings> build() async =>
       const AppSettings(serverBaseUrl: 'https://private.invalid');
+}
+
+class _DeviceMode extends SettingsNotifier {
+  @override
+  Future<AppSettings> build() async => const AppSettings(
+      serverBaseUrl: 'https://private.invalid',
+      destination: LibraryDestination.local);
 }
 
 class _Feed extends PodcastFeedFetcher {
@@ -225,5 +233,67 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(640, 320));
     await tester.pump();
     expect(tester.takeException(), isNull);
+  });
+  test(
+      'device mode resumes the account podcast progress the signed-in app uses',
+      () async {
+    const account = 'account:https://private.invalid#7';
+    SharedPreferences.setMockInitialValues(
+        {'podcast_device_scope': account});
+    final folder = await Directory.systemTemp.createTemp('continue-offline-');
+    addTearDown(() => folder.delete(recursive: true));
+    final local = LocalLibraryDatabase(databasePath: '${folder.path}/local.db');
+    final podcasts = PodcastRepository(
+        databasePath: '${folder.path}/podcasts.db', fetcher: _Feed());
+    final feed =
+        await podcasts.subscribe('local', 'https://publisher.invalid/feed');
+    final key =
+        (await podcasts.episodes(feed)).single['episode_key'] as String;
+    final store = PodcastSyncStore(podcasts);
+    // An old device-only library still holds an earlier position.
+    await store.saveEpisode('local', feed, key, seconds: 12);
+    await podcasts.subscribe(account, 'https://publisher.invalid/feed');
+    await store.saveEpisode(account, feed, key, seconds: 99);
+    final downloads = _Downloads(podcasts, PlaybackSessionCoordinator());
+    final container = ProviderContainer(overrides: [
+      settingsProvider.overrideWith(_DeviceMode.new),
+      authStateProvider.overrideWith(
+          () => throw StateError('Device shortcuts initialized auth')),
+      apiClientProvider
+          .overrideWith((ref) => throw StateError('Network forbidden')),
+      localMediaRepositoryProvider
+          .overrideWithValue(SqliteLocalMediaRepository(local)),
+      localProgressRepositoryProvider
+          .overrideWithValue(SqliteLocalProgressRepository(local)),
+      podcastRepositoryProvider.overrideWithValue(podcasts),
+      podcastDownloadsProvider.overrideWith((ref) => downloads),
+    ]);
+    try {
+      await container.read(settingsProvider.future);
+      for (final deviceOnly in [true, false]) {
+        final rows =
+            await container.read(continueListeningProvider(deviceOnly).future);
+        expect(rows.single.scope, account);
+        expect(rows.single.position, 99);
+      }
+      expect(container.exists(authStateProvider), isFalse);
+      // Playing it offline saves to that library, which the app resumes
+      // from once it is back online.
+      final row =
+          (await container.read(continueListeningProvider(true).future)).single;
+      await store.saveEpisode(
+          row.scope!, row.episode!['feed_key'] as String, key,
+          seconds: 140, source: 'auto');
+      container.invalidate(continueListeningProvider(true));
+      expect(
+          (await container.read(continueListeningProvider(true).future))
+              .single
+              .position,
+          140);
+    } finally {
+      container.dispose();
+      await local.close();
+      await podcasts.close();
+    }
   });
 }
