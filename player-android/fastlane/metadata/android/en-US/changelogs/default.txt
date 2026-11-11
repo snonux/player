@@ -1,1 +1,1 @@
-Continue listening: when nothing is playing, such as right after the app starts, the bottom bar offers the podcast episode you were listening to. One tap resumes it where you stopped. A new In progress filter lists every unfinished episode you started.
+Podcast listening progress is now kept when you switch between offline (files on this device) and online use. Continue listening and the Podcasts screen resume the same episode position.
