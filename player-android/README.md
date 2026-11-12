@@ -117,15 +117,20 @@ history across devices are outside this feature.
 ## Continue listening offline
 
 The server chooser and sign-in page show **Continue listening** below the
-connection controls. Tap a started device file or downloaded podcast to reopen
-its player at the saved position without a server or publisher connection.
-The device library offers the same shortcuts; **Show more** expands the list.
-Finished items and missing podcast downloads are omitted.
+connection controls, so started podcasts are one tap away without signing in.
+Tap a started device file or podcast episode to reopen its player at the saved
+position. Podcast episodes come from device-only podcasts and from the podcast
+library this device used last with your server account (the one **Use files on
+this device** opens); a downloaded copy plays offline, and an episode without
+one is marked **Streams** and plays from the publisher, never from the server.
+Progress saved while signed out synchronizes with the account after the next
+sign-in. The device library offers the same shortcuts; **Show more** expands
+the list. Finished items are omitted, and offline only downloaded episodes are
+offered.
 
-Account-owned podcast history and saved server files appear in **Offline
-downloads** after unlocking that account. Their titles stay hidden in the
-shortcut panel while the account is locked. Each source retains its existing
-resume, retry, and progress synchronization behavior.
+Saved server files (offline copies of server media) appear in **Offline
+downloads** after unlocking that account and stay hidden in the shortcut panel
+while the account is locked.
 
 ## Podcasts on this device
 
@@ -194,8 +199,9 @@ downloaded files keeps the episodes in your lists and never deletes server files
 the app starts), the mini-player slot at the bottom of the library screens shows
 the podcast episode you listened to most recently and have not finished. Tap it,
 or its play button, to resume where you stopped; it streams when there is no
-device copy. The **In progress** filter lists every unfinished episode with a
-saved position, most recently listened first.
+device copy. Its list button opens **Podcasts in progress**, every started
+and unfinished episode of the library, most recently listened first; tap one to
+resume it. The **In progress** filter shows the same episodes in the episode list.
 
 **Mark completed / Mark uncompleted** saves locally and queues synchronization
 for the selected account, retaining the saved position. Playing to the natural

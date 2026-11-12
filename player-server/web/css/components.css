@@ -623,6 +623,11 @@ body:has(#player.open.minimized) .main-content { padding-bottom: 4.5rem; }
 .podcast-resume .btn,
 .podcast-resume .icon-btn { min-height: 44px; min-width: 44px; flex-shrink: 0; }
 @media (max-width: 600px) {
+  .podcast-resume { flex-wrap: wrap; }
   .podcast-resume-icon { display: none; }
   .podcast-resume-subtitle { white-space: normal; }
+  /* Text and Hide share the first row; the two actions get their own. */
+  .podcast-resume-text { flex: 1 1 calc(100% - 60px); }
+  .podcast-resume-close { order: 1; }
+  .podcast-resume-play, .podcast-resume-all { order: 2; flex: 1 1 0; }
 }

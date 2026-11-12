@@ -6,6 +6,7 @@ import { initLanguage } from './i18n.js';
 import { initOfflinePinLibrary } from './offline-pin-library.js';
 import { mountMusicPresence } from './music-presence.js';
 import { mountPodcastResume } from './podcast-resume.js';
+import { mountLocalPodcastResume } from './local-podcast-resume.js';
 import { currentMediaId } from './playback.js';
 import { initRadio } from './radio.js';
 import { stopRenderer } from './renderer.js';
@@ -147,6 +148,7 @@ function initLogin() {
   if (!form) return;
   explainLoginAuthMode();
   tryProxySignIn();
+  void mountLocalPodcastResume(document.getElementById('login-podcast-resume'));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     err.textContent = '';

@@ -111,8 +111,15 @@ the top of the library shows the podcast episode you listened to most recently
 and have not finished, with its podcast and saved position. **Resume** opens
 the **In progress** episode filter (unfinished episodes with a saved position,
 most recently listened first) and continues that episode where it stopped.
-The banner disappears once anything plays; ✕ hides it. The Android app shows
-the same shortcut in its mini-player slot.
+**All in progress** opens that filter without starting anything. The banner
+disappears once anything plays; ✕ hides it. The Android app shows the same
+shortcut in its mini-player slot.
+
+The login page lists started **Podcasts on this device** (this browser's own
+subscriptions) under **Continue listening**, so they resume without signing in;
+browser-device episodes now also remember their position. Server account
+podcasts need a sign-in in the browser; the Android app shows them on its
+sign-in screen.
 
 ## Podcast episode layouts
 

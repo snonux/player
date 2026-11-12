@@ -53,12 +53,20 @@ class _Downloads extends PodcastDownloads {
       {'state': 'available'};
 }
 
+class _NoCopies extends PodcastDownloads {
+  _NoCopies(super.repository, super.playback);
+  @override
+  Future<Map<String, Object?>?> copy(String feed, String episode) async => null;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
-  test('locked shortcuts expose device progress only and omit finished media',
-      () async {
+  test(
+      'signed-out shortcuts offer the remembered podcast library, '
+      'no locked server files, and omit finished media', () async {
+    SharedPreferences.setMockInitialValues({});
     final folder = await Directory.systemTemp.createTemp('continue-provider-');
     addTearDown(() => folder.delete(recursive: true));
     final local = LocalLibraryDatabase(databasePath: '${folder.path}/local.db');
@@ -100,9 +108,19 @@ void main() {
       await container.read(settingsProvider.future);
       final rows =
           await container.read(continueListeningProvider(false).future);
+      // The account library played last wins over the device-only copy of
+      // the same episode, and it streams when nothing is downloaded.
       expect(rows.map((e) => e.title), ['Audiobook', 'Episode']);
-      expect(rows.map((e) => e.position), [42, 12]);
-      expect(rows.last.scope, 'local');
+      expect(rows.map((e) => e.position), [42, 99]);
+      expect(rows.last.scope, 'account:https://private.invalid#7');
+      expect(rows.last.streams, isFalse);
+      await store.saveEpisode('account:https://private.invalid#7', feed, key,
+          completed: true);
+      container.invalidate(continueListeningProvider(false));
+      final remaining =
+          await container.read(continueListeningProvider(false).future);
+      expect(remaining.map((e) => e.position), [42, 12]);
+      expect(remaining.last.scope, 'local');
       await store.saveEpisode('local', feed, key, completed: true);
       container.invalidate(continueListeningProvider(false));
       expect(
@@ -115,8 +133,51 @@ void main() {
       await podcasts.close();
     }
   });
+  test('sign-in screen offers started episodes that stream when not downloaded',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final folder = await Directory.systemTemp.createTemp('continue-stream-');
+    final local = LocalLibraryDatabase(databasePath: '${folder.path}/local.db');
+    final podcasts = PodcastRepository(
+        databasePath: '${folder.path}/podcasts.db', fetcher: _Feed());
+    const account = 'account:https://private.invalid#7';
+    final feed =
+        await podcasts.subscribe(account, 'https://publisher.invalid/feed');
+    final key = (await podcasts.episodes(feed)).single['episode_key'] as String;
+    await PodcastSyncStore(podcasts)
+        .saveEpisode(account, feed, key, seconds: 61);
+    final container = ProviderContainer(overrides: [
+      settingsProvider.overrideWith(_Settings.new),
+      authStateProvider.overrideWith(
+          () => throw StateError('Sign-in shortcuts initialized auth')),
+      localMediaRepositoryProvider
+          .overrideWithValue(SqliteLocalMediaRepository(local)),
+      localProgressRepositoryProvider
+          .overrideWithValue(SqliteLocalProgressRepository(local)),
+      podcastRepositoryProvider.overrideWithValue(podcasts),
+      podcastDownloadsProvider.overrideWith(
+          (ref) => _NoCopies(podcasts, PlaybackSessionCoordinator())),
+    ]);
+    final subscription =
+        container.listen(continueListeningProvider(true), (_, __) {});
+    try {
+      await container.read(settingsProvider.future);
+      final rows = await container.read(continueListeningProvider(true).future);
+      expect(rows.single.title, 'Episode');
+      expect(rows.single.scope, account);
+      expect(rows.single.position, 61);
+      expect(rows.single.streams, isTrue);
+    } finally {
+      subscription.close();
+      container.dispose();
+      await local.close();
+      await podcasts.close();
+      await folder.delete(recursive: true);
+    }
+  });
   test('device shortcuts do not initialize auth or its server dependencies',
       () async {
+    SharedPreferences.setMockInitialValues({});
     final folder = await Directory.systemTemp.createTemp('continue-device-');
     final local = LocalLibraryDatabase(databasePath: '${folder.path}/local.db');
     final podcasts =
@@ -238,8 +299,7 @@ void main() {
       'device mode resumes the account podcast progress the signed-in app uses',
       () async {
     const account = 'account:https://private.invalid#7';
-    SharedPreferences.setMockInitialValues(
-        {'podcast_device_scope': account});
+    SharedPreferences.setMockInitialValues({'podcast_device_scope': account});
     final folder = await Directory.systemTemp.createTemp('continue-offline-');
     addTearDown(() => folder.delete(recursive: true));
     final local = LocalLibraryDatabase(databasePath: '${folder.path}/local.db');
@@ -247,8 +307,7 @@ void main() {
         databasePath: '${folder.path}/podcasts.db', fetcher: _Feed());
     final feed =
         await podcasts.subscribe('local', 'https://publisher.invalid/feed');
-    final key =
-        (await podcasts.episodes(feed)).single['episode_key'] as String;
+    final key = (await podcasts.episodes(feed)).single['episode_key'] as String;
     final store = PodcastSyncStore(podcasts);
     // An old device-only library still holds an earlier position.
     await store.saveEpisode('local', feed, key, seconds: 12);

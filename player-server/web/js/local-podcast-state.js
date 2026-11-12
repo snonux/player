@@ -17,7 +17,11 @@ export function editLocalPodcast(ep, name, value, now = Date.now()) {
   const ms = Math.max(now, (row[name]?.observed_ms || 0) + 1);
   if (name === 'completion') row.completion = { completed: value, observed_ms: ms };
   else if (name === 'deletion') row.deletion = { deleted: value, observed_ms: ms };
-  else if (name === 'position') row.position = { observed_ms: ms };
+  else if (name === 'position') {
+    // Seconds let the login page and the queue resume where listening stopped.
+    const seconds = Number(value);
+    row.position = Number.isFinite(seconds) && seconds > 0 ? { observed_ms: ms, seconds } : { observed_ms: ms };
+  }
   else throw Error('Unknown podcast edit');
   localStorage.setItem(storageKey(ep), JSON.stringify(row));
   observePodcastRetention('device', { ...ep, ...row }, now);

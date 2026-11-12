@@ -197,6 +197,8 @@ export function initPlayer(options = {}) {
   document.addEventListener('podcast:account-changed', () => {
     if (currentMedia?.podcast_episode && currentMedia.podcast_lease != null) { cancelPendingSource(); currentMediaElement()?.pause(); }
   });
+  // Closing or leaving the tab keeps a browser-device podcast's last seconds.
+  globalThis.addEventListener?.('pagehide', () => { if (currentMedia?.localPodcastEpisode) saveCurrentProgress(); });
   nextHandler = typeof options.onNext === 'function' ? options.onNext : null;
   previousHandler = typeof options.onPrevious === 'function' ? options.onPrevious : null;
   failureHandler = typeof options.onPlaybackFailed === 'function' ? options.onPlaybackFailed : null;
@@ -1351,11 +1353,15 @@ export function exitFullscreenIfNeeded() {
 
 function startProgressTimer() {
   stopProgressTimer();
-  if (!reportProgress && !(currentSource?.authenticated && currentMedia?.podcast_episode)) return;
+  const localPodcast = Boolean(currentMedia?.localPodcastEpisode);
+  if (!localPodcast && !reportProgress && !(currentSource?.authenticated && currentMedia?.podcast_episode)) return;
   progressInterval = setInterval(() => {
     const m = currentMediaElement();
     if (m && currentMedia && !m.paused) {
-      enqueueProgress(currentMedia.id, m.currentTime);
+      // Browser-device podcasts keep their position in this browser, so the
+      // login page can resume them even after the tab was closed.
+      if (currentMedia.localPodcastEpisode) saveCurrentProgress();
+      else enqueueProgress(currentMedia.id, m.currentTime);
     }
   }, 3000);
 }
@@ -1377,7 +1383,7 @@ function highlightPlayingCard() {
 function saveCurrentProgress({ finished = false } = {}) {
   const element = currentMediaElement();
   if (currentMedia?.localPodcastEpisode && element?.currentTime > 0 && (finished || !element.ended)) {
-    try { editLocalPodcast(currentMedia.localPodcastEpisode, finished ? 'completion' : 'position', true); } catch { /* Storage failure must not interrupt local playback. */ }
+    try { editLocalPodcast(currentMedia.localPodcastEpisode, finished ? 'completion' : 'position', finished || element.currentTime); } catch { /* Storage failure must not interrupt local playback. */ }
     return progressWrites;
   }
   if ((!reportProgress && !(currentSource?.authenticated && currentMedia?.podcast_episode)) || isCasting() || isDetached() || !currentMedia || !element ||
