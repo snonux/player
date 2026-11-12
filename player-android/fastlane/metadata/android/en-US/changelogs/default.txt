@@ -1,1 +1,1 @@
-Podcast progress (position, completed and deleted) made while the server or your connection was down is kept and synced once both are reachable again, including in the web player after a reload.
+Started podcasts are one tap away: the sign-in screen lists them without logging in (streaming when not downloaded), and the resume bar opens a list of every podcast in progress.
