@@ -14,6 +14,7 @@ import 'package:player_android/services/podcast_downloads.dart';
 import 'package:player_android/services/podcast_feed_fetcher.dart';
 import 'package:player_android/services/podcast_repository.dart';
 import 'package:player_android/services/podcast_sync_store.dart';
+import 'package:player_android/widgets/in_progress_podcasts_sheet.dart';
 import 'package:player_android/widgets/music_mini_player.dart';
 import 'package:player_android/widgets/resume_podcast_bar.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -165,6 +166,52 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('podcast_mini_player')), findsNothing);
     expect(find.byKey(const Key('podcast_resume_bar')), findsOneWidget);
+  });
+
+  testWidgets('lists every podcast in progress and resumes the picked one',
+      (tester) async {
+    final downloads = _Downloads();
+    Map<String, Object?> episode(String key, String title, double seconds) => {
+          'feed_key': 'feed',
+          'episode_key': key,
+          'title': title,
+          'podcast_title': 'Daily show',
+          'position_seconds': seconds,
+        };
+    final router = GoRouter(initialLocation: '/test', routes: [
+      GoRoute(
+          path: '/test',
+          builder: (_, __) =>
+              const Scaffold(bottomNavigationBar: NowPlayingBar())),
+      GoRoute(
+          path: AppRoutes.podcastPlayer,
+          builder: (_, __) => const Text('Podcast player')),
+    ]);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(ProviderScope(overrides: [
+      ...idlePlaybackOverrides(),
+      podcastScopeProvider.overrideWith((ref) async => 'local'),
+      podcastDownloadsProvider.overrideWith((ref) => downloads),
+      resumePodcastProvider.overrideWith((ref) async =>
+          (scope: 'local', episode: episode('one', 'Episode one', 754))),
+      inProgressPodcastsProvider.overrideWith((ref) async => (
+            scope: 'local',
+            rows: [
+              episode('one', 'Episode one', 754),
+              episode('two', 'Episode two', 30),
+            ]
+          )),
+    ], child: MaterialApp.router(routerConfig: router)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Podcasts in progress'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('in_progress_podcasts_sheet')), findsOneWidget);
+    expect(find.text('Daily show · Resume at 0:30'), findsOneWidget);
+    await tester.tap(find.text('Episode two'));
+    await tester.pumpAndSettle();
+    expect(find.text('Podcast player'), findsOneWidget);
+    expect(downloads.resumed, [('local', 'two', true)]);
   });
 
   testWidgets('nothing in progress keeps the slot empty', (tester) async {

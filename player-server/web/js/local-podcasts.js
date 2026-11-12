@@ -1,5 +1,6 @@
 import { bindPodcastMultiselect } from './podcast-multiselect.js';
 import { localPodcastSnapshot, editLocalPodcast } from './local-podcast-state.js';
+import { requestedLocalPodcastResume } from './local-podcast-resume.js';
 import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata, confirmLocalEpisodeDelete } from './podcast-metadata.js';
 import { bindSwipeDelete } from './swipe-delete.js';
 import { initPodcastPlayerDelete } from './podcast-player-delete.js';
@@ -303,4 +304,17 @@ export function initLocalPodcastsApp() {
   };
 
   void render();
+  void resumeRequested();
+
+  // A login page "Continue listening" link names the episode to resume.
+  async function resumeRequested() {
+    const wanted = requestedLocalPodcastResume();
+    if (!wanted) return;
+    history.replaceState(history.state, '', '/index.html?local=podcasts');
+    const episode = (await listLocalPodcastEpisodes(wanted.feed_key)).find(ep => ep.episode_key === wanted.episode_key);
+    if (!episode) { message('This episode is no longer saved in this browser.'); return; }
+    detailKey = wanted.feed_key;
+    await render();
+    await playEpisode(episode);
+  }
 }

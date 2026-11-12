@@ -5,7 +5,7 @@
 // and goes away as soon as anything plays or the listener hides it.
 import { API } from './api.js';
 import { episodeSnapshot } from './podcast-episode-state.js';
-import { resumePodcastEpisode } from './podcast-views.js';
+import { openPodcastsInProgress, resumePodcastEpisode } from './podcast-views.js';
 import { escapeHtml, fmtDur } from './utils.js';
 
 // The server lists started episodes most recently listened first; a newer
@@ -61,10 +61,15 @@ export function mountPodcastResume(host, { isPlaying = () => false } = {}) {
         <div class="podcast-resume-subtitle text-muted text-sm">${escapeHtml(subtitle)}</div>
       </div>
       <button type="button" class="btn podcast-resume-play" aria-label="Resume podcast: ${escapeHtml(title)}">▶ Resume</button>
+      <button type="button" class="btn podcast-resume-all">All in progress</button>
       <button type="button" class="icon-btn podcast-resume-close" aria-label="Hide continue listening">✕</button>`;
     el.querySelector('.podcast-resume-play').addEventListener('click', () => {
       close();
       resumePodcastEpisode(ep);
+    });
+    el.querySelector('.podcast-resume-all').addEventListener('click', () => {
+      close();
+      openPodcastsInProgress();
     });
     el.querySelector('.podcast-resume-close').addEventListener('click', close);
     el.hidden = false;

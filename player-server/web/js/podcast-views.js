@@ -130,6 +130,11 @@ export function resumePodcastEpisode(ep) {
   openPodcastView('');
 }
 
+export function openPodcastsInProgress() {
+  state.podcastFilter = 'started';
+  openPodcastView('');
+}
+
 export function openPodcastFeed(feedKey) {
   if (!feedKey) return;
   openPodcastView(feedKey);

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../app_routes.dart';
 import '../providers/podcast_library_provider.dart';
 import '../utils/duration_formatter.dart';
+import 'in_progress_podcasts_sheet.dart';
 
 /// The most recently listened, unfinished podcast episode in the current
 /// podcast library, or null when nothing is in progress.
@@ -89,12 +90,23 @@ class _ResumePodcastBarState extends ConsumerState<ResumePodcastBar> {
                                     ])),
                               ]))))),
               IconButton(
+                  key: const Key('podcast_resume_list'),
+                  tooltip: 'Podcasts in progress',
+                  style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+                  onPressed: _opening ? null : _chooseInProgress,
+                  icon: const Icon(Icons.playlist_play)),
+              IconButton(
                   key: const Key('podcast_resume_play'),
                   tooltip: 'Resume podcast',
                   style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
                   onPressed: _opening ? null : () => _resume(resumable),
                   icon: const Icon(Icons.play_arrow)),
             ])));
+  }
+
+  Future<void> _chooseInProgress() async {
+    final picked = await showInProgressPodcasts(context);
+    if (picked != null && mounted) await _resume(picked);
   }
 
   Future<void> _resume(ResumablePodcast resumable) async {

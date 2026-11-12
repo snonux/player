@@ -49,7 +49,11 @@ class _ContinueListeningState extends ConsumerState<ContinueListening> {
                     title: Text(item.title,
                         maxLines: 2, overflow: TextOverflow.ellipsis),
                     subtitle: Text(
-                        '${item.source} · Resume at ${formatDuration(item.position)}',
+                        [
+                          item.source,
+                          'Resume at ${formatDuration(item.position)}',
+                          if (item.streams) 'Streams',
+                        ].join(' · '),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis),
                     enabled: !_opening,
@@ -80,7 +84,8 @@ class _ContinueListeningState extends ConsumerState<ContinueListening> {
         final request = await ref
             .read(podcastDownloadsProvider)
             .playbackRequest(
-                item.scope!, episode['feed_key'] as String, episode);
+                item.scope!, episode['feed_key'] as String, episode,
+                allowStreaming: item.streams);
         if (!mounted ||
             accountOwned &&
                 (ref.read(authStateProvider).valueOrNull != auth ||
