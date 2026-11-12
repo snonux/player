@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:player_android/services/podcast_repository.dart';
@@ -782,5 +783,67 @@ void main() {
     expect(coordinator.state.pending, 2);
     expect(coordinator.state.errorKind, isNull);
     coordinator.dispose();
+  });
+  test(
+      'progress, completion and deletion made while offline or during a server outage sync later',
+      () async {
+    const other = 'guid:two';
+    await store.saveEpisode(scope, feed, episode,
+        seconds: 1234, source: 'auto', observedMs: 100);
+    await store.saveEpisode(scope, feed, other,
+        completed: true, observedMs: 110);
+    await store.saveEpisode(scope, feed, other, deleted: true, observedMs: 120);
+    final failures = <Object>[
+      DioException(
+          requestOptions: RequestOptions(path: '/api/podcasts/sync'),
+          type: DioExceptionType.connectionError),
+      DioException(
+          requestOptions: RequestOptions(path: '/api/podcasts/sync'),
+          response: Response(
+              requestOptions: RequestOptions(path: '/api/podcasts/sync'),
+              statusCode: 503)),
+    ];
+    final sent = <Map<String, dynamic>>[];
+    final account = PodcastSyncAccount(
+        scope: scope,
+        current: () => true,
+        supported: () async => true,
+        send: (request) async {
+          if (failures.isNotEmpty) throw failures.removeAt(0);
+          final episodes = (request['episodes'] as List).cast<Map>();
+          sent.addAll(episodes.map((e) => Map<String, dynamic>.from(e)));
+          return reply(acked: [
+            for (final row in episodes)
+              for (final kind in ['position', 'completion', 'deletion'])
+                if (row[kind] != null) row[kind]['edit_id'] as String,
+          ], episodes: [
+            // Listening another device did on the server while this one
+            // was unreachable comes back in the same exchange.
+            position(2000, 900, key: 'guid:three'),
+          ]);
+        });
+    final sync = PodcastSync(store);
+    final offline = await sync.sync(account);
+    expect(offline.full, isFalse);
+    expect(offline.errorKind, 'offline');
+    final outage = await sync.sync(account);
+    expect(outage.errorKind, 'server');
+    expect(await store.pending(scope), hasLength(3),
+        reason: 'failed attempts keep every edit for a later retry');
+    final online = await sync.sync(account);
+    expect(online.full, isTrue);
+    expect(await store.pending(scope), isEmpty);
+    final first = sent.singleWhere((e) => e['episode_key'] == episode);
+    expect(first['position'], containsPair('seconds', 1234.0));
+    expect(first['position'], containsPair('observed_ms', 100));
+    final second = sent.singleWhere((e) => e['episode_key'] == other);
+    expect(second['completion'], containsPair('completed', true));
+    expect(second['deletion'], containsPair('deleted', true));
+    final db = await repository.database;
+    final pulled = (await db.query('podcast_episode_state',
+            where: 'scope=? AND episode_key=?',
+            whereArgs: [scope, 'guid:three']))
+        .single;
+    expect(pulled['position_seconds'], 2000);
   });
 }
