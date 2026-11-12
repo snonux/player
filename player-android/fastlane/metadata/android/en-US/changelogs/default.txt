@@ -1,1 +1,1 @@
-Podcast listening progress is now kept when you switch between offline (files on this device) and online use. Continue listening and the Podcasts screen resume the same episode position.
+Podcast progress (position, completed and deleted) made while the server or your connection was down is kept and synced once both are reachable again, including in the web player after a reload.

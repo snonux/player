@@ -1,7 +1,8 @@
-// Stable episode registers shared by cards and authenticated playback. Failed
-// position/completion edits live in memory; deletion registers and replay edits
-// persist for this account and server origin across reloads.
+// Stable episode registers shared by cards and authenticated playback. Unsent
+// position/completion edits and deletion registers persist for this account and
+// server origin across reloads, so a server outage loses no listening progress.
 import { API } from './api.js';
+import { readPodcastPendingEdits, writePodcastPendingEdits } from './podcast-pending-store.js';
 import { readPodcastDeletions, writePodcastDeletions, podcastDeletionStorageKey, podcastDeletionAcknowledged } from './podcast-deletion-store.js';
 import { readPodcastRetention, observePodcastRetention, podcastRetentionExpired, podcastRetentionMS, remapPodcastRetention } from './podcast-retention.js';
 const REGISTERS = ['position', 'completion', 'deletion'];
@@ -12,6 +13,7 @@ function wins(name, incoming, current) {
   return name !== 'deletion' || clock <= 0 || !current?.deleted || incoming.deleted;
 }
 const persistDeletions = (acceptedIds = []) => writePodcastDeletions(account, rows, acceptedIds);
+const persistPending = (done = []) => writePodcastPendingEdits(account, rows, done);
 import { randomEditId, resetPodcastSubscriptions } from './podcast-subscriptions.js';
 
 const rows = new Map();
@@ -39,6 +41,17 @@ export function setPodcastAccount(id) {
         if (saved.pending) row.pending.deletion = { ...saved.pending };
       }
     } catch (error) { lastError = error.message; lastFailure = error; }
+    // Edits saved while the server was unreachable win over older registers
+    // and are sent by the next retry (global sync, 'online', playback).
+    for (const saved of readPodcastPendingEdits(account)) {
+      const row = rowFor({ feed_key: saved.feed_key, episode_key: saved.episode_key });
+      for (const name of ['position', 'completion']) {
+        const edit = saved[name];
+        if (!edit || (row.pending[name] && row.pending[name].observed_ms >= edit.observed_ms)) continue;
+        row.pending[name] = { ...edit };
+        if (wins(name, edit, row[name])) row[name] = { ...edit };
+      }
+    }
   }
   accountChannel?.postMessage({ account });
   globalThis.document?.dispatchEvent(new Event('podcast:account-changed'));
@@ -91,7 +104,7 @@ export function applyPodcastPull(response, lease = generation, { epochChanged = 
     if (encoded !== JSON.stringify([after.position, after.completion, after.deletion])) updated = true;
   }
   if (epochRecovery) for (const episode of response.episodes || []) epochRecovery.pulled.set(keyOf(episode), episode);
-  if (updated) { persistDeletions(); sweepPodcastRetention(); changed(); }
+  if (updated) { persistDeletions(); persistPending(); sweepPodcastRetention(); changed(); }
   return true;
 }
 
@@ -116,6 +129,7 @@ export function finishPodcastPull(lease = generation) {
   }
   epochRecovery = null;
   persistDeletions();
+  persistPending();
   changed();
 }
 
@@ -194,6 +208,7 @@ export function completionEdit(ep, completed, now = Date.now()) {
       observed_ms: Math.max(now, (row.completion?.observed_ms || 0) + 1) };
     row.completion = { ...row.pending.completion };
     observePodcastRetention(account, row, now);
+    persistPending();
     changed();
   }
   return pendingItem(row);
@@ -210,6 +225,7 @@ export function saveEpisodePosition(ep, seconds, { finished = false, now = Date.
   if (finished) row.completion = row.pending.completion = {
     edit_id: randomEditId(), completed: true, source: 'auto', observed_ms: ms };
   observePodcastRetention(account, row, now);
+  persistPending();
   changed();
   void syncEpisode(ep, finished).catch(() => {});
   return ms;
@@ -247,10 +263,12 @@ async function sendEpisode(ep) {
       || resolvedEpisode(res, scope);
     const deletionAcks = sent.deletion && (res.acked || []).includes(sent.deletion.edit_id) ? [sent.deletion.edit_id] : [];
     let problem = capabilityProblem;
+    const answered = [];
     for (const name of REGISTERS) {
       const edit = sent[name];
       const rejected = edit && (res.rejected || []).find(r => r.edit_id === edit.edit_id);
       const acked = edit && (res.acked || []).includes(edit.edit_id);
+      if (edit && (acked || (rejected && name !== 'deletion'))) answered.push(edit.edit_id);
       if (edit && row.pending[name]?.edit_id === edit.edit_id && (acked || (rejected && name !== 'deletion'))) {
         delete row.pending[name];
         if (acked && returned?.[name]) row[name] = { ...returned[name] };
@@ -273,6 +291,7 @@ async function sendEpisode(ep) {
       row.feed_key = returned.feed_key; row.episode_key = returned.episode_key; rows.set(keyOf(row), row);
     }
     persistDeletions(deletionAcks);
+    persistPending(answered);
     if (problem) throw problem;
     lastError = lastFailure = null;
     lastSuccess = Date.now();
