@@ -402,7 +402,6 @@ void main() {
             'name': 'Movies',
             'root_path': 'movies',
             'cover_thumbnail_path': '',
-            'is_podcast': false,
             'created_at': '2026-01-01T00:00:00.000Z',
           },
         ]),
@@ -414,7 +413,6 @@ void main() {
       expect(sets, hasLength(1));
       expect(sets[0].id, 1);
       expect(sets[0].name, 'Movies');
-      expect(sets[0].isPodcast, isFalse);
     });
 
     test('empty — returns empty list', () async {
@@ -659,139 +657,6 @@ void main() {
       final client = DioPlayerApiClient(dio: dio);
       expect(
         () => client.revokeShare('abc123xyz'),
-        throwsA(isA<DioException>()),
-      );
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // listEpisodes
-  // ---------------------------------------------------------------------------
-
-  group('listEpisodes', () {
-    /// Minimal valid PodcastEpisode JSON matching the API schema.
-    Map<String, dynamic> episodeJson({
-      int id = 10,
-      String title = 'Episode 1: Introduction',
-    }) =>
-        {
-          'id': id,
-          'feed_id': 1,
-          'media_id': null,
-          'guid': 'episode-guid-$id',
-          'title': title,
-          'description': 'A great episode.',
-          'published_at': '2026-01-05T00:00:00.000Z',
-          'episode_url': 'https://example.com/ep$id.mp3',
-          'duration_seconds': 3600.0,
-          'file_size': 52428800,
-          'file_name': 'ep$id.mp3',
-          'is_downloaded': false,
-          'is_completed': false,
-          'position_seconds': 0.0,
-          'created_at': '2026-01-05T01:00:00.000Z',
-        };
-
-    test('success — returns list of PodcastEpisode objects', () async {
-      final (:dio, :adapter) = _buildTestDio();
-      adapter.onGet(
-        '/api/v1/podcasts/4/episodes',
-        (server) => server.reply(200, [
-          episodeJson(),
-          episodeJson(id: 11, title: 'Episode 2: Deep Dive'),
-        ]),
-      );
-
-      final client = DioPlayerApiClient(dio: dio);
-      final episodes = await client.listEpisodes(4);
-
-      expect(episodes, hasLength(2));
-      expect(episodes[0].id, 10);
-      expect(episodes[0].title, 'Episode 1: Introduction');
-      expect(episodes[0].isDownloaded, isFalse);
-      expect(episodes[0].isCompleted, isFalse);
-      expect(episodes[1].id, 11);
-      expect(episodes[1].title, 'Episode 2: Deep Dive');
-    });
-
-    test('success with pagination — query params are forwarded', () async {
-      final (:dio, :adapter) = _buildTestDio();
-      adapter.onGet(
-        '/api/v1/podcasts/4/episodes',
-        (server) => server.reply(200, [episodeJson()]),
-        queryParameters: {'limit': 20, 'offset': 40},
-      );
-
-      final client = DioPlayerApiClient(dio: dio);
-      final episodes = await client.listEpisodes(4, limit: 20, offset: 40);
-
-      expect(episodes, hasLength(1));
-      expect(episodes[0].id, 10);
-    });
-
-    test('empty — returns empty list', () async {
-      final (:dio, :adapter) = _buildTestDio();
-      adapter.onGet(
-        '/api/v1/podcasts/4/episodes',
-        (server) => server.reply(200, <dynamic>[]),
-      );
-
-      final client = DioPlayerApiClient(dio: dio);
-      expect(await client.listEpisodes(4), isEmpty);
-    });
-
-    test('401 — DioException is propagated', () async {
-      final (:dio, :adapter) = _buildTestDio();
-      adapter.onGet(
-        '/api/v1/podcasts/4/episodes',
-        (server) => server.reply(401, {'error': 'unauthorized'}),
-      );
-
-      final client = DioPlayerApiClient(dio: dio);
-      expect(() => client.listEpisodes(4), throwsA(isA<DioException>()));
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // toggleEpisodeComplete
-  // ---------------------------------------------------------------------------
-
-  group('toggleEpisodeComplete', () {
-    test('success — 204 completes without error', () async {
-      final (:dio, :adapter) = _buildTestDio();
-      adapter.onPost(
-        '/api/v1/podcasts/episodes/10/complete',
-        (server) => server.reply(204, null),
-      );
-
-      final client = DioPlayerApiClient(dio: dio);
-      await expectLater(client.toggleEpisodeComplete(10), completes);
-    });
-
-    test('404 — DioException when episode not found', () async {
-      final (:dio, :adapter) = _buildTestDio();
-      adapter.onPost(
-        '/api/v1/podcasts/episodes/999/complete',
-        (server) => server.reply(404, {'error': 'not found'}),
-      );
-
-      final client = DioPlayerApiClient(dio: dio);
-      expect(
-        () => client.toggleEpisodeComplete(999),
-        throwsA(isA<DioException>()),
-      );
-    });
-
-    test('401 — DioException when unauthenticated', () async {
-      final (:dio, :adapter) = _buildTestDio();
-      adapter.onPost(
-        '/api/v1/podcasts/episodes/10/complete',
-        (server) => server.reply(401, {'error': 'unauthorized'}),
-      );
-
-      final client = DioPlayerApiClient(dio: dio);
-      expect(
-        () => client.toggleEpisodeComplete(10),
         throwsA(isA<DioException>()),
       );
     });

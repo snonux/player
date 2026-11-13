@@ -8,23 +8,12 @@ import '../providers/cast_provider.dart';
 import '../services/cast/cast_session.dart';
 import '../screens/audio_player_screen.dart';
 import '../services/music_sequence.dart';
-import '../services/playback_request.dart';
-import 'package:go_router/go_router.dart';
-import '../app_routes.dart';
-import 'resume_podcast_bar.dart';
 
 final _currentItem = StreamProvider.autoDispose<MediaItem?>(
     (ref) => ref.watch(audioHandlerProvider).mediaItem);
 
 final _currentMusicState = StreamProvider.autoDispose<MusicSequenceState>(
     (ref) => ref.watch(audioHandlerProvider).musicChanges);
-
-final _processingState = StreamProvider.autoDispose<AudioProcessingState>(
-    (ref) => ref
-        .watch(audioHandlerProvider)
-        .playbackState
-        .map((state) => state.processingState)
-        .distinct());
 
 /// Existing handler owns playback. Opening this surface never selects a song.
 class MusicMiniPlayer extends ConsumerWidget {
@@ -67,22 +56,10 @@ class MusicMiniPlayer extends ConsumerWidget {
     }
     ref.watch(_currentMusicState);
     final item = ref.watch(_currentItem).valueOrNull;
-    // Nothing playing (such as right after app start): offer the podcast
-    // episode in progress in the same slot.
-    if (item == null) return const ResumePodcastBar();
+    if (item == null) return const SizedBox.shrink();
     final handler = ref.read(audioHandlerProvider);
     final state = handler.musicState;
     final lease = handler.sequenceLease;
-    final podcast = handler.currentMetadataRequest;
-    if (state == null &&
-        podcast is PodcastPlaybackRequest &&
-        podcast.identity == item.id) {
-      return (ref.watch(_processingState).valueOrNull ??
-                  handler.playbackState.value.processingState) !=
-              AudioProcessingState.idle
-          ? _PodcastMiniPlayer(item: item, request: podcast)
-          : const ResumePodcastBar();
-    }
     if (state == null ||
         lease?.isCurrent != true ||
         state.request.identity != item.id) {
@@ -162,89 +139,8 @@ class MusicMiniPlayer extends ConsumerWidget {
   }
 }
 
-/// Podcast episode playing in the background: return to the player or pause
-/// from any library screen, like music.
-class _PodcastMiniPlayer extends ConsumerWidget {
-  const _PodcastMiniPlayer({required this.item, required this.request});
-  final MediaItem item;
-  final PodcastPlaybackRequest request;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final handler = ref.read(audioHandlerProvider);
-    final subtitle =
-        request.sourceName.isNotEmpty ? request.sourceName : request.subtitle;
-    return Material(
-        key: const Key('podcast_mini_player'),
-        color: Theme.of(context).colorScheme.surfaceContainer,
-        child: SafeArea(
-            top: false,
-            child: Row(children: [
-              Expanded(
-                  child: InkWell(
-                      key: const Key('podcast_mini_open'),
-                      onTap: () async {
-                        // Reopening reloads the episode at its saved
-                        // position; save the live position first.
-                        try {
-                          await handler.saveProgress();
-                        } catch (_) {}
-                        if (context.mounted) {
-                          await context.push(AppRoutes.podcastPlayer,
-                              extra: request);
-                        }
-                      },
-                      child: Semantics(
-                          button: true,
-                          label: 'Open player: ${item.title}',
-                          child: Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Row(children: [
-                                SizedBox(
-                                    width: 48,
-                                    height: 48,
-                                    child: item.artUri?.scheme == 'file'
-                                        ? Image.file(File.fromUri(item.artUri!),
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) =>
-                                                const Icon(Icons.podcasts))
-                                        : const Icon(Icons.podcasts)),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                    child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                      Text(item.title,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis),
-                                      if (subtitle.isNotEmpty)
-                                        Text(subtitle,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodySmall),
-                                    ])),
-                              ]))))),
-              StreamBuilder<PlaybackState>(
-                  stream: handler.playbackState,
-                  builder: (context, _) {
-                    final playing = handler.playbackState.value.playing;
-                    return IconButton(
-                        tooltip:
-                            playing ? context.tr('Pause') : context.tr('Play'),
-                        onPressed: () =>
-                            playing ? handler.pause() : handler.play(),
-                        icon: Icon(playing ? Icons.pause : Icons.play_arrow));
-                  }),
-            ])));
-  }
-}
-
 /// The mini player for screens that also run without playback services
-/// (device-only podcast browsing): optional chrome never breaks the screen.
+/// (device-only browsing): optional chrome never breaks the screen.
 class NowPlayingBar extends ConsumerWidget {
   const NowPlayingBar({super.key});
   @override

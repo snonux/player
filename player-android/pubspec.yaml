@@ -67,8 +67,6 @@ dependencies:
   # vector_graphics_compiler. Used directly by lib/services/svg_gate.dart to
   # check an SVG against an allowlist before the compiler sees it.
   xml: ^6.5.0
-  # Parse publisher show notes into safe, selectable text (already transitive).
-  html: ^0.15.6
 
 dev_dependencies:
   integration_test:

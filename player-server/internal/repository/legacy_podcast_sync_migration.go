@@ -393,7 +393,7 @@ func checkEpisodeForeignKeys(ctx context.Context, tx *sql.Tx) error {
 
 // createPodcastAccountState is steps 3-7 in one transaction: create the
 // account state tables, the sync epoch and sequence, and backfill
-// subscriptions, episode state and the playback_progress mirrors.
+// subscriptions.
 func createPodcastAccountState(db *sql.DB) error {
 	if done, err := hasTable(db, "podcast_subscriptions"); err != nil || done {
 		return err
@@ -414,12 +414,9 @@ func createPodcastAccountState(db *sql.DB) error {
 	if err := backfillSubscriptions(ctx, tx, seq); err != nil {
 		return fmt.Errorf("subscriptions: %w", err)
 	}
-	if err := backfillEpisodeState(ctx, tx, seq); err != nil {
-		return fmt.Errorf("episode state: %w", err)
-	}
-	if err := rewriteAllEpisodeMirrors(ctx, tx); err != nil {
-		return fmt.Errorf("progress mirrors: %w", err)
-	}
+	// Podcasts are no longer a feature, so the old per-user episode status
+	// stays where it is (podcast_status) instead of being copied into the
+	// account registers; nothing is deleted.
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO podcast_sync_seq (id, next_seq) VALUES (1, ?)`, seq.next); err != nil {
 		return err

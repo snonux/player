@@ -14,11 +14,11 @@ class _Client extends PlayerApiClient {
     return [
       for (final id in [1, 2])
         MediaSet(
-            id: id,
-            name: 'Set $id',
-            rootPath: '',
-            coverThumbnailPath: '',
-            isPodcast: false)
+          id: id,
+          name: 'Set $id',
+          rootPath: '',
+          coverThumbnailPath: '',
+        )
     ];
   }
 

@@ -80,9 +80,8 @@ func newIntegrationServer(t *testing.T) *integrationEnv {
 				Note:     buildBrowseMock(),
 				Progress: buildProgressMock(),
 			},
-			Admin:   buildAdminMock(),
-			Auth:    authSvc,
-			Podcast: &integrationPodcastService{},
+			Admin: buildAdminMock(),
+			Auth:  authSvc,
 		},
 		StaticFS:      http.FS(staticFS),
 		MediaStreamer: service.NewMediaStreamer(nil, ""),
@@ -623,13 +622,6 @@ func TestIntegration_Unauthenticated(t *testing.T) {
 		{http.MethodGet, "/api/v1/admin/permissions"},
 		{http.MethodPost, "/api/v1/admin/permissions"},
 		{http.MethodDelete, "/api/v1/admin/permissions"},
-		// Podcasts
-		{http.MethodGet, "/api/v1/podcasts"},
-		{http.MethodPost, "/api/v1/podcasts"},
-		{http.MethodGet, "/api/v1/podcasts/episodes"},
-		{http.MethodGet, "/api/v1/podcasts/1/episodes"},
-		{http.MethodPost, "/api/v1/podcasts/episodes/1/download"},
-		{http.MethodPost, "/api/v1/podcasts/episodes/1/complete"},
 	}
 
 	for _, tt := range routes {
@@ -985,30 +977,6 @@ func TestIntegration_AdminUnauthenticated(t *testing.T) {
 }
 
 // ------------------------------------------------------------------
-// Podcast endpoints
-// ------------------------------------------------------------------
-
-// TestIntegration_Podcasts verifies that GET /api/v1/podcasts returns 200 for
-// authenticated users (both auth methods).
-func TestIntegration_Podcasts(t *testing.T) {
-	env := newIntegrationServer(t)
-	_, cookie := bootstrapAdmin(t, env)
-	token := mintToken(t, env, cookie)
-
-	for _, name := range []string{"cookie", "bearer"} {
-		t.Run(name, func(t *testing.T) {
-			var rr *httptest.ResponseRecorder
-			if name == "cookie" {
-				rr = doRequest(t, env, http.MethodGet, "/api/v1/podcasts", nil, cookie, "")
-			} else {
-				rr = doRequest(t, env, http.MethodGet, "/api/v1/podcasts", nil, nil, token)
-			}
-			assertStatus(t, rr, http.StatusOK)
-		})
-	}
-}
-
-// ------------------------------------------------------------------
 // Playback hints endpoint
 // ------------------------------------------------------------------
 
@@ -1033,58 +1001,4 @@ func TestIntegration_Playback(t *testing.T) {
 			assertStatus(t, rr, http.StatusNotImplemented)
 		})
 	}
-}
-
-// ------------------------------------------------------------------
-// integrationPodcastService – minimal stub for the integration server
-// ------------------------------------------------------------------
-
-// integrationPodcastService satisfies service.PodcastEpisodeService with
-// permissive no-op implementations for integration testing purposes.
-// A local type is used because service.MockPodcastEpisodeService does not exist.
-type integrationPodcastService struct{}
-
-// SubscribeFeed is a no-op stub.
-func (m *integrationPodcastService) SubscribeFeed(_ context.Context, _, _ string, _ int64) (*model.PodcastFeed, error) {
-	return nil, nil
-}
-
-// ListFeeds returns an empty feed list.
-func (m *integrationPodcastService) ListFeeds(_ context.Context, _ int64) ([]model.PodcastFeed, error) {
-	return nil, nil
-}
-
-// EditFeed is a no-op stub.
-func (m *integrationPodcastService) EditFeed(_ context.Context, _ int64, _ string, _ int, _ int64) error {
-	return nil
-}
-
-// UnsubscribeFeed is a no-op stub.
-func (m *integrationPodcastService) UnsubscribeFeed(_ context.Context, _ int64, _ int64) error {
-	return nil
-}
-
-// ListEpisodes returns an empty episode list.
-func (m *integrationPodcastService) ListEpisodes(_ context.Context, _, _ int64, _, _ int) ([]model.PodcastEpisodeWithStatus, error) {
-	return nil, nil
-}
-
-// ListSubscribedEpisodes returns an empty subscription view.
-func (m *integrationPodcastService) ListSubscribedEpisodes(_ context.Context, _ int64, _ repository.PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error) {
-	return nil, nil
-}
-
-// DownloadEpisode is a no-op stub.
-func (m *integrationPodcastService) DownloadEpisode(_ context.Context, _, _ int64) (*model.Media, error) {
-	return nil, nil
-}
-
-// ToggleEpisodeComplete is a no-op stub.
-func (m *integrationPodcastService) ToggleEpisodeComplete(_ context.Context, _, _ int64) error {
-	return nil
-}
-
-// CheckFeeds is a no-op stub.
-func (m *integrationPodcastService) CheckFeeds(_ context.Context) error {
-	return nil
 }

@@ -114,7 +114,6 @@ class _Client extends PlayerApiClient {
           name: 'Drawings',
           rootPath: 'drawings',
           coverThumbnailPath: '',
-          isPodcast: false,
         ),
       ];
 

@@ -5,7 +5,7 @@ import 'playback_request.dart';
 import 'stream_quality.dart';
 
 /// Picks the playback URL for a server request that was built from a media
-/// ID alone (podcast episodes, routes opened without a route extra).
+/// ID alone (routes opened without a route extra).
 ///
 /// Such callers have no media object, so the screen starts from the original
 /// stream URL. The media lookup tells whether the server wants this item
@@ -32,14 +32,12 @@ Future<PlaybackRequest> resolveServerPlaybackSource(
         serverOrigin: request.serverOrigin,
         userId: request.userId,
         sourceUri: Uri.parse(client.playbackUrl(media)),
-        title: media.podcast?.title.trim().isNotEmpty == true ||
-                media.music?.title.trim().isNotEmpty == true
+        title: media.music?.title.trim().isNotEmpty == true
             ? media.displayTitle
             : request.title,
         artist: media.music?.artist ?? '',
         album: media.music?.album ?? '',
         music: media.music,
-        podcast: media.podcast,
         artworkUri: media.thumbnailPath.isNotEmpty
             ? Uri.parse(client.thumbnailUrl(media.id))
             : null,

@@ -8,11 +8,10 @@ import 'package:player_android/providers/navigation_preferences_provider.dart';
 // Tests cover:
 //   1. Renders a loading indicator while the data is in flight.
 //   2. Renders a list/grid of sets after a successful load.
-//   3. Shows a podcast badge (microphone icon) on podcast sets.
-//   4. Navigates to the media-grid screen on set-card tap.
-//   5. Shows an empty-state widget when listSets returns [].
-//   6. Shows an error view when listSets throws.
-//   7. Pull-to-refresh calls listSets again.
+//   3. Navigates to the media-grid screen on set-card tap.
+//   4. Shows an empty-state widget when listSets returns [].
+//   5. Shows an error view when listSets throws.
+//   6. Pull-to-refresh calls listSets again.
 //
 // Riverpod providers are overridden with fakes so tests run without a real
 // server or OS keychain.
@@ -147,22 +146,20 @@ class _DelayedFakeApiClient extends PlayerApiClient {
 // Sample data
 // ---------------------------------------------------------------------------
 
-/// A regular (non-podcast) media set used across tests.
+/// A regular media set used across tests.
 const _kMovies = MediaSet(
   id: 1,
   name: 'Movies',
   rootPath: 'movies',
   coverThumbnailPath: '',
-  isPodcast: false,
 );
 
-/// A podcast set — should display the podcast badge.
-const _kPodcasts = MediaSet(
+/// A second media set.
+const _kMusic = MediaSet(
   id: 2,
-  name: 'Tech Podcasts',
-  rootPath: 'podcasts',
+  name: 'Music',
+  rootPath: 'music',
   coverThumbnailPath: '',
-  isPodcast: true,
 );
 
 // ---------------------------------------------------------------------------
@@ -210,7 +207,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final client = _FakeApiClient()..setsResult = [_kMovies, _kPodcasts];
+    final client = _FakeApiClient()..setsResult = [_kMovies, _kMusic];
     await _pumpSetsListScreen(tester, client);
     await tester.pumpAndSettle();
     final card = find.byKey(const Key('set_card_1'));
@@ -348,7 +345,6 @@ void main() {
     final client = _FakeApiClient()..setsResult = [];
     final destinations = {
       'Continue Watching': AppRoutes.continueWatching,
-      'Podcasts': AppRoutes.podcasts,
       'Web radio': AppRoutes.radio,
       'My Shares': AppRoutes.shares,
       'Settings': AppRoutes.settings,
@@ -375,20 +371,14 @@ void main() {
     for (final entry in destinations.entries) {
       await tester.tap(find.byTooltip('Open navigation menu'));
       await tester.pumpAndSettle();
-      expect(
-          tester
-              .getTopLeft(
-                  find.byKey(const ValueKey('library_navigation_podcasts')))
-              .dy,
-          lessThan(tester
-              .getTopLeft(
-                  find.byKey(const ValueKey('library_navigation_downloads')))
-              .dy));
       await tester.scrollUntilVisible(find.text(entry.key), 200,
           scrollable: find.descendant(
               of: find.byType(Drawer), matching: find.byType(Scrollable)));
-      await tester.tap(find.descendant(
-          of: find.byType(Drawer), matching: find.text(entry.key)));
+      final item = find.descendant(
+          of: find.byType(Drawer), matching: find.text(entry.key));
+      await tester.ensureVisible(item);
+      await tester.pumpAndSettle();
+      await tester.tap(item);
       await tester.pumpAndSettle();
       expect(find.text('Destination ${entry.key}'), findsOneWidget);
       await tester.tap(find.byTooltip('Back'));
@@ -431,14 +421,14 @@ void main() {
   group('renders sets', () {
     testWidgets('shows a card for each set returned by listSets',
         (tester) async {
-      final fakeClient = _FakeApiClient()..setsResult = [_kMovies, _kPodcasts];
+      final fakeClient = _FakeApiClient()..setsResult = [_kMovies, _kMusic];
 
       await _pumpSetsListScreen(tester, fakeClient);
       await tester.pumpAndSettle();
 
       // Both set names must be visible.
       expect(find.text('Movies'), findsOneWidget);
-      expect(find.text('Tech Podcasts'), findsOneWidget);
+      expect(find.text('Music'), findsOneWidget);
 
       // A card widget is rendered for each set.
       expect(find.byKey(const Key('set_card_1')), findsOneWidget);
@@ -454,34 +444,6 @@ void main() {
 
       // The grid widget is present once data is loaded.
       expect(find.byKey(const Key('sets_grid')), findsOneWidget);
-    });
-  });
-
-  // --------------------------------------------------------------------------
-  // Podcast badge
-  // --------------------------------------------------------------------------
-
-  group('podcast badge', () {
-    testWidgets('shows podcast badge for podcast sets', (tester) async {
-      final fakeClient = _FakeApiClient()..setsResult = [_kMovies, _kPodcasts];
-
-      await _pumpSetsListScreen(tester, fakeClient);
-      await tester.pumpAndSettle();
-
-      // The podcast badge (microphone icon container) is rendered exactly once:
-      // on the podcast set card only.
-      expect(find.byKey(const Key('podcast_badge')), findsOneWidget);
-    });
-
-    testWidgets('does not show podcast badge for non-podcast sets',
-        (tester) async {
-      final fakeClient = _FakeApiClient()..setsResult = [_kMovies];
-
-      await _pumpSetsListScreen(tester, fakeClient);
-      await tester.pumpAndSettle();
-
-      // No podcast badge when all sets are regular media.
-      expect(find.byKey(const Key('podcast_badge')), findsNothing);
     });
   });
 
@@ -566,7 +528,7 @@ void main() {
         'requests <base>/api/v1/sets/{id}/cover for every set with a builder',
         (tester) async {
       final fakeClient = _FakeApiClient()
-        ..setsResult = [_kMovies, _kPodcasts]
+        ..setsResult = [_kMovies, _kMusic]
         // Custom builder that yields a stable URL per set id; the test asserts
         // that this exact URL ends up on a CachedNetworkImage widget.
         ..coverUrlBuilder = (int setId, {String? folder}) =>
@@ -607,22 +569,6 @@ void main() {
       expect(find.byType(CachedNetworkImage), findsNothing);
       // The folder-icon placeholder is shown in its place.
       expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
-    });
-
-    testWidgets('podcast badge is overlaid on the cover image for podcast sets',
-        (tester) async {
-      final fakeClient = _FakeApiClient()
-        ..setsResult = [_kPodcasts]
-        ..coverUrlBuilder = (int setId, {String? folder}) =>
-            'http://test.invalid/api/v1/sets/$setId/cover';
-
-      await _pumpSetsListScreen(tester, fakeClient);
-      await tester.pump();
-      await tester.pump();
-
-      // Both the network cover and the podcast badge coexist for podcast sets.
-      expect(find.byType(CachedNetworkImage), findsOneWidget);
-      expect(find.byKey(const Key('podcast_badge')), findsOneWidget);
     });
   });
 

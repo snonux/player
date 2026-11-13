@@ -6,24 +6,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/dio_player_api_client.dart';
 import '../services/global_sync_coordinator.dart';
 import '../services/offline_playback_sync.dart';
-import '../services/podcast_repository.dart';
-import '../services/podcast_sync.dart';
-import '../services/podcast_sync_store.dart';
 import '../services/progress_queue.dart';
+import '../services/sync_account.dart';
 import 'api_client_provider.dart';
 import 'saved_queue_provider.dart';
 import 'auth_state_provider.dart';
 import 'offline_downloads_provider.dart';
 import 'offline_playback_sync_provider.dart';
-import 'podcast_library_provider.dart';
 import 'progress_queue_provider.dart';
 
-final podcastSyncStoreProvider = Provider<PodcastSyncStore>(
-    (ref) => PodcastSyncStore(ref.watch(podcastRepositoryProvider)));
-final podcastSyncProvider = Provider<PodcastSync>(
-    (ref) => PodcastSync(ref.watch(podcastSyncStoreProvider)));
+final globalSyncStatusStoreProvider =
+    Provider<GlobalSyncStatusStore>((ref) => GlobalSyncStatusStore());
 
-/// Capture the credential generation before any async operation; all three
+/// Capture the credential generation before any async operation; all
 /// domains use that same lease and refuse responses after switching accounts.
 GlobalSyncAccount? captureSyncAccount(Ref ref) {
   final auth = ref.read(authStateProvider).valueOrNull;
@@ -60,13 +55,8 @@ GlobalSyncAccount? captureSyncAccount(Ref ref) {
     syncQueue: savedQueueAccount == null
         ? null
         : () => savedQueues.syncForGlobal(savedQueueAccount),
-    podcast: PodcastSyncAccount(
-        scope: podcastAccountScope(origin, userId),
-        current: current,
-        supported: () async => (await client.getConfig())['podcast_sync'] == 1,
-        supportsDeletion: () async =>
-            (await client.getConfig())['podcast_episode_deletion'] == true,
-        send: client.syncPodcasts),
+    scope: accountSyncScope(origin, userId),
+    current: current,
     syncMedia: (explicit) => offline.syncAll(
         OfflineSyncAccount(
             origin: origin,
@@ -116,13 +106,11 @@ class _ForegroundSync extends WidgetsBindingObserver {
 final globalSyncCoordinatorProvider =
     ChangeNotifierProvider<GlobalSyncCoordinator>((ref) {
   final sync = GlobalSyncCoordinator(
-      ref.watch(podcastSyncProvider), () => captureSyncAccount(ref));
+      ref.watch(globalSyncStatusStoreProvider), () => captureSyncAccount(ref));
   final musicScheduler = ref.watch(automaticMusicSchedulerProvider);
   musicScheduler.onWake = () => sync.syncNow(explicit: false);
-  final repository = ref.watch(podcastRepositoryProvider);
   final downloads = ref.watch(offlineDownloadRepositoryProvider);
   final queue = ref.watch(progressQueueProvider);
-  repository.onSyncNeeded = sync.trigger;
   downloads.onSyncNeeded = sync.trigger;
   if (queue is ProgressQueue) queue.onSyncNeeded = sync.trigger;
   Future<void> wake() async {
@@ -131,16 +119,6 @@ final globalSyncCoordinatorProvider =
     }
     sync.trigger();
   }
-
-  // Maintenance also runs for the selected cached/device-only library.
-  final retention = Timer.periodic(const Duration(minutes: 30), (_) async {
-    final scope = ref.read(podcastScopeProvider).valueOrNull;
-    if (scope == null) return;
-    try {
-      await retainSelectedPodcasts(ref, scope);
-    } catch (_) {/* Retry on next browse/tick. */}
-  });
-  ref.onDispose(retention.cancel);
 
   final retry = Timer.periodic(const Duration(seconds: 15), (_) {
     if (ref.read(authStateProvider).valueOrNull?.isOffline == true) {
@@ -160,12 +138,8 @@ final globalSyncCoordinatorProvider =
     musicScheduler.onWake = null;
     unawaited(connectivity.cancel());
     WidgetsBinding.instance.removeObserver(lifecycle);
-    repository.onSyncNeeded = null;
     downloads.onSyncNeeded = null;
     if (queue is ProgressQueue) queue.onSyncNeeded = null;
-  });
-  sync.addListener(() {
-    if (!sync.state.active) ref.invalidate(podcastSubscriptionsProvider);
   });
   sync.trigger();
   return sync;

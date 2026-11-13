@@ -27,7 +27,6 @@ import 'screens/image_viewer_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/media_detail_screen.dart';
 import 'screens/media_grid_screen.dart';
-import 'podcast_routes.dart';
 import 'screens/radio_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/share_screen.dart';
@@ -92,10 +91,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isPublicSetupRoute =
           location == AppRoutes.server || location == AppRoutes.settings;
       final isLocalRoute = location == AppRoutes.localLibrary ||
-          location == AppRoutes.podcasts ||
-          location == AppRoutes.podcastFeed ||
-          location == AppRoutes.podcastPlayer ||
-          state.fullPath == AppRoutes.podcastEpisodes ||
           state.fullPath == AppRoutes.localPlayer ||
           location == AppRoutes.offlineDownloads ||
           state.fullPath == AppRoutes.offlinePlayer;
@@ -107,14 +102,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (offlineAuth?.isOffline == true) {
         coldEntry = false;
         // Evaluate before the public/local bypass: an unlocked saved account
-        // exposes its saved files and cached podcasts. Podcast playback uses
-        // device downloads and scoped local progress; remote routes stay gated.
+        // exposes its saved files; remote routes stay gated.
         final allowed = location == AppRoutes.offlineDownloads ||
-            state.fullPath == AppRoutes.offlinePlayer ||
-            location == AppRoutes.podcasts ||
-            location == AppRoutes.podcastFeed ||
-            location == AppRoutes.podcastPlayer ||
-            state.fullPath == AppRoutes.podcastEpisodes;
+            state.fullPath == AppRoutes.offlinePlayer;
         return allowed ? null : AppRoutes.offlineDownloads;
       }
       if (isShareViewerRoute || isPublicSetupRoute || isLocalRoute) {
@@ -352,7 +342,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.radio,
         builder: (context, state) => const RadioScreen(),
       ),
-      ...podcastRoutes(),
       GoRoute(
         path: AppRoutes.videoPlayer,
         builder: (context, state) {
@@ -618,7 +607,7 @@ String sharePlaybackUrl({
 ///
 /// Accepts two shapes forwarded by different call-sites:
 ///   - `Map<String, dynamic>`: optional `mediaUrl`, `position`, and `title`
-///     supplied by detail, continue-watching, podcast, and public-share screens.
+///     supplied by detail, continue-watching, and public-share screens.
 ///     Reuses loaded titles and saved positions without extra API calls.
 ///   - `String`: a plain stream URL, retained for older callers.
 ///

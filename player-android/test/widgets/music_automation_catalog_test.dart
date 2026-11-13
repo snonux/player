@@ -92,7 +92,7 @@ class _Player extends AudioPlayer {
 
 void main() {
   testWidgets(
-      'tagged podcast through media-detail Play now path stays manually playable but automation refuses; legacy snapshots use catalog',
+      'tagged spoken episode through media-detail Play now path stays manually playable but automation refuses; legacy snapshots use catalog',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final api = _Client(), player = _Player();

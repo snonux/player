@@ -8,17 +8,18 @@ import 'package:player_android/services/automatic_music.dart';
 import 'package:player_android/services/offline_collection_pins.dart';
 import 'package:player_android/services/offline_download_repository.dart';
 import 'package:player_android/services/music_collections.dart';
-import 'package:player_android/services/podcast_sync.dart';
-import 'package:player_android/services/podcast_repository.dart';
-import 'package:player_android/services/podcast_sync_store.dart';
+import 'package:player_android/services/sync_account.dart';
 import 'package:player_android/services/global_sync_coordinator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   });
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   late Directory dir;
   late OfflineDownloadRepository repository;
   late AutomaticMusicLibrary library;
@@ -315,16 +316,11 @@ void main() {
     await music.bind(account.key);
     await music
         .savePolicy(const AutomaticMusicPolicy(enabled: true, recent: true));
-    final podcastRepo =
-        PodcastRepository(databasePath: '${dir.path}/podcasts.db');
     final sync = GlobalSyncCoordinator(
-        PodcastSync(PodcastSyncStore(podcastRepo)),
+        GlobalSyncStatusStore(),
         () => GlobalSyncAccount(
-            podcast: PodcastSyncAccount(
-                scope: 'account:test',
-                current: () => true,
-                supported: () async => false,
-                send: (_) async => {}),
+            scope: 'account:test',
+            current: () => true,
             syncMedia: (_) async {},
             flushProgress: () async {},
             pendingOther: () async => 0,
@@ -333,7 +329,6 @@ void main() {
     addTearDown(() async {
       sync.dispose();
       music.dispose();
-      await podcastRepo.close();
     });
     await sync.syncNow();
     expect(sync.state.lastFullSuccessMs, 1000);
@@ -458,21 +453,13 @@ void main() {
     expect(music.due, false);
     expect(music.status['error'], 'interrupted');
     expect(music.status['message'], contains('interrupted'));
-    final podcastRepo =
-        PodcastRepository(databasePath: '${dir.path}/interrupted-podcasts.db');
-    final store = PodcastSyncStore(podcastRepo);
-    await store.status('account:test');
-    await (await store.database).update(
-        'podcast_scopes', {'last_full_success_ms': 17},
-        where: 'scope=?', whereArgs: ['account:test']);
+    final store = GlobalSyncStatusStore();
+    await store.record('account:test', attemptMs: 17);
     final sync = GlobalSyncCoordinator(
-        PodcastSync(store),
+        store,
         () => GlobalSyncAccount(
-            podcast: PodcastSyncAccount(
-                scope: 'account:test',
-                current: () => true,
-                supported: () async => false,
-                send: (_) async => {}),
+            scope: 'account:test',
+            current: () => true,
             syncMedia: (_) async {},
             flushProgress: () async {},
             pendingOther: () async => 0,
@@ -482,7 +469,6 @@ void main() {
       sync.dispose();
       music.dispose();
       oldMusic.dispose();
-      await podcastRepo.close();
     });
     await sync.syncNow(explicit: false);
     expect(newReads, 0);

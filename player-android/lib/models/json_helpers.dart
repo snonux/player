@@ -5,7 +5,7 @@
 // front, and catches `FormatException` from `DateTime.parse` so that an
 // unexpected date string degrades to null instead of crashing the entire
 // model deserialization. This protects every consumer (Media, MediaSet,
-// User, PodcastFeed, PodcastEpisode, PlaybackHint, Share, Note, ...) from
+// User, PlaybackHint, Share, Note, ...) from
 // a single bad field propagating an exception up the JSON decode stack.
 DateTime? dateTimeFromJson(Object? value) {
   if (value is! String || value.isEmpty) return null;

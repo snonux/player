@@ -145,6 +145,7 @@ func TestPodcastSyncMigrationFromLegacySchema(t *testing.T) {
 		before[table] = tableSnapshot(t, db, table)
 	}
 	musicProgress := progressRow(t, db, 2, 2)
+	episodeProgress := map[int64]string{1: progressRow(t, db, 1, 1), 2: progressRow(t, db, 2, 1)}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +166,7 @@ func TestPodcastSyncMigrationFromLegacySchema(t *testing.T) {
 	checkMigratedEpisodes(t, s.db)
 	checkMigratedSubscriptions(t, s.db)
 	checkMigratedState(t, s.db)
-	checkMigratedMirrors(t, s.db)
+	checkMigratedMirrors(t, s.db, episodeProgress)
 	var fk int
 	if err := s.db.QueryRow(`PRAGMA foreign_keys`).Scan(&fk); err != nil || fk != 1 {
 		t.Fatalf("foreign keys after migration = %d, %v; want 1", fk, err)
@@ -273,34 +274,24 @@ func checkMigratedSubscriptions(t *testing.T, db *sql.DB) {
 	}
 }
 
+// checkMigratedState: podcast support is gone, so the migration no longer
+// backfills per-user episode state from podcast_status; that table is left
+// in place as it was.
 func checkMigratedState(t *testing.T, db *sql.DB) {
 	t.Helper()
-	c := migrationClock
-	got := tableSnapshot(t, db, "podcast_episode_state")
-	want := fmt.Sprintf(`1 feed:example.com/rss guid:g1 0 0 0 manual %d  5 0 0
-1 feed:example.com/rss guid:g4 300 %d 1 auto %d  6 0 0
-2 feed:example.com/rss guid:g1 0 0 1 manual %d  7 0 0
-2 feed:example.com/rss guid:g4 0 %d 0 manual %d  8 0 0
-`, c.t2.UnixMilli(), c.t4.UnixMilli(), c.t4.UnixMilli(), c.t1.UnixMilli(), c.t5.UnixMilli(), c.t5.UnixMilli())
-	if got != want {
-		t.Errorf("episode state:\n%s\nwant\n%s", got, want)
-	}
-	var next int64
-	if err := db.QueryRow(`SELECT next_seq FROM podcast_sync_seq`).Scan(&next); err != nil || next != 9 {
-		t.Errorf("next_seq = %d, %v; want 9", next, err)
+	if got := tableSnapshot(t, db, "podcast_episode_state"); got != "" {
+		t.Errorf("episode state backfilled:\n%s", got)
 	}
 }
 
-func checkMigratedMirrors(t *testing.T, db *sql.DB) {
+// checkMigratedMirrors: the media progress of downloaded episodes is no
+// longer rewritten from episode state.
+func checkMigratedMirrors(t *testing.T, db *sql.DB, before map[int64]string) {
 	t.Helper()
-	c := migrationClock
-	// Viewer: the reset after the saved position wins both registers.
-	if got, want := progressRow(t, db, 2, 1), fmt.Sprintf("pos=0 acc=10 finished=false at=%d", c.t5.UnixMilli()); got != want {
-		t.Errorf("viewer mirror = %s, want %s", got, want)
-	}
-	// Admin: finished with the position of the same edit, accumulation kept.
-	if got, want := progressRow(t, db, 1, 1), fmt.Sprintf("pos=300 acc=50 finished=true at=%d", c.t4.UnixMilli()); got != want {
-		t.Errorf("admin mirror = %s, want %s", got, want)
+	for user, want := range before {
+		if got := progressRow(t, db, user, 1); got != want {
+			t.Errorf("user %d episode progress changed: %s -> %s", user, want, got)
+		}
 	}
 }
 

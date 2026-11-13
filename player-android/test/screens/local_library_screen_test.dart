@@ -166,24 +166,14 @@ void main() {
     expect(find.text('Connect to server'), findsOneWidget);
     expect(find.byTooltip('Add files'), findsOneWidget);
     expect(find.byTooltip('Open navigation menu'), findsOneWidget);
-    expect(find.byTooltip('Podcasts on this device'), findsNothing);
     expect(find.byTooltip('Downloads'), findsNothing);
     expect(find.byTooltip('Settings'), findsNothing);
 
     await tester.tap(find.byTooltip('Open navigation menu'));
     await tester.pumpAndSettle();
     expect(find.byType(Drawer), findsOneWidget);
-    expect(find.text('Podcasts'), findsOneWidget);
+    expect(find.text('Podcasts'), findsNothing);
     expect(find.text('Downloads'), findsOneWidget);
-    expect(
-        tester
-            .getTopLeft(
-                find.byKey(const ValueKey('library_navigation_podcasts')))
-            .dy,
-        lessThan(tester
-            .getTopLeft(
-                find.byKey(const ValueKey('library_navigation_downloads')))
-            .dy));
     expect(
         find.descendant(
             of: find.byType(Drawer), matching: find.text('Connect to server')),

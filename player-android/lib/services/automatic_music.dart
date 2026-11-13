@@ -5,7 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import '../models/media.dart';
 import '../models/offline_media.dart';
 import 'offline_collection_pins.dart';
-import 'podcast_sync.dart';
+import 'sync_account.dart';
 import 'offline_download_repository.dart';
 
 const automaticMusicCopyLimit = 200;

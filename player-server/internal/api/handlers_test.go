@@ -2243,97 +2243,6 @@ func (m *mockPingStore) Ping(ctx context.Context) error {
 	return m.err
 }
 
-// PodcastRepo methods added for Store interface compliance.
-func (m *mockPingStore) CreateFeed(ctx context.Context, feed *model.PodcastFeed) (int64, error) {
-	return m.store.CreateFeed(ctx, feed)
-}
-func (m *mockPingStore) UpdateFeed(ctx context.Context, feed *model.PodcastFeed) error {
-	return m.store.UpdateFeed(ctx, feed)
-}
-func (m *mockPingStore) DeleteFeed(ctx context.Context, id int64) error {
-	return m.store.DeleteFeed(ctx, id)
-}
-func (m *mockPingStore) GetFeedByID(ctx context.Context, id int64) (*model.PodcastFeed, error) {
-	return m.store.GetFeedByID(ctx, id)
-}
-func (m *mockPingStore) GetFeedBySetID(ctx context.Context, setID int64) (*model.PodcastFeed, error) {
-	return m.store.GetFeedBySetID(ctx, setID)
-}
-func (m *mockPingStore) ListFeedsBySetID(ctx context.Context, setID int64) ([]model.PodcastFeed, error) {
-	return m.store.ListFeedsBySetID(ctx, setID)
-}
-func (m *mockPingStore) ListFeeds(ctx context.Context) ([]model.PodcastFeed, error) {
-	return m.store.ListFeeds(ctx)
-}
-func (m *mockPingStore) ListFeedsNeedingCheck(ctx context.Context, now, before time.Time) ([]model.PodcastFeed, error) {
-	return m.store.ListFeedsNeedingCheck(ctx, now, before)
-}
-func (m *mockPingStore) CreateEpisode(ctx context.Context, episode *model.PodcastEpisode) (int64, error) {
-	return m.store.CreateEpisode(ctx, episode)
-}
-func (m *mockPingStore) GetEpisodeByID(ctx context.Context, id int64) (*model.PodcastEpisode, error) {
-	return m.store.GetEpisodeByID(ctx, id)
-}
-func (m *mockPingStore) GetMediaEpisodeState(ctx context.Context, userID, mediaID int64) (*model.PodcastEpisodeState, error) {
-	return m.store.GetMediaEpisodeState(ctx, userID, mediaID)
-}
-func (m *mockPingStore) GetEpisodeByGUID(ctx context.Context, feedID int64, guid string) (*model.PodcastEpisode, error) {
-	return m.store.GetEpisodeByGUID(ctx, feedID, guid)
-}
-func (m *mockPingStore) ListEpisodesByFeed(ctx context.Context, feedID int64, limit, offset int) ([]model.PodcastEpisode, error) {
-	return m.store.ListEpisodesByFeed(ctx, feedID, limit, offset)
-}
-func (m *mockPingStore) ListEpisodeMediaIDs(ctx context.Context, feedIDs []int64) ([]int64, error) {
-	return m.store.ListEpisodeMediaIDs(ctx, feedIDs)
-}
-func (m *mockPingStore) ListEpisodesByFeedIDsWithStatus(ctx context.Context, userID int64, feedIDs []int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
-	return m.store.ListEpisodesByFeedIDsWithStatus(ctx, userID, feedIDs, limit, offset)
-}
-func (m *mockPingStore) UpdateEpisodeMedia(ctx context.Context, episodeID, mediaID int64, fileName string) error {
-	return m.store.UpdateEpisodeMedia(ctx, episodeID, mediaID, fileName)
-}
-func (m *mockPingStore) DeleteEpisodesByFeed(ctx context.Context, feedID int64) error {
-	return m.store.DeleteEpisodesByFeed(ctx, feedID)
-}
-func (m *mockPingStore) ListEpisodesWithStatus(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
-	return m.store.ListEpisodesWithStatus(ctx, userID, feedID, limit, offset)
-}
-
-func (m *mockPingStore) SyncPodcast(ctx context.Context, userID int64, in model.PodcastSyncBatch) (*model.PodcastSyncResponse, error) {
-	return m.store.SyncPodcast(ctx, userID, in)
-}
-func (m *mockPingStore) SetPodcastSubscription(ctx context.Context, userID int64, feed *model.PodcastFeed, subscribed bool, now time.Time) error {
-	return m.store.SetPodcastSubscription(ctx, userID, feed, subscribed, now)
-}
-func (m *mockPingStore) PodcastSubscriptionStates(ctx context.Context, userID int64) (map[string]bool, error) {
-	return m.store.PodcastSubscriptionStates(ctx, userID)
-}
-func (m *mockPingStore) HasActivePodcastSubscription(ctx context.Context, feedKey string) (bool, error) {
-	return m.store.HasActivePodcastSubscription(ctx, feedKey)
-}
-func (m *mockPingStore) GetFeedByKey(ctx context.Context, key string) (*model.PodcastFeed, error) {
-	return m.store.GetFeedByKey(ctx, key)
-}
-func (m *mockPingStore) IngestFeedEpisodes(ctx context.Context, feed *model.PodcastFeed, episodes []model.PodcastEpisode, now time.Time) error {
-	return m.store.IngestFeedEpisodes(ctx, feed, episodes, now)
-}
-func (m *mockPingStore) ClearEpisodeDownloads(ctx context.Context, feedID int64) error {
-	return m.store.ClearEpisodeDownloads(ctx, feedID)
-}
-func (m *mockPingStore) MoveFeed(ctx context.Context, feedID int64, target string) (repository.FeedMove, error) {
-	return m.store.MoveFeed(ctx, feedID, target)
-}
-func (m *mockPingStore) ListSubscribedEpisodes(ctx context.Context, userID int64, q repository.PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error) {
-	return m.store.ListSubscribedEpisodes(ctx, userID, q)
-}
-func (m *mockPingStore) ToggleEpisodeCompletion(ctx context.Context, userID, episodeID int64, now time.Time) (bool, error) {
-	return m.store.ToggleEpisodeCompletion(ctx, userID, episodeID, now)
-}
-
-func (m *mockPingStore) CreateDeferredPodcastFeeds(ctx context.Context, now time.Time, checkInterval int, mediaRoot string) error {
-	return m.store.CreateDeferredPodcastFeeds(ctx, now, checkInterval, mediaRoot)
-}
-
 func (m *mockPingStore) ListPlaylists(ctx context.Context, user int64) ([]model.Playlist, error) {
 	return m.store.ListPlaylists(ctx, user)
 }
@@ -2363,8 +2272,4 @@ func (m *mockPingStore) UpdatePlaylistDetails(ctx context.Context, user int64, i
 
 func (m *mockPingStore) AddPlaylistSongs(ctx context.Context, user int64, targets map[string][]model.PlaylistEntry, skip bool) (bool, error) {
 	return m.store.AddPlaylistSongs(ctx, user, targets, skip)
-}
-
-func (m *mockPingStore) GetSubscribedPodcastFeed(ctx context.Context, userID int64, key string) (*model.PodcastFeed, error) {
-	return m.store.GetSubscribedPodcastFeed(ctx, userID, key)
 }

@@ -703,7 +703,6 @@ void main() {
         });
     final sets = [
       MediaSet.fromJson({'id': 1, 'name': 'Music'}),
-      MediaSet.fromJson({'id': 2, 'name': 'Books', 'is_podcast': true}),
       MediaSet.fromJson({'id': 3, 'name': 'Audio Books'})
     ];
     expect(isMusicTrack(media('song.flac'), sets), isTrue);
@@ -714,7 +713,6 @@ void main() {
             media('chapter.mp3', path: 'audio_books/chapter.mp3'), sets),
         isFalse);
     expect(isMusicTrack(media('chapter.mp3', set: 3), sets), isFalse);
-    expect(isMusicTrack(media('episode.mp3', set: 2), sets), isFalse);
   });
 
   for (final complete in [false, true]) {

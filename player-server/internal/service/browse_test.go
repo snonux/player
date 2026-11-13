@@ -113,7 +113,7 @@ func TestBrowseService_BrowseSet(t *testing.T) {
 					},
 				},
 			}
-			svc := NewBrowseService(store, clock.RealClock{}, tmpDir, &accessHelper{store: store}, nil)
+			svc := NewBrowseService(store, clock.RealClock{}, tmpDir, &accessHelper{store: store})
 			res, err := svc.BrowseSet(ctx, 1, 1, "")
 			if tt.wantErr {
 				if err == nil {
@@ -131,66 +131,6 @@ func TestBrowseService_BrowseSet(t *testing.T) {
 				t.Fatalf("expected %d folders, got %d", tt.wantFolders, len(res.Folders))
 			}
 		})
-	}
-}
-
-func TestBrowseService_BrowseSet_PodcastEpisodes(t *testing.T) {
-	ctx := context.Background()
-	store := &repository.MockStore{
-		MediaRepo: repository.MockMediaRepo{
-			ListMediaFunc: func(ctx context.Context, filter repository.MediaFilter) ([]model.Media, error) {
-				return []model.Media{{ID: 10, SetID: 1, RelPath: "Test Feed/downloaded.mp3", FileName: "downloaded.mp3"}}, nil
-			},
-		},
-		SetRepo: repository.MockSetRepo{
-			GetSetByIDFunc: func(ctx context.Context, id int64) (*model.Set, error) {
-				return &model.Set{ID: id, RootPath: "podcast", IsPodcast: true}, nil
-			},
-		},
-		UserRepo: repository.MockUserRepo{
-			GetUserByIDFunc: func(ctx context.Context, id int64) (*model.User, error) {
-				return &model.User{ID: id, IsAdmin: true}, nil
-			},
-		},
-		SetPermissionRepo: repository.MockSetPermissionRepo{
-			GetPermissionFunc: func(ctx context.Context, setID, userID int64) (*model.SetPermission, error) {
-				return nil, nil
-			},
-		},
-		PodcastRepo: repository.MockPodcastRepo{
-			ListFeedsBySetIDFunc: func(ctx context.Context, setID int64) ([]model.PodcastFeed, error) {
-				return []model.PodcastFeed{{ID: 99, SetID: setID, Title: "Test Feed"}}, nil
-			},
-			ListEpisodesWithStatusFunc: func(ctx context.Context, userID, feedID int64, limit, offset int) ([]model.PodcastEpisodeWithStatus, error) {
-				return []model.PodcastEpisodeWithStatus{
-					{PodcastEpisode: model.PodcastEpisode{ID: 1, Title: "Downloaded", IsDownloaded: true}},
-					{PodcastEpisode: model.PodcastEpisode{ID: 2, Title: "Undownloaded", IsDownloaded: false}},
-				}, nil
-			},
-		},
-	}
-	browser := NewPodcastBrowseService(&store.PodcastRepo, t.TempDir())
-	svc := NewBrowseService(store, clock.RealClock{}, t.TempDir(), &accessHelper{store: store}, browser)
-	res, err := svc.BrowseSet(ctx, 1, 1, "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(res.Folders) != 1 || res.Folders[0].Name != "Test Feed" {
-		t.Fatalf("expected podcast feed folder, got %+v", res.Folders)
-	}
-
-	res, err = svc.BrowseSet(ctx, 1, 1, "Test Feed")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(res.Media) != 1 {
-		t.Fatalf("expected downloaded media card, got %d media items", len(res.Media))
-	}
-	if len(res.Episodes) != 1 {
-		t.Fatalf("expected only undownloaded episode, got %+v", res.Episodes)
-	}
-	if res.Episodes[0].ID != 2 {
-		t.Fatalf("expected undownloaded episode ID 2, got %+v", res.Episodes[0])
 	}
 }
 
@@ -216,7 +156,7 @@ func TestBrowseService_GetThumbnail_DelegatesToResolver(t *testing.T) {
 
 	t.Run("resolver hit becomes FileResult", func(t *testing.T) {
 		fake := &fakeResolver{resolved: &thumb.ResolvedFile{Path: "/anywhere/x.jpg", FileName: "x.jpg", FileSize: 42}}
-		svc := NewBrowseServiceWithResolver(store, clock.RealClock{}, "/tmp/media", &accessHelper{store: store}, nil, fake)
+		svc := NewBrowseServiceWithResolver(store, clock.RealClock{}, "/tmp/media", &accessHelper{store: store}, fake)
 		res, err := svc.GetThumbnail(ctx, 7, 1)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -234,7 +174,7 @@ func TestBrowseService_GetThumbnail_DelegatesToResolver(t *testing.T) {
 
 	t.Run("resolver ErrNotFound maps to service ErrNotFound", func(t *testing.T) {
 		fake := &fakeResolver{resolvErr: thumb.ErrNotFound}
-		svc := NewBrowseServiceWithResolver(store, clock.RealClock{}, "/tmp/media", &accessHelper{store: store}, nil, fake)
+		svc := NewBrowseServiceWithResolver(store, clock.RealClock{}, "/tmp/media", &accessHelper{store: store}, fake)
 		_, err := svc.GetThumbnail(ctx, 7, 1)
 		if !errors.Is(err, ErrNotFound) {
 			t.Fatalf("expected ErrNotFound, got %v", err)
@@ -244,7 +184,7 @@ func TestBrowseService_GetThumbnail_DelegatesToResolver(t *testing.T) {
 	t.Run("other resolver errors propagate", func(t *testing.T) {
 		boom := errors.New("disk on fire")
 		fake := &fakeResolver{resolvErr: boom}
-		svc := NewBrowseServiceWithResolver(store, clock.RealClock{}, "/tmp/media", &accessHelper{store: store}, nil, fake)
+		svc := NewBrowseServiceWithResolver(store, clock.RealClock{}, "/tmp/media", &accessHelper{store: store}, fake)
 		_, err := svc.GetThumbnail(ctx, 7, 1)
 		if err == nil || errors.Is(err, ErrNotFound) {
 			t.Fatalf("expected non-not-found error, got %v", err)
@@ -254,7 +194,7 @@ func TestBrowseService_GetThumbnail_DelegatesToResolver(t *testing.T) {
 	t.Run("nil resolver falls back to default", func(t *testing.T) {
 		// NewBrowseServiceWithResolver(nil resolver) should still work and
 		// not panic — the constructor swaps in the FS resolver.
-		svc := NewBrowseServiceWithResolver(store, clock.RealClock{}, "/tmp/media", &accessHelper{store: store}, nil, nil)
+		svc := NewBrowseServiceWithResolver(store, clock.RealClock{}, "/tmp/media", &accessHelper{store: store}, nil)
 		if svc == nil {
 			t.Fatal("expected non-nil service")
 		}
@@ -315,7 +255,7 @@ func TestBrowseSetSortedRetainsFoldersAndFlattenedOrder(t *testing.T) {
 			if facade {
 				browse = NewMediaService(store, clock.RealClock{}, t.TempDir(), nil, nil)
 			} else {
-				browse = NewBrowseService(store, clock.RealClock{}, t.TempDir(), &accessHelper{store: store}, nil)
+				browse = NewBrowseService(store, clock.RealClock{}, t.TempDir(), &accessHelper{store: store})
 			}
 			svc, ok := browse.(interface {
 				BrowseSetSorted(context.Context, int64, int64, string, string) (*BrowseResult, error)

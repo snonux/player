@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/dio_player_api_client.dart';
-import '../services/podcast_repository.dart';
+import '../services/sync_account.dart';
 import '../services/saved_queue_sync.dart';
 import 'api_client_provider.dart';
 import 'auth_state_provider.dart';
@@ -26,7 +26,7 @@ SavedQueueAccount? captureSavedQueueAccount(Ref ref) {
       mutations.credentialOrigin == origin &&
       ref.read(authStateProvider).valueOrNull?.user?.id == userId;
   return SavedQueueAccount(
-      scope: podcastAccountScope(origin, userId),
+      scope: accountSyncScope(origin, userId),
       current: current,
       read: () async {
         if (!current()) throw StateError('Account changed');

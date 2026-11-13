@@ -54,11 +54,6 @@ abstract final class AppRoutes {
   /// Full-size image viewer for an authenticated media item.
   static const imageViewer = '/image/:mediaId';
 
-  /// Device subscriptions, available independently of server login.
-  static const podcasts = '/podcasts';
-  static const podcastFeed = '/podcasts/feed';
-  static const podcastPlayer = '/podcasts/player';
-
   /// Route that shows the Continue Watching screen (in-progress media items).
   static const continueWatching = '/continue';
 
@@ -121,20 +116,6 @@ abstract final class AppRoutes {
 
   /// Returns the concrete path for the notes editor of a given [mediaId].
   static String notesPath(String mediaId) => '/notes/$mediaId';
-
-  /// Legacy numeric server-set link. Opens the standalone subscription picker;
-  /// a server set ID cannot identify a device subscription.
-  static const podcastEpisodes = '/podcasts/:setId/episodes';
-
-  /// Returns the concrete path for the podcast-episodes screen of [setId].
-  ///
-  /// [setName] is optionally passed as a URL query parameter so the app bar
-  /// can show it without an extra API call.
-  static String podcastEpisodesPath(int setId, {String? setName}) {
-    final base = '/podcasts/$setId/episodes';
-    if (setName == null || setName.isEmpty) return base;
-    return '$base?name=${Uri.encodeComponent(setName)}';
-  }
 
   /// Route for the admin user management screen.
   ///

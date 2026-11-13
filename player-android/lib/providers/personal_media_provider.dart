@@ -40,6 +40,5 @@ PersonalMediaStore? playbackPersonalStore(
             ? serverPersonalStore(ref, request.mediaId)
             : null,
       PublicSharePlaybackRequest() => null,
-      PodcastPlaybackRequest() => null,
       LiveRadioPlaybackRequest() => null,
     };

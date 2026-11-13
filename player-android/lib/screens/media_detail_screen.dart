@@ -1,6 +1,3 @@
-import '../widgets/podcast_show_notes.dart';
-import '../widgets/podcast_artwork.dart';
-import '../widgets/podcast_publication_date.dart';
 import '../widgets/music_related_section.dart';
 import '../services/music_queue.dart';
 import '../widgets/music_metadata_details.dart';
@@ -324,7 +321,8 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     }
 
     if (_error != null) {
-      return ErrorRetryView(keyPrefix: 'media_detail', 
+      return ErrorRetryView(
+        keyPrefix: 'media_detail',
         message: _error!,
         onRetry: _load,
       );
@@ -414,24 +412,11 @@ class _MediaDetailContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Full-width thumbnail/cover image.
-          if (media.podcast != null)
-            AspectRatio(
-                aspectRatio: 4 / 3,
-                child: PodcastArtwork(
-                    imageUrl: media.podcast!.imageUrl,
-                    fallbackUrl: media.podcast!.feedImageUrl,
-                    title: media.displayTitle,
-                    size: null,
-                    unavailable: _ThumbnailBanner(
-                        thumbnailUrl: thumbnailUrl,
-                        fileName: media.fileName,
-                        type: media.type)))
-          else
-            _ThumbnailBanner(
-              thumbnailUrl: thumbnailUrl,
-              fileName: media.fileName,
-              type: media.type,
-            ),
+          _ThumbnailBanner(
+            thumbnailUrl: thumbnailUrl,
+            fileName: media.fileName,
+            type: media.type,
+          ),
 
           _details(),
 
@@ -477,10 +462,6 @@ class _MediaDetailContent extends StatelessWidget {
             const SizedBox(height: 8),
 
             if (media.musicSubtitle.isNotEmpty) Text(media.musicSubtitle),
-            if (media.podcast != null) ...[
-              PodcastPublicationDate(date: media.podcast!.publishedAt),
-              PodcastShowNotes(description: media.podcast!.description),
-            ],
             if (media.type == 'audio')
               TextButton.icon(
                   onPressed: onOpenAlbum,

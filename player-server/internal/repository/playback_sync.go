@@ -31,51 +31,37 @@ func latestProgressTime(ctx context.Context, db sqlQueryRower, userID, mediaID i
 }
 
 // ProgressEditTime returns the time a server-side status edit (finish,
-// reset) of the media must not tie with: the latest progress or reset
-// time, or for an episode copy the later of its registers' clocks.
+// reset) of the media must not tie with: the latest progress or reset time.
 func (s *SQLite) ProgressEditTime(ctx context.Context, userID, mediaID int64) (time.Time, error) {
-	return editTime(ctx, s.db, userID, mediaID, false)
+	return latestProgressTime(ctx, s.db, userID, mediaID)
 }
 
 // ProgressEditTime implements the same on the progress transaction.
 func (s *progressTxStore) ProgressEditTime(ctx context.Context, userID, mediaID int64) (time.Time, error) {
-	return editTime(ctx, s.tx, userID, mediaID, false)
+	return latestProgressTime(ctx, s.tx, userID, mediaID)
 }
 
 // PositionEditTime returns the time a position save of the media must be
-// later than: like ProgressEditTime for ordinary media, the position
-// register's clock for an episode copy (a later completion does not block
-// a position save, contract §4 rule 5).
+// later than; the same as ProgressEditTime.
 func (s *SQLite) PositionEditTime(ctx context.Context, userID, mediaID int64) (time.Time, error) {
-	return editTime(ctx, s.db, userID, mediaID, true)
+	return latestProgressTime(ctx, s.db, userID, mediaID)
 }
 
 // PositionEditTime implements the same on the progress transaction.
 func (s *progressTxStore) PositionEditTime(ctx context.Context, userID, mediaID int64) (time.Time, error) {
-	return editTime(ctx, s.tx, userID, mediaID, true)
+	return latestProgressTime(ctx, s.tx, userID, mediaID)
 }
 
 // SyncPlayback merges one item's edits and reads the result in one transaction.
-// No mutation is stamped with reconnect time, including tombstones. The
-// progress of an episode copy merges into the episode registers, and the
-// answer is their projection (contract §7.1); bookmarks stay media-scoped.
+// No mutation is stamped with reconnect time, including tombstones.
 func (s *SQLite) SyncPlayback(ctx context.Context, userID, mediaID int64, incoming model.PlaybackSync) (*model.PlaybackSync, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	k, linked, err := linkedEpisode(ctx, tx, userID, mediaID)
-	if err != nil {
-		return nil, err
-	}
 	if p := incoming.Progress; p != nil {
-		if linked {
-			err = syncLinkedProgress(ctx, tx, k, mediaID, p, s.now())
-		} else {
-			err = syncMediaProgress(ctx, tx, userID, mediaID, p)
-		}
-		if err != nil {
+		if err := syncMediaProgress(ctx, tx, userID, mediaID, p); err != nil {
 			return nil, err
 		}
 	}
@@ -89,13 +75,9 @@ func (s *SQLite) SyncPlayback(ctx context.Context, userID, mediaID int64, incomi
 		}
 		result.AcceptedMusicPlays = append(result.AcceptedMusicPlays, play.ID)
 	}
-	if linked {
-		result.Progress, err = linkedSyncResult(ctx, tx, k, mediaID)
-	} else {
-		result.Progress, err = mediaSyncResult(ctx, tx, userID, mediaID)
-	}
-	if err != nil {
-		return nil, err
+	var err2 error
+	if result.Progress, err2 = mediaSyncResult(ctx, tx, userID, mediaID); err2 != nil {
+		return nil, err2
 	}
 	if result.Bookmarks, err = listSyncedBookmarks(ctx, tx, userID, mediaID); err != nil {
 		return nil, err

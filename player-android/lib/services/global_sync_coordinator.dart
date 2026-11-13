@@ -1,17 +1,23 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
-import 'podcast_sync.dart';
+import 'sync_account.dart';
 
 class GlobalSyncAccount {
   GlobalSyncAccount(
-      {required this.podcast,
+      {required this.scope,
+      required this.current,
       required this.syncMedia,
       required this.flushProgress,
       required this.pendingOther,
       this.syncQueue,
       this.syncMusic});
-  final PodcastSyncAccount podcast;
+
+  /// The account's [accountSyncScope].
+  final String scope;
+
+  /// False once the account signed out or switched.
+  final bool Function() current;
   final Future<void> Function(bool explicit) syncMedia;
   final Future<void> Function() flushProgress;
   final Future<int> Function() pendingOther;
@@ -41,9 +47,9 @@ class GlobalSyncState {
 
 /// One quiet retry loop for supported domains; no UI, credentials or player.
 class GlobalSyncCoordinator extends ChangeNotifier {
-  GlobalSyncCoordinator(this.podcasts, this.account, {DateTime Function()? now})
+  GlobalSyncCoordinator(this.status, this.account, {DateTime Function()? now})
       : _now = now ?? DateTime.now;
-  final PodcastSync podcasts;
+  final GlobalSyncStatusStore status;
   final GlobalSyncAccount? Function() account;
   final DateTime Function() _now;
   GlobalSyncState state = const GlobalSyncState();
@@ -73,7 +79,7 @@ class GlobalSyncCoordinator extends ChangeNotifier {
   /// Drop the previous account's presentation before reading durable status.
   Future<void> refreshStatus() async {
     final active = account();
-    final lease = active?.podcast;
+    final lease = active;
     final generation = ++_statusGeneration;
     if (lease == null) {
       state = const GlobalSyncState();
@@ -87,9 +93,8 @@ class GlobalSyncCoordinator extends ChangeNotifier {
       state = GlobalSyncState(scope: lease.scope);
       notifyListeners();
     }
-    final meta = await podcasts.store.status(lease.scope);
-    final pending = (await podcasts.store.pending(lease.scope)).length +
-        await active!.pendingOther();
+    final meta = await status.read(lease.scope);
+    final pending = await lease.pendingOther();
     if (_disposed || generation != _statusGeneration || !lease.current()) {
       return;
     }
@@ -97,8 +102,8 @@ class GlobalSyncCoordinator extends ChangeNotifier {
         scope: lease.scope,
         active: state.active,
         pending: pending,
-        lastFullSuccessMs: meta['last_full_success_ms'] as int?,
-        errorKind: meta['last_error_kind'] as String?);
+        lastFullSuccessMs: meta.lastFullSuccessMs,
+        errorKind: meta.errorKind);
     notifyListeners();
   }
 
@@ -114,12 +119,12 @@ class GlobalSyncCoordinator extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (state.scope != active.podcast.scope) {
-      state = GlobalSyncState(scope: active.podcast.scope);
+    if (state.scope != active.scope) {
+      state = GlobalSyncState(scope: active.scope);
       notifyListeners();
       unawaited(refreshStatus().catchError((Object _) {}));
     }
-    if (_authBlockedScope == active.podcast.scope && !signedIn) return;
+    if (_authBlockedScope == active.scope && !signedIn) return;
     if (reset) {
       _failures = 0;
       _timer?.cancel();
@@ -134,7 +139,7 @@ class GlobalSyncCoordinator extends ChangeNotifier {
 
   Future<void> syncNow({bool explicit = true}) {
     if (_disposed) return Future.value();
-    final lease = account()?.podcast;
+    final lease = account();
     // Require a live account scope; do not treat null==null as auth-blocked.
     if (lease == null || _authBlockedScope == lease.scope) {
       return Future.value();
@@ -185,26 +190,21 @@ class GlobalSyncCoordinator extends ChangeNotifier {
   Future<void> _run(bool explicit) async {
     final active = account();
     if (active == null) return;
-    final lease = active.podcast;
+    final lease = active;
     _statusGeneration++;
     bool current() => !_disposed && lease.current();
     if (!current()) return;
-    final store = podcasts.store;
-    final db = await store.database;
-    final meta = await store.status(lease.scope);
-    final pending =
-        (await store.pending(lease.scope)).length + await active.pendingOther();
+    final meta = await status.read(lease.scope);
+    final pending = await active.pendingOther();
     if (!current()) return;
     state = GlobalSyncState(
         scope: lease.scope,
         active: true,
         pending: pending,
-        lastFullSuccessMs: meta['last_full_success_ms'] as int?,
-        errorKind: meta['last_error_kind'] as String?);
+        lastFullSuccessMs: meta.lastFullSuccessMs,
+        errorKind: meta.errorKind);
     notifyListeners();
     String? error;
-    final result = await podcasts.sync(lease);
-    if (!result.full) error = result.errorKind ?? 'server';
     for (final step in [
       () => active.syncMedia(explicit),
       active.flushProgress,
@@ -221,22 +221,9 @@ class GlobalSyncCoordinator extends ChangeNotifier {
     }
     if (!current()) return;
     final now = _now().millisecondsSinceEpoch;
-    final remaining =
-        (await store.pending(lease.scope)).length + await active.pendingOther();
+    final remaining = await active.pendingOther();
     if (!current()) return;
-    await db.transaction((tx) async {
-      if (!current()) throw StateError('Account changed');
-      await tx.update(
-          'podcast_scopes',
-          {
-            'last_attempt_ms': now,
-            'last_error_kind': error,
-            if (error == null) 'last_full_success_ms': now
-          },
-          where: 'scope=?',
-          whereArgs: [lease.scope]);
-      if (!current()) throw StateError('Account changed');
-    });
+    await status.record(lease.scope, attemptMs: now, error: error);
     if (!current()) return;
     // The committed result supersedes status reads begun while this run was
     // active; otherwise a late read can replace visible success with "never".
@@ -244,8 +231,7 @@ class GlobalSyncCoordinator extends ChangeNotifier {
     state = GlobalSyncState(
         scope: lease.scope,
         pending: remaining,
-        lastFullSuccessMs:
-            error == null ? now : meta['last_full_success_ms'] as int?,
+        lastFullSuccessMs: error == null ? now : meta.lastFullSuccessMs,
         errorKind: error);
     notifyListeners();
     if (error == 'auth') {

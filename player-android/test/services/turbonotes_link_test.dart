@@ -35,23 +35,17 @@ class _Client extends PlayerApiClient {
   @override
   Future<List<MediaSet>> listSets() async => const [
         MediaSet(
-            id: 1,
-            name: 'Audiobooks',
-            rootPath: 'audiobooks',
-            coverThumbnailPath: '',
-            isPodcast: false),
+          id: 1,
+          name: 'Audiobooks',
+          rootPath: 'audiobooks',
+          coverThumbnailPath: '',
+        ),
         MediaSet(
-            id: 2,
-            name: 'Go Time',
-            rootPath: 'podcasts/go-time',
-            coverThumbnailPath: '',
-            isPodcast: true),
-        MediaSet(
-            id: 3,
-            name: 'Music',
-            rootPath: 'music',
-            coverThumbnailPath: '',
-            isPodcast: false),
+          id: 3,
+          name: 'Music',
+          rootPath: 'music',
+          coverThumbnailPath: '',
+        ),
       ];
 }
 
@@ -74,7 +68,7 @@ void main() {
   });
 
   test('the note path is in Book-And-Podcast-Notes', () {
-    expect(const NoteSubject(title: 'Dune: Part 1', podcast: false).notePath,
+    expect(const NoteSubject(title: 'Dune: Part 1').notePath,
         'Book-And-Podcast-Notes/Dune_ Part 1.md');
   });
 
@@ -87,28 +81,10 @@ void main() {
     expect(audiobookTitle('', fallback: 'x'), 'x');
   });
 
-  test('podcast file names become episode titles', () {
-    expect(podcastEpisodeTitle('Episode 1 — Introduction'),
-        'Episode 1 — Introduction');
-    expect(podcastEpisodeTitle('2024-01-01 - Episode 1 — Introduction.mp3'),
-        'Episode 1 — Introduction');
-    expect(podcastEpisodeTitle('Go Time 300.M4A'), 'Go Time 300');
-    expect(podcastEpisodeTitle('Version 2.0'), 'Version 2.0');
-  });
-
-  test('server media: podcasts, audiobooks, and nothing for music', () async {
-    final episode = await noteSubjectFor(
-        _server('Go Time 300: Generics'), _Client(_media(2, 'ep300.mp3')));
-    expect(episode!.podcast, isTrue);
-    expect(episode.title, 'Go Time 300: Generics');
-    final fromLibrary = await noteSubjectFor(
-        _server('2024-01-01 - Episode 1.mp3'), _Client(_media(2, 'ep1.mp3')));
-    expect(fromLibrary!.title, 'Episode 1');
-
+  test('server media: audiobooks, and nothing for music', () async {
     final book = await noteSubjectFor(_server('10-chapter.mp3'),
         _Client(_media(1, 'aesops-fables/10-chapter.mp3')));
-    expect(book!.podcast, isFalse);
-    expect(book.title, 'aesops-fables');
+    expect(book!.title, 'aesops-fables');
 
     final m4b = await noteSubjectFor(
         _server('Dune.m4b'), _Client(_media(3, 'misc/Dune.m4b')));
@@ -161,7 +137,7 @@ void main() {
     });
     addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
     const launcher = TurboNotesLauncher(channel: channel);
-    const subject = NoteSubject(title: 'Dune', podcast: false);
+    const subject = NoteSubject(title: 'Dune');
     await launcher.open(subject);
     expect(calls.single.method, 'openNote');
     expect(calls.single.arguments,

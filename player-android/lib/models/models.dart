@@ -5,8 +5,6 @@ export 'music_identity_conflict.dart';
 export 'music_library.dart';
 export 'note.dart';
 export 'playback_hint.dart';
-export 'podcast_episode.dart';
-export 'podcast_feed.dart';
 export 'share.dart';
 export 'tag.dart';
 export 'user.dart';

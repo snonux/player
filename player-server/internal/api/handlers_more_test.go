@@ -107,10 +107,9 @@ func TestServer_Config(t *testing.T) {
 	if body["media_page_size"] != float64(37) {
 		t.Fatalf("expected media_page_size 37, got %v", body["media_page_size"])
 	}
-	// The podcast sync capability (contract §6.1) tells new clients that
-	// the sync API takes episode edits.
-	if body["podcast_sync"] != float64(1) {
-		t.Fatalf("expected podcast_sync 1, got %v", body["podcast_sync"])
+	// Podcast support is gone, so no podcast capability is advertised.
+	if _, ok := body["podcast_sync"]; ok {
+		t.Fatalf("unexpected podcast_sync capability: %v", body["podcast_sync"])
 	}
 	authInfo, ok := body["auth"].(map[string]any)
 	if !ok || authInfo["password"] != true || authInfo["proxy"] != false {
@@ -146,7 +145,7 @@ func TestConfigQueueScopeRequiresSessionBothPrefixes(t *testing.T) {
 			if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
 				t.Fatal(err)
 			}
-			if body["user_id"] != float64(user) || body["podcast_sync"] != float64(1) {
+			if body["user_id"] != float64(user) {
 				t.Fatalf("%s user %d: %v", path, user, body)
 			}
 			if pageSize, _ := body["media_page_size"].(float64); pageSize <= 0 {

@@ -144,10 +144,9 @@ type BrowseFolder struct {
 
 // BrowseResult is the content of one directory inside a set.
 type BrowseResult struct {
-	CurrentPath string                           `json:"current_path"`
-	Folders     []BrowseFolder                   `json:"folders"`
-	Media       []model.Media                    `json:"media"`
-	Episodes    []model.PodcastEpisodeWithStatus `json:"episodes,omitempty"`
+	CurrentPath string         `json:"current_path"`
+	Folders     []BrowseFolder `json:"folders"`
+	Media       []model.Media  `json:"media"`
 }
 
 // SharedMediaView exposes only the metadata fields needed for a public share page.
@@ -437,13 +436,11 @@ type StreamResult struct {
 
 // MediaDetail combines media with related data.
 type MediaDetail struct {
-	// PodcastEpisode is the stable listening identity of a server copy.
-	PodcastEpisode *model.PodcastEpisodeState `json:"podcast_episode,omitempty"`
-	Media          *model.Media               `json:"media"`
-	Tags           []model.Tag                `json:"tags"`
-	Favorite       bool                       `json:"favorite"`
-	Note           *model.Note                `json:"note,omitempty"`
-	Progress       *model.PlaybackProgress    `json:"progress,omitempty"`
+	Media    *model.Media            `json:"media"`
+	Tags     []model.Tag             `json:"tags"`
+	Favorite bool                    `json:"favorite"`
+	Note     *model.Note             `json:"note,omitempty"`
+	Progress *model.PlaybackProgress `json:"progress,omitempty"`
 }
 
 // ResumeFrom returns the saved playback position in seconds, or 0 if none.

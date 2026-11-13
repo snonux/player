@@ -89,30 +89,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _player.processingStateStream.listen((state) {
       _broadcastState();
       final progress = _progress;
-      if (state == ProcessingState.completed &&
-          progress != null &&
-          (!progress.naturalEndOnly ||
-              (_player.playing &&
-                  !_podcastSeeking &&
-                  (!_podcastSeekAtEnd ||
-                      (_podcastSeekPosition != null &&
-                          _player.position > _podcastSeekPosition!)) &&
-                  !_podcastPlaybackFailed))) {
-        // At completed, just_audio.position is the terminal event's stored
-        // position. It can prove playback advanced after a seek even when
-        // the final segment was shorter than positionStream's sampling period.
+      if (state == ProcessingState.completed && progress != null) {
         unawaited(_completeTrack(progress));
-      }
-    });
-    _player.positionStream.listen((position) {
-      final sought = _podcastSeekPosition;
-      if (sought != null &&
-          !_podcastSeeking &&
-          position > sought &&
-          _player.playing &&
-          _player.processingState == ProcessingState.ready) {
-        _podcastSeekAtEnd = false;
-        _podcastSeekPosition = null;
       }
     });
   }
@@ -1012,7 +990,6 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _watchMusicPositions();
     _collectionEnded = false;
     _musicWrap = wrap;
-    _podcastExpanded = false;
     _folderShuffle = false;
     _folderCanonical = const [];
     _musicEntries = List.unmodifiable(entries);
@@ -1022,7 +999,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _sequenceLease = sequenceLease;
     _musicChanged = changed;
     _expandMusic = expand;
-    if (!wrap && entries.firstOrNull is! PodcastPlaybackRequest) {
+    if (!wrap) {
       ++_queueRecoveryGeneration;
       _queueRestored = false;
       _queuePosition = 0;
@@ -1121,62 +1098,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  bool _podcastExpanded = false;
-
   Future<void> _moveTrack(int delta,
       {Duration? resumePosition,
       bool completed = false,
       int? playbackIntent}) async {
     if (_movingTrack || !_canControlSource || _musicIndex < 0) return;
-    if (delta > 0 &&
-        !_podcastExpanded &&
-        _musicEntries[_musicIndex] is PodcastPlaybackRequest &&
-        _expandMusic != null) {
-      final generation = _sourceGeneration, transport = _transportRevision;
-      final cycle = _completionCycle;
-      final request = _musicEntries[_musicIndex];
-      _podcastExpanded = true;
-      _movingTrack = true;
-      try {
-        final expanded = await _expandMusic!();
-        if (generation != _sourceGeneration ||
-            transport != _transportRevision ||
-            cycle != _completionCycle ||
-            !_canControlSource ||
-            (completed && !sleepTimer.allowsPlayback(_sourceSleepIntent))) {
-          return;
-        }
-        final index =
-            expanded.indexWhere((entry) => entry.identity == request.identity);
-        if (index >= 0) {
-          _musicEntries = List.unmodifiable(expanded);
-          _musicIndex = index;
-        }
-      } catch (_) {
-        // A failed optional feed lookup leaves the selected episode playable.
-        if (generation == _sourceGeneration) _podcastExpanded = false;
-        return;
-      } finally {
-        if (generation == _sourceGeneration) {
-          _movingTrack = false;
-          if (transport != _transportRevision ||
-              cycle != _completionCycle ||
-              (completed && !sleepTimer.allowsPlayback(_sourceSleepIntent))) {
-            _podcastExpanded = false;
-          }
-        }
-      }
-      if (generation != _sourceGeneration ||
-          transport != _transportRevision ||
-          cycle != _completionCycle ||
-          !_canControlSource) {
-        return;
-      }
-      return _moveTrack(delta,
-          resumePosition: resumePosition,
-          completed: completed,
-          playbackIntent: playbackIntent);
-    }
 
     final repeatOne =
         _queueActive && completed && _queueRepeat == MusicRepeat.one;
@@ -1323,11 +1249,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
           request.startPosition == null &&
           request.readPosition != null) {
         try {
-          position = request is PodcastPlaybackRequest
-              ? await request.readPositionForDuration?.call(_player.duration) ??
-                  await request.readPosition!() ??
-                  0
-              : await request.readPosition!() ?? 0;
+          position = await request.readPosition!() ?? 0;
         } catch (_) {}
       }
       if (!current()) return;
@@ -1338,9 +1260,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       startProgress(
           savePosition: request.savePosition!,
           saveListeningPosition: request.saveListeningPosition,
-          markFinished: request.markFinished!,
-          naturalEndOnly: request.naturalEndOnly,
-          finishAtPosition: request.finishAtPosition);
+          markFinished: request.markFinished!);
       _musicPosition = Duration(milliseconds: (position * 1000).round());
       _retryMusicPosition = null;
       _failedMusicDelta = null;
@@ -1392,9 +1312,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
                 savePosition: previousRequest.savePosition!,
                 saveListeningPosition: previousRequest.saveListeningPosition,
                 listeningOccurrenceID: previousListeningOccurrenceID,
-                markFinished: previousRequest.markFinished!,
-                naturalEndOnly: previousRequest.naturalEndOnly,
-                finishAtPosition: previousRequest.finishAtPosition);
+                markFinished: previousRequest.markFinished!);
           }
           _publishMusic();
           _musicNavigationStatus = MusicNetworkRestricted.message;
@@ -1416,10 +1334,6 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   AudioProgressSession? _progress;
-  bool _podcastSeekAtEnd = false;
-  bool _podcastSeeking = false;
-  Duration? _podcastSeekPosition;
-  bool _podcastPlaybackFailed = false;
   int _stopGeneration = 0;
   int _sourceGeneration = 0;
   bool _controlsEnabled = false;
@@ -1561,24 +1475,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     // The player slider and +/- controls use this entry point directly.
     // A current seek intent supersedes an end callback waiting on progress I/O.
     if (generation == _sourceGeneration) ++_completionCycle;
-    if (generation == _sourceGeneration && _progress?.naturalEndOnly == true) {
-      // Decoder completed events produced by a seek are not natural ends.
-      // Re-arm only after observed playback advances beyond the seek target,
-      // including for sources whose duration is unknown.
-      _podcastSeekAtEnd = true;
-      _podcastSeekPosition = position;
-    }
     return _serializeSourceOperation(() async {
       if (generation != _sourceGeneration || isLiveRadio) return false;
-      _podcastSeeking = true;
-      try {
-        await _player.seek(position);
-      } finally {
-        _podcastSeeking = false;
-      }
-      if (_progress?.naturalEndOnly == true) {
-        await _progress?.record(force: true, positionOverride: position);
-      }
+      await _player.seek(position);
       return generation == _sourceGeneration;
     });
   }
@@ -1597,8 +1496,6 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     required Future<void> Function() markFinished,
     SaveListeningPosition? saveListeningPosition,
     String? listeningOccurrenceID,
-    bool naturalEndOnly = false,
-    SavePlaybackPosition? finishAtPosition,
   }) {
     if (_progress != null) {
       throw StateError('End the current audio progress session first');
@@ -1609,11 +1506,6 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
                 (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'))
             .join();
     _listeningOccurrenceID = occurrence;
-    // Loading/starting at a saved terminal position is not a natural end.
-    // Require actual playback advancement before accepting an end event.
-    _podcastSeekAtEnd = naturalEndOnly;
-    _podcastSeekPosition = naturalEndOnly ? _player.position : null;
-    _podcastPlaybackFailed = false;
     _progress = AudioProgressSession(
       position: () => _player.position,
       duration: () => _player.duration,
@@ -1622,8 +1514,6 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
           ? savePosition
           : (seconds) => saveListeningPosition(seconds, occurrence),
       markFinished: markFinished,
-      naturalEndOnly: naturalEndOnly,
-      finishAtPosition: finishAtPosition,
     );
   }
 
@@ -1695,41 +1585,6 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     // resume the previous source while the failed target is shown.
     if (!_musicWrap && _musicState?.error != null) return;
     try {
-      final request = _metadataRequest;
-      if (request is PodcastPlaybackRequest && !automatic) {
-        final replay = _progress?.finished == true;
-        if (replay) {
-          final position =
-              await request.readPositionForDuration?.call(_player.duration) ??
-                  await request.readPosition?.call() ??
-                  0;
-          if (generation != _sourceGeneration ||
-              transport != _transportRevision ||
-              !_canControlSource) {
-            return;
-          }
-          await endProgress();
-          await seekForSession(
-              Duration(milliseconds: (position * 1000).round()), generation);
-          if (generation != _sourceGeneration ||
-              transport != _transportRevision ||
-              !_canControlSource) {
-            return;
-          }
-          startProgress(
-              savePosition: request.savePosition!,
-              markFinished: request.markFinished!,
-              naturalEndOnly: true,
-              finishAtPosition: request.finishAtPosition);
-        } else {
-          await request.synchronize?.call();
-        }
-        if (generation != _sourceGeneration ||
-            transport != _transportRevision ||
-            !_canControlSource) {
-          return;
-        }
-      }
       // A completed album ends its old terminal progress session. Replaying
       // that source starts a fresh session; a deliberate seek back is kept.
       if (_collectionEnded && _musicIndex >= 0 && _progress == null) {
@@ -1744,9 +1599,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         startProgress(
             savePosition: request.savePosition!,
             saveListeningPosition: request.saveListeningPosition,
-            markFinished: request.markFinished!,
-            naturalEndOnly: request.naturalEndOnly,
-            finishAtPosition: request.finishAtPosition);
+            markFinished: request.markFinished!);
       }
       if (!sleepTimer.allowsPlayback(sleepIntent) ||
           transport != _transportRevision) {
@@ -1851,7 +1704,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   /// Skip forward 15 seconds (media-button "next" maps to a short skip for
-  /// podcast and audiobook use-cases rather than a full track change).
+  /// audiobook use-cases rather than a full track change).
   @override
   Future<void> skipToNext() async {
     if (isLiveRadio) return;
@@ -1943,7 +1796,6 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Marks the media session as failed, so the notification stops showing a
   /// playing item, and tells the screen (if one is listening).
   void _onPlaybackError(Object error) {
-    _podcastPlaybackFailed = true;
     _collectionEnded = false;
     if (_musicIndex >= 0) {
       // Runtime failures belong to the handler's current track even after
@@ -1971,8 +1823,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   /// notification buttons.
   void _broadcastState() {
     final live = isLiveRadio;
-    final music =
-        _musicIndex >= 0 && _metadataRequest is! PodcastPlaybackRequest;
+    final music = _musicIndex >= 0;
     final processingState = live &&
             _canControlSource &&
             _liveReconnectNeeded &&

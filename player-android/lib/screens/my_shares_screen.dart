@@ -196,7 +196,7 @@ class _MySharesScreenState extends ConsumerState<MySharesScreen> {
   ///   - Error view with a retry button when the load failed.
   ///   - Pull-to-refresh wrapper around the share list or empty-state view.
   ///   - An end-of-list indicator appended below the last row once [_loaded]
-  ///     is true (consistent with MediaGridScreen and PodcastEpisodesScreen).
+  ///     is true (consistent with MediaGridScreen).
   Widget _buildBody(BuildContext context) {
     if (_isLoading && _shares == null) {
       return const Center(
@@ -206,13 +206,18 @@ class _MySharesScreenState extends ConsumerState<MySharesScreen> {
     }
 
     if (_error != null) {
-      return ErrorRetryView(keyPrefix: 'shares', message: _error!, onRetry: _load);
+      return ErrorRetryView(
+          keyPrefix: 'shares', message: _error!, onRetry: _load);
     }
 
     return RefreshIndicator(
       onRefresh: _load,
       child: _shares == null || _shares!.isEmpty
-          ? const EmptyStateView(icon: Icons.link_off, title: 'No shares yet', titleKey: Key('shares_empty'), message: 'Share links you create will appear here.')
+          ? const EmptyStateView(
+              icon: Icons.link_off,
+              title: 'No shares yet',
+              titleKey: Key('shares_empty'),
+              message: 'Share links you create will appear here.')
           : _ShareList(
               shares: _shares!,
               onCopyLink: _copyLink,
@@ -235,7 +240,7 @@ class _MySharesScreenState extends ConsumerState<MySharesScreen> {
 ///
 /// When [showEndOfList] is true a footer row is appended after the last share
 /// tile with a "All shares loaded" message to keep the UX consistent with
-/// other paginated screens (MediaGridScreen, PodcastEpisodesScreen).
+/// other paginated screens (MediaGridScreen).
 class _ShareList extends StatelessWidget {
   const _ShareList({
     required this.shares,

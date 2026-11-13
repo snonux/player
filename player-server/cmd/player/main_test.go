@@ -207,7 +207,6 @@ func TestWireDeps_DoesNotStartBackgroundWorkers(t *testing.T) {
 	cfg := &internal.Config{
 		SessionTimeoutHours: 1,
 		GCIntervalMinutes:   1,
-		PodcastCheckMinutes: 1,
 		MediaRoot:           mediaRoot,
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -247,7 +246,6 @@ func TestStartBackgroundWorkers_StartsAndStops(t *testing.T) {
 	cfg := &internal.Config{
 		SessionTimeoutHours: 1,
 		GCIntervalMinutes:   1,
-		PodcastCheckMinutes: 1,
 		MediaRoot:           mediaRoot,
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

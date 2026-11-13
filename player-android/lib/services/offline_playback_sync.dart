@@ -4,7 +4,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 
 import 'offline_download_repository.dart';
-import 'podcast_sync.dart' show syncBeforePlaybackTimeout;
+import 'sync_account.dart' show syncBeforePlaybackTimeout;
 
 /// Credentials stay outside the durable store. A captured account generation
 /// guards both request dispatch and applying a response after an account switch.

@@ -18,8 +18,6 @@ import 'package:player_android/models/user.dart';
 import 'package:player_android/models/tag.dart';
 import 'package:player_android/models/note.dart';
 import 'package:player_android/models/share.dart';
-import 'package:player_android/models/podcast_feed.dart';
-import 'package:player_android/models/podcast_episode.dart';
 import 'package:player_android/models/playback_hint.dart';
 import 'package:player_android/api/player_api_client.dart';
 
@@ -142,7 +140,9 @@ void main() {
     // Regression test for e9: non-string and null elements in the tags list
     // must be silently dropped rather than causing a TypeError at runtime.
     test('fromJson drops non-string and null tag elements', () {
-      final media = Media.fromJson({'tags': [1, 'valid', null]});
+      final media = Media.fromJson({
+        'tags': [1, 'valid', null]
+      });
 
       // Only 'valid' survives: the integer 1 and null are filtered out.
       expect(media.tags, ['valid']);
@@ -158,7 +158,6 @@ void main() {
       'name': 'My Videos',
       'root_path': '/media/videos',
       'cover_thumbnail_path': '/thumbs/cover.jpg',
-      'is_podcast': false,
       'created_at': '2024-03-01T08:00:00.000Z',
     };
 
@@ -169,7 +168,6 @@ void main() {
       expect(ms.name, 'My Videos');
       expect(ms.rootPath, '/media/videos');
       expect(ms.coverThumbnailPath, '/thumbs/cover.jpg');
-      expect(ms.isPodcast, isFalse);
       expect(ms.createdAt?.toIso8601String(), json['created_at']);
 
       final out = ms.toJson();
@@ -177,7 +175,6 @@ void main() {
       expect(out['name'], json['name']);
       expect(out['root_path'], json['root_path']);
       expect(out['cover_thumbnail_path'], json['cover_thumbnail_path']);
-      expect(out['is_podcast'], json['is_podcast']);
       expect(out['created_at'], json['created_at']);
     });
 
@@ -188,7 +185,6 @@ void main() {
       expect(ms.name, '');
       expect(ms.rootPath, '');
       expect(ms.coverThumbnailPath, '');
-      expect(ms.isPodcast, isFalse);
       expect(ms.createdAt, isNull);
     });
   });
@@ -333,7 +329,8 @@ void main() {
       expect(out['used_count'], json['used_count']);
     });
 
-    test('fromJson applies defaults for all missing fields; maxUses stays null', () {
+    test('fromJson applies defaults for all missing fields; maxUses stays null',
+        () {
       final share = Share.fromJson({});
 
       expect(share.token, '');
@@ -343,159 +340,6 @@ void main() {
       expect(share.usedCount, 0);
       expect(share.createdAt, isNull);
       expect(share.expiresAt, isNull);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // PodcastFeed
-  // ---------------------------------------------------------------------------
-  group('PodcastFeed', () {
-    final Map<String, dynamic> json = {
-      'id': 3,
-      'set_id': 10,
-      'feed_url': 'https://example.com/feed.rss',
-      'title': 'My Podcast',
-      'description': 'A great show',
-      'image_url': 'https://example.com/cover.jpg',
-      'last_checked_at': '2024-05-10T06:00:00.000Z',
-      'last_etag': '"etag-value"',
-      'check_interval_minutes': 60,
-      'auto_download': true,
-      'consecutive_failures': 0,
-      'next_check_at': '2024-05-10T07:00:00.000Z',
-      'created_at': '2024-01-01T00:00:00.000Z',
-    };
-
-    test('fromJson/toJson round-trip', () {
-      final feed = PodcastFeed.fromJson(json);
-
-      expect(feed.id, 3);
-      expect(feed.setId, 10);
-      expect(feed.feedUrl, 'https://example.com/feed.rss');
-      expect(feed.title, 'My Podcast');
-      expect(feed.description, 'A great show');
-      expect(feed.imageUrl, 'https://example.com/cover.jpg');
-      expect(feed.lastCheckedAt?.toIso8601String(), json['last_checked_at']);
-      expect(feed.lastETag, '"etag-value"');
-      expect(feed.checkIntervalMinutes, 60);
-      expect(feed.autoDownload, isTrue);
-      expect(feed.consecutiveFailures, 0);
-      expect(feed.nextCheckAt?.toIso8601String(), json['next_check_at']);
-      expect(feed.createdAt?.toIso8601String(), json['created_at']);
-
-      final out = feed.toJson();
-      expect(out['id'], json['id']);
-      expect(out['set_id'], json['set_id']);
-      expect(out['feed_url'], json['feed_url']);
-      expect(out['title'], json['title']);
-      expect(out['description'], json['description']);
-      expect(out['image_url'], json['image_url']);
-      expect(out['last_checked_at'], json['last_checked_at']);
-      expect(out['last_etag'], json['last_etag']);
-      expect(out['check_interval_minutes'], json['check_interval_minutes']);
-      expect(out['auto_download'], json['auto_download']);
-      expect(out['consecutive_failures'], json['consecutive_failures']);
-      expect(out['next_check_at'], json['next_check_at']);
-      expect(out['created_at'], json['created_at']);
-    });
-
-    test('fromJson applies defaults for all missing fields', () {
-      final feed = PodcastFeed.fromJson({});
-
-      expect(feed.id, 0);
-      expect(feed.setId, 0);
-      expect(feed.feedUrl, '');
-      expect(feed.title, '');
-      expect(feed.description, '');
-      expect(feed.imageUrl, '');
-      expect(feed.lastETag, '');
-      expect(feed.checkIntervalMinutes, 0);
-      expect(feed.autoDownload, isFalse);
-      expect(feed.consecutiveFailures, 0);
-      expect(feed.lastCheckedAt, isNull);
-      expect(feed.nextCheckAt, isNull);
-      expect(feed.createdAt, isNull);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // PodcastEpisode
-  // ---------------------------------------------------------------------------
-  group('PodcastEpisode', () {
-    // Use an integer for position_seconds to cover the num-to-double cast.
-    final Map<String, dynamic> json = {
-      'id': 99,
-      'feed_id': 3,
-      'media_id': 55,
-      'guid': 'ep-guid-abc',
-      'title': 'Episode One',
-      'description': 'First episode',
-      'published_at': '2024-04-01T00:00:00.000Z',
-      'episode_url': 'https://example.com/ep1.mp3',
-      'duration_seconds': 3600.0,
-      'file_size': 102400,
-      'file_name': 'ep1.mp3',
-      'is_downloaded': true,
-      'is_completed': false,
-      'position_seconds': 120, // int in JSON; must be cast to double
-      'created_at': '2024-04-01T01:00:00.000Z',
-    };
-
-    test('fromJson/toJson round-trip with optional fields present', () {
-      final ep = PodcastEpisode.fromJson(json);
-
-      expect(ep.id, 99);
-      expect(ep.feedId, 3);
-      expect(ep.mediaId, 55);
-      expect(ep.guid, 'ep-guid-abc');
-      expect(ep.title, 'Episode One');
-      expect(ep.description, 'First episode');
-      expect(ep.publishedAt?.toIso8601String(), json['published_at']);
-      expect(ep.episodeUrl, 'https://example.com/ep1.mp3');
-      expect(ep.durationSeconds, 3600.0);
-      expect(ep.fileSize, 102400);
-      expect(ep.fileName, 'ep1.mp3');
-      expect(ep.isDownloaded, isTrue);
-      expect(ep.isCompleted, isFalse);
-      expect(ep.positionSeconds, 120.0); // int input becomes double
-      expect(ep.createdAt?.toIso8601String(), json['created_at']);
-
-      final out = ep.toJson();
-      expect(out['id'], json['id']);
-      expect(out['feed_id'], json['feed_id']);
-      expect(out['media_id'], json['media_id']);
-      expect(out['guid'], json['guid']);
-      expect(out['title'], json['title']);
-      expect(out['description'], json['description']);
-      expect(out['published_at'], json['published_at']);
-      expect(out['episode_url'], json['episode_url']);
-      expect(out['duration_seconds'], json['duration_seconds']);
-      expect(out['file_size'], json['file_size']);
-      expect(out['file_name'], json['file_name']);
-      expect(out['is_downloaded'], json['is_downloaded']);
-      expect(out['is_completed'], json['is_completed']);
-      expect(out['position_seconds'], 120.0); // value comes back as double
-      expect(out['created_at'], json['created_at']);
-    });
-
-    test('fromJson applies defaults; nullable fields stay null', () {
-      final ep = PodcastEpisode.fromJson({});
-
-      expect(ep.id, 0);
-      expect(ep.feedId, 0);
-      expect(ep.mediaId, isNull);
-      expect(ep.guid, '');
-      expect(ep.title, '');
-      expect(ep.description, '');
-      expect(ep.episodeUrl, '');
-      expect(ep.fileName, '');
-      expect(ep.durationSeconds, isNull);
-      expect(ep.fileSize, isNull);
-      expect(ep.isDownloaded, isFalse);
-      expect(ep.isCompleted, isFalse);
-      expect(ep.positionSeconds, 0.0);
-      expect(ep.publishedAt, isNull);
-      expect(ep.createdAt, isNull);
     });
   });
 

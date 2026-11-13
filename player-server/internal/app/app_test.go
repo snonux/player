@@ -83,12 +83,9 @@ func newE2EWith(t *testing.T, runner transcode.Runner, configure func(cfg *inter
 		MediaRoot:              filepath.Join(dir, "media"),
 		SessionTimeoutHours:    1,
 		GCIntervalMinutes:      1,
-		PodcastCheckMinutes:    1,
 		ShareDefaultExpiryDays: 7,
 		TranscodeCacheDir:      filepath.Join(dir, "transcode-cache"),
 		TranscodeCacheMaxMB:    1,
-		// The tests serve feeds and episodes from httptest on loopback.
-		PodcastAllowPrivateNetworks: true,
 	}
 	if configure != nil {
 		configure(cfg)
@@ -479,7 +476,7 @@ func TestWire_UsesFFmpegRunnerAndChecksSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	cfg := &internal.Config{MediaRoot: dir, SessionTimeoutHours: 1, GCIntervalMinutes: 1, PodcastCheckMinutes: 1, TranscodeCacheDir: filepath.Join(dir, "cache"), TranscodeCacheMaxMB: 1}
+	cfg := &internal.Config{MediaRoot: dir, SessionTimeoutHours: 1, GCIntervalMinutes: 1, TranscodeCacheDir: filepath.Join(dir, "cache"), TranscodeCacheMaxMB: 1}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	deps := Wire(cfg, store, logger, context.Background())

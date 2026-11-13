@@ -391,8 +391,6 @@ var schemaSteps = func() []schemaStep {
 		// The sets rebuild of the music library migration drops the sets
 		// indexes; recreate them in the same start.
 		schemaStep{name: "indexes_after_rebuilds", run: createIndexes, everyStart: true},
-		// Needs the final podcast tables and the episode state index.
-		schemaStep{name: "repair_podcast_identities", run: repairPodcastIdentities, everyStart: true},
 		schemaStep{name: "saved_queues", run: initializeSavedQueues},
 		// Creates its tables and applies the history retention.
 		schemaStep{name: "music_history", run: initializeMusicHistory, everyStart: true},

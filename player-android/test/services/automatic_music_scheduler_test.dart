@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:player_android/providers/automatic_music_provider.dart';
 import 'package:player_android/services/automatic_music.dart';
-import 'package:player_android/services/podcast_sync.dart';
+import 'package:player_android/services/sync_account.dart';
 import 'package:player_android/services/offline_download_repository.dart';
 
 void main() {

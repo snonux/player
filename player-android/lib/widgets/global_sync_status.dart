@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/global_sync_provider.dart';
 import '../services/global_sync_coordinator.dart';
-import 'podcast_association.dart';
 
 String globalSyncMessage(GlobalSyncState state, int nowMs) {
   if (!state.configured) return '';
@@ -174,7 +173,7 @@ class _GlobalSyncChromeState extends ConsumerState<GlobalSyncChrome> {
     return Semantics(
       explicitChildNodes: true,
       child: Column(children: [
-        Expanded(child: PodcastAssociationHost(child: widget.child)),
+        Expanded(child: widget.child),
         Semantics(
           container: true,
           explicitChildNodes: true,

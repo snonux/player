@@ -40,7 +40,7 @@ type MediaServices struct {
 
 // Server holds HTTP handlers and dependencies.
 // Service dependencies are grouped into vertical slices (media, auth, admin,
-// podcast) to reduce the width of the struct and clarify ownership boundaries.
+// radio) to reduce the width of the struct and clarify ownership boundaries.
 type Server struct {
 	store  repository.Store
 	hasher auth.Hasher
@@ -55,17 +55,14 @@ type Server struct {
 	handler http.Handler
 	// media groups all media-domain services (browse, write, share, tags,
 	// favorites, notes, progress, playback hints) into a single vertical slice.
-	media            MediaServices
-	authSvc          service.AuthService
-	adminSvc         service.AdminService
-	pluginSvc        service.PluginService
-	jukeboxSvc       service.JukeboxService
-	podcastSvc       service.PodcastEpisodeService
-	podcastSync      service.PodcastSyncService
-	podcastDiscovery *service.PodcastDiscovery
-	musicLibs        *service.MusicLibraryService
-	musicIdentity    *service.MusicIdentityService
-	pathRoots        *service.PathRoots
+	media         MediaServices
+	authSvc       service.AuthService
+	adminSvc      service.AdminService
+	pluginSvc     service.PluginService
+	jukeboxSvc    service.JukeboxService
+	musicLibs     *service.MusicLibraryService
+	musicIdentity *service.MusicIdentityService
+	pathRoots     *service.PathRoots
 	// subsonicSvc adapts the music catalog for optional /rest clients (A01a).
 	subsonicSvc   *service.SubsonicService
 	radio         service.RadioService
@@ -81,7 +78,7 @@ type Server struct {
 // ServerServices groups the optional service dependencies used by route handlers.
 // Media-related services are collected into the Media sub-struct to reduce
 // width and reflect the media vertical-slice boundary. Non-media services
-// (Auth, Admin, Podcast) remain as direct fields.
+// (Auth, Admin) remain as direct fields.
 // If any service is nil, its respective routes return 501.
 type ServerServices struct {
 	Media MediaServices
@@ -91,9 +88,6 @@ type ServerServices struct {
 	Plugins service.PluginService
 	// Jukebox is the optional A02a server-audio engine (admin-controlled).
 	Jukebox service.JukeboxService
-	Podcast service.PodcastEpisodeService
-	// PodcastSync serves the account podcast synchronization endpoint.
-	PodcastSync service.PodcastSyncService
 	// MusicLibraries is optional A05 multi-root library admin/browse.
 	MusicLibraries *service.MusicLibraryService
 	// MusicIdentity is optional A06a conflict recovery for moved/retagged songs.
@@ -176,31 +170,28 @@ func NewServerWithLogger(deps ServerDeps, logger *slog.Logger) (*Server, error) 
 	// Populate the media vertical-slice sub-struct directly from the nested
 	// ServerServices.Media group so the Server never sees the flat list.
 	s := &Server{
-		store:            deps.Store,
-		hasher:           deps.Hasher,
-		sm:               deps.SessionManager,
-		cfg:              deps.Config,
-		clk:              deps.Clock,
-		mux:              http.NewServeMux(),
-		media:            deps.Services.Media,
-		authSvc:          deps.Services.Auth,
-		adminSvc:         deps.Services.Admin,
-		pluginSvc:        deps.Services.Plugins,
-		jukeboxSvc:       deps.Services.Jukebox,
-		podcastSvc:       deps.Services.Podcast,
-		podcastSync:      deps.Services.PodcastSync,
-		podcastDiscovery: service.NewPodcastDiscovery(),
-		musicLibs:        deps.Services.MusicLibraries,
-		musicIdentity:    deps.Services.MusicIdentity,
-		pathRoots:        deps.Services.PathRoots,
-		subsonicSvc:      subsonicSvc,
-		radio:            deps.Services.Radio,
-		streamer:         deps.MediaStreamer,
-		staticFS:         deps.StaticFS,
-		shareRenderer:    web.NewSharePageRenderer(deps.StaticFS),
-		castTickets:      deps.CastTickets,
-		logger:           logger,
-		mw:               NewMiddleware(deps.Services.Auth, deps.SessionManager, deps.Config.ProxyAuth).WithTrustedOrigins(deps.Config.CORSAllowedOrigins),
+		store:         deps.Store,
+		hasher:        deps.Hasher,
+		sm:            deps.SessionManager,
+		cfg:           deps.Config,
+		clk:           deps.Clock,
+		mux:           http.NewServeMux(),
+		media:         deps.Services.Media,
+		authSvc:       deps.Services.Auth,
+		adminSvc:      deps.Services.Admin,
+		pluginSvc:     deps.Services.Plugins,
+		jukeboxSvc:    deps.Services.Jukebox,
+		musicLibs:     deps.Services.MusicLibraries,
+		musicIdentity: deps.Services.MusicIdentity,
+		pathRoots:     deps.Services.PathRoots,
+		subsonicSvc:   subsonicSvc,
+		radio:         deps.Services.Radio,
+		streamer:      deps.MediaStreamer,
+		staticFS:      deps.StaticFS,
+		shareRenderer: web.NewSharePageRenderer(deps.StaticFS),
+		castTickets:   deps.CastTickets,
+		logger:        logger,
+		mw:            NewMiddleware(deps.Services.Auth, deps.SessionManager, deps.Config.ProxyAuth).WithTrustedOrigins(deps.Config.CORSAllowedOrigins),
 	}
 	s.routes()
 	s.handler = withCORS(s.cfg.CORSAllowedOrigins, s.mw.BootstrapRedirect(s.mux))
@@ -279,8 +270,6 @@ func apiV1Path(path string) string {
 // straight /api/v1/<rest> shape that apiV1Path() generates, so they are
 // registered explicitly here instead of via a "both" helper.
 func (s *Server) routesPublic() {
-	s.handlePublicFunc("/api/podcast-discovery", publicMethod(http.MethodGet, s.handlePodcastDiscovery))
-	s.handlePublicFunc("/api/v1/podcast-discovery", publicMethod(http.MethodGet, s.handlePodcastDiscovery))
 	s.handlePublicFunc("/api/server-identity", publicMethod(http.MethodGet, s.handleServerIdentity))
 	s.handlePublicFunc("/api/v1/server-identity", publicMethod(http.MethodGet, s.handleServerIdentity))
 	s.handlePublicFunc("/api/bootstrap", publicMethod(http.MethodPost, s.handleBootstrap))
@@ -555,7 +544,6 @@ func (s *Server) routes() {
 	s.routesProgress()
 	s.routesShares()
 	s.routesAdmin()
-	s.routesPodcast()
 	s.routesAPINotFound()
 }
 
@@ -589,26 +577,6 @@ func (s *Server) routesSubsonic() {
 	s.mw.RegisterPublicPrefix("/rest/")
 	s.mux.HandleFunc("GET /rest/{action}", s.handleSubsonic)
 	s.mux.HandleFunc("POST /rest/{action}", s.handleSubsonic)
-}
-
-// routesPodcast wires the podcast API routes.
-func (s *Server) routesPodcast() {
-	s.handleBoth(http.MethodPost, "/api/podcasts/refresh", s.requireSession(s.handlePodcastRefresh))
-	s.handleBoth(http.MethodGet, "/api/podcasts", s.requireSession(s.handleListPodcasts))
-	s.handleBoth(http.MethodPost, "/api/podcasts", s.requireAdmin(s.handleSubscribePodcast))
-	// Account sync is open to every user and touches only the caller's
-	// rows. No other POST route matches /api/podcasts/{id}, so "sync" is
-	// never taken for a feed id.
-	s.handleBoth(http.MethodPost, "/api/podcasts/sync", s.requireSession(s.handlePodcastSync))
-	s.handleBoth(http.MethodDelete, "/api/podcasts/{id}", s.requireAdmin(s.handleUnsubscribePodcast))
-	// Static /episodes is the §6.3 subscription view; keep it before
-	// /{id}/episodes so "episodes" is never parsed as a set id.
-	s.handleBoth(http.MethodGet, "/api/podcasts/episodes", s.requireSession(s.handleListSubscribedEpisodes))
-	s.handleBoth(http.MethodGet, "/api/podcasts/{id}/episodes", s.requireSession(s.handleListEpisodes))
-	s.handleBoth(http.MethodPost, "/api/podcasts/episodes/{episode_id}/download", s.requireSession(s.handleDownloadEpisode))
-	s.handleBoth(http.MethodGet, "/api/podcasts/episodes/{episode_id}/stream", s.requireSession(s.handleStreamPodcastEpisode))
-	s.handleBoth(http.MethodHead, "/api/podcasts/episodes/{episode_id}/stream", s.requireSession(s.handleStreamPodcastEpisode))
-	s.handleBoth(http.MethodPost, "/api/podcasts/episodes/{episode_id}/complete", s.requireSession(s.handleToggleComplete))
 }
 
 func (s *Server) pingStore(ctx context.Context) error {

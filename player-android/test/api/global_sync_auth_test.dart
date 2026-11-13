@@ -18,7 +18,6 @@ import 'package:player_android/providers/auth_state_provider.dart';
 import 'package:player_android/providers/global_sync_provider.dart';
 import 'package:player_android/providers/offline_downloads_provider.dart';
 import 'package:player_android/providers/playback_session_provider.dart';
-import 'package:player_android/providers/podcast_library_provider.dart';
 import 'package:player_android/providers/progress_queue_provider.dart';
 import 'package:player_android/providers/saved_queue_provider.dart';
 import 'package:player_android/services/global_sync_coordinator.dart';
@@ -26,7 +25,6 @@ import 'package:player_android/services/music_queue_snapshot.dart';
 import 'package:player_android/services/offline_download_repository.dart';
 import 'package:player_android/services/playback_request.dart';
 import 'package:player_android/services/playback_session_coordinator.dart';
-import 'package:player_android/services/podcast_repository.dart';
 import 'package:player_android/services/progress_queue.dart';
 import 'package:player_android/services/saved_server_credentials.dart';
 
@@ -125,8 +123,6 @@ void main() {
         retryDelay: const Duration(days: 1));
     final downloads = OfflineDownloadRepository(
         directory: Directory('${temp.path}/downloads'));
-    final podcasts =
-        PodcastRepository(databasePath: '${temp.path}/podcasts.db');
     final playback = PlaybackSessionCoordinator();
     var stops = 0;
     final playbackLease = await playback.claim(
@@ -145,7 +141,6 @@ void main() {
       authStateProvider.overrideWith(_Auth.new),
       progressQueueProvider.overrideWithValue(progress),
       offlineDownloadRepositoryProvider.overrideWithValue(downloads),
-      podcastRepositoryProvider.overrideWithValue(podcasts),
       playbackSessionCoordinatorProvider.overrideWithValue(playback),
     ]);
     GlobalSyncCoordinator? coordinator;
@@ -180,8 +175,11 @@ void main() {
               label: 'live',
               upNext: {}));
       final progressIDs = await progress.pendingIds(progressScope);
+      // A request leased to account one's credentials, as sync sends them.
+      final oldAccount = DioPlayerApiClient(
+          dio: dio.dio, credentialEpoch: () => 0, quietUnauthorized: true);
       coordinator = GlobalSyncCoordinator(
-          container.read(podcastSyncProvider), () => active);
+          container.read(globalSyncStatusStoreProvider), () => active);
       await coordinator.syncNow();
       expect(coordinator.state.errorKind, 'auth');
       expect(coordinator.state.lastFullSuccessMs, isNull);
@@ -195,9 +193,9 @@ void main() {
       expect(await saved.pending(savedAccount), 1);
       expect(playbackLease!.isCurrent, isTrue);
       expect(stops, 0);
-      // Also cover direct podcast/preplay/end transport and both queue methods.
+      // Also cover direct playback-sync transport and both queue methods.
       for (final request in [
-        () => active.podcast.send({}),
+        () => oldAccount.syncPlayback(8, {}),
         () => savedAccount.write({}, 0),
         () => container
             .read(Provider((ref) => captureSavedQueueAccount(ref)))!
@@ -211,8 +209,6 @@ void main() {
       expect(
           transport.requests.map((r) => r.path),
           containsAll([
-            '/api/v1/config',
-            '/api/v1/podcasts/sync',
             '/api/v1/media/8/playback-sync',
             '/api/v1/progress/batch',
             '/api/v1/queue'
@@ -227,9 +223,9 @@ void main() {
 
       // A dispatched old-account 401 cannot invalidate the newly enabled one.
       transport.held = Completer<ResponseBody>();
-      final late = active.podcast.send({});
+      final late = oldAccount.syncPlayback(8, {});
       final assertion = expectLater(late, throwsA(isA<DioException>()));
-      while (transport.requests.last.path != '/api/v1/podcasts/sync') {
+      while (transport.requests.last.path != '/api/v1/media/8/playback-sync') {
         await Future<void>.delayed(Duration.zero);
       }
       final next = mutations.beginAuthChange(origin: origin);
@@ -237,13 +233,13 @@ void main() {
       mutations.enable(next, origin: origin);
       transport.held!.complete(ResponseBody.fromString('{}', 401));
       await assertion;
-      expect(active.podcast.current(), isFalse);
+      expect(active.current(), isFalse);
       expect(tokens.token, 'account-two');
       expect(mutations.credentialsEnabled, isTrue);
       expect(playbackLease.isCurrent, isTrue);
       final before = transport.requests.length;
       await expectLater(
-          active.podcast.send({}),
+          oldAccount.syncPlayback(8, {}),
           throwsA(isA<DioException>()
               .having((e) => e.type, 'type', DioExceptionType.cancel)));
       expect(transport.requests.length, before,
@@ -263,7 +259,6 @@ void main() {
       container.dispose();
       await progress.dispose();
       await downloads.close();
-      await podcasts.close();
       dio.dio.close(force: true);
       await temp.delete(recursive: true);
     }
