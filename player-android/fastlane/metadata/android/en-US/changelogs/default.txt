@@ -1,1 +1,1 @@
-Started podcasts are one tap away: the sign-in screen lists them without logging in (streaming when not downloaded), and the resume bar opens a list of every podcast in progress.
+Podcast support has been removed from the app. Music, audiobooks, video, radio and downloads work as before.
