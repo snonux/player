@@ -46,8 +46,6 @@ export const test = base.extend<{ sandbox: Sandbox; bootstrapAdmin: boolean }>({
     const child = spawn(binary, [], { cwd: component, env: {
       ...process.env, PORT: url.port || '18081', MEDIA_ROOT: mediaRoot, DB_PATH: db,
       SECURE_COOKIES: 'false', MAX_UPLOAD_SIZE_MB: '1', LOG_LEVEL: 'error',
-      // The mock RSS server runs on loopback.
-      PODCAST_ALLOW_PRIVATE_NETWORKS: 'true',
     }, stdio: ['ignore', 'pipe', 'pipe'] });
     let logs = '';
     child.stdout!.on('data', data => { logs += data; });
@@ -108,21 +106,3 @@ export async function browserLogin(page: import('@playwright/test').Page, cookie
   await page.context().addCookies([{ name: 'session', value: cookie.slice('session='.length), url: baseURL }]);
 }
 
-export async function podcast(cookie: string, run: (feed: any) => Promise<void>) {
-  const fixture = spawn(process.execPath, [path.join(component, 'test/e2e-llm/fixtures/mock-rss-server.js')], {
-    env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let logs = '';
-  fixture.stderr!.on('data', data => { logs += data; });
-  try {
-    await once(fixture, 'spawn', { signal: AbortSignal.timeout(5000) });
-    const [ready] = await once(fixture.stdout!, 'data', { signal: AbortSignal.timeout(5000) });
-    const url = String(ready).match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
-    expect(url, 'RSS fixture must announce its ephemeral loopback URL').toBeTruthy();
-    const feed = await json<any>(await call('POST', '/api/v1/podcasts', { cookie, body: { feed_url: `${url}/feed.xml` } }));
-    expect(feed.id).toBeGreaterThan(0);
-    await run(feed);
-  } catch (error) {
-    throw new Error(`Podcast fixture failed: ${String(error)} ${logs}`);
-  } finally { await stop(fixture); }
-}

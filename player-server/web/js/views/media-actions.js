@@ -13,10 +13,8 @@ import { t } from '../i18n.js';
 let latestNoteLoad = 0;
 
 // selectedCardMediaId returns the media ID of the selected grid card, or ''
-// when the selection is a set, folder or podcast-episode card. Those carry no
-// data-id, and item actions must not fall through to an unrelated media.
-// A streamed podcast episode without a server copy has a negative stand-in id;
-// it is no server media, so sharing, favorites and notes do not apply to it.
+// when the selection is a set or folder card. Those carry no data-id, and
+// item actions must not fall through to an unrelated media.
 function serverMediaId(id) {
   return Number(id) > 0 ? String(id) : '';
 }
@@ -129,13 +127,10 @@ export async function downloadSelected() {
 }
 
 // selectedMediaId prefers the selected media card and otherwise falls back to
-// the playing media (e.g. i while a set or folder card is selected). A
-// selected podcast-episode card yields '': its episode is not a media item,
-// and mark-finished must not silently hit whatever is playing instead.
+// the playing media (e.g. i while a set or folder card is selected).
 export function selectedMediaId() {
   const el = currentElement();
   if (el?.dataset?.id) return serverMediaId(el.dataset.id);
-  if (el?.classList.contains('episode-card')) return '';
   const id = currentMediaId();
   return id ? String(id) : '';
 }

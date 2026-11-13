@@ -30,8 +30,7 @@ typedef _CoverHeaders = Map<String, String>;
 
 /// Home screen: displays all media sets as a scrollable grid.
 ///
-/// Each card shows the set's cover thumbnail, name, and media type badge
-/// (podcast sets get a microphone icon overlay).  Tapping a card navigates
+/// Each card shows the set's cover thumbnail and name.  Tapping a card navigates
 /// to [MediaGridScreen] for that set.
 ///
 /// Design notes:
@@ -277,7 +276,8 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
 
     // Show an error view with a retry button if the load failed.
     if (_error != null) {
-      return ErrorRetryView(keyPrefix: 'sets', 
+      return ErrorRetryView(
+        keyPrefix: 'sets',
         message: _error!,
         onRetry: _load,
       );
@@ -288,7 +288,11 @@ class _SetsListScreenState extends ConsumerState<SetsListScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: _sets == null || _sets!.isEmpty
-          ? const EmptyStateView(icon: Icons.video_library_outlined, title: 'No sets found', titleKey: Key('sets_empty'), message: 'Pull down to refresh.')
+          ? const EmptyStateView(
+              icon: Icons.video_library_outlined,
+              title: 'No sets found',
+              titleKey: Key('sets_empty'),
+              message: 'Pull down to refresh.')
           : _SetsGrid(sets: _sets!, coverHeaders: _coverHeaders),
     );
   }
@@ -350,8 +354,7 @@ class _SetsGrid extends ConsumerWidget {
 
 /// Material 3 card representing a single [MediaSet].
 ///
-/// Shows: cover thumbnail (with placeholder and error fallback), set name,
-/// and a podcast badge (microphone icon) for podcast sets.
+/// Shows: cover thumbnail (with placeholder and error fallback) and set name.
 ///
 /// Tapping navigates to [AppRoutes.mediaGridPath] for the set.
 class _SetCard extends StatelessWidget {
@@ -379,9 +382,7 @@ class _SetCard extends StatelessWidget {
         // Pass the set name as a route extra so MediaGridScreen can show it in
         // the app bar immediately, without making a second API call.
         onTap: () => context.push(
-          mediaSet.isPodcast
-              ? '${AppRoutes.podcasts}?setId=${mediaSet.id}&name=${Uri.encodeQueryComponent(mediaSet.name)}'
-              : AppRoutes.mediaGridPath(mediaSet.id),
+          AppRoutes.mediaGridPath(mediaSet.id),
           extra: mediaSet.name,
         ),
         child: Column(
@@ -395,7 +396,7 @@ class _SetCard extends StatelessWidget {
                 coverHeaders: coverHeaders,
               ),
             ),
-            // Name row with podcast badge.
+            // Name row.
             _NameRow(mediaSet: mediaSet),
           ],
         ),
@@ -420,9 +421,6 @@ class _SetCard extends StatelessWidget {
 /// The session cookie is forwarded via [CachedNetworkImage.httpHeaders] because
 /// CachedNetworkImage bypasses Dio's interceptors and would otherwise hit the
 /// 401 path on the session-gated cover endpoint.
-///
-/// The podcast badge (microphone icon) is overlaid in the top-right corner
-/// for sets where [MediaSet.isPodcast] is true.
 class _CoverImage extends ConsumerWidget {
   const _CoverImage({
     required this.mediaSet,
@@ -476,14 +474,6 @@ class _CoverImage extends ConsumerWidget {
               errorWidget: (context, _, __) => _placeholderWidget(context),
             ),
           ),
-
-        // Podcast badge: microphone icon in the top-right corner.
-        if (mediaSet.isPodcast)
-          const Positioned(
-            top: 6,
-            right: 6,
-            child: _PodcastBadge(),
-          ),
       ],
     );
   }
@@ -501,31 +491,6 @@ class _CoverImage extends ConsumerWidget {
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       );
-}
-
-/// Podcast badge displayed on the cover thumbnail corner.
-///
-/// A small Material 3 filled badge containing a microphone icon, indicating
-/// that the set is a podcast feed rather than a plain media collection.
-class _PodcastBadge extends StatelessWidget {
-  const _PodcastBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const Key('podcast_badge'),
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Icon(
-        Icons.mic,
-        size: 16,
-        color: Theme.of(context).colorScheme.onPrimary,
-      ),
-    );
-  }
 }
 
 /// Name row below the cover thumbnail.

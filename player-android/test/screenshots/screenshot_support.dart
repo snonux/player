@@ -1,5 +1,5 @@
 // Renders screens with real fonts into PNG files for design review and docs.
-// Run: SCREENSHOT_ROBOTO=/path/Roboto.ttf flutter test --update-goldens test/screenshots/podcasts_shot.dart
+// Run: SCREENSHOT_ROBOTO=/path/Roboto.ttf flutter test --update-goldens test/screenshots/home_shot.dart
 // The *_shot.dart names keep these out of the normal test run; images land in out/.
 import 'dart:io';
 

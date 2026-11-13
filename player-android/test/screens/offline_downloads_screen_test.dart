@@ -1,7 +1,4 @@
 import 'package:player_android/providers/continue_listening_provider.dart';
-import 'package:player_android/providers/podcast_library_provider.dart';
-import 'package:player_android/services/podcast_repository.dart';
-import 'podcast_browsing_fakes.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:player_android/providers/first_run_provider.dart';
 import 'package:player_android/providers/settings_provider.dart';
@@ -98,16 +95,9 @@ void main() {
     await directory.delete(recursive: true);
   });
 
-  testWidgets(
-      'offline unlocked router allows cached podcasts while confining remote routes',
-      (tester) async {
+  testWidgets('offline unlocked router confines remote routes', (tester) async {
     SharedPreferences.setMockInitialValues({});
-    final podcasts = BrowsingRepository();
     final container = ProviderContainer(overrides: [
-      podcastRepositoryProvider.overrideWithValue(podcasts),
-      podcastRetentionProvider.overrideWithValue(BrowsingRetention(podcasts)),
-      podcastDownloadsProvider
-          .overrideWith((ref) => BrowsingDownloads(podcasts)),
       authStateProvider.overrideWith(_OfflineAccount.new),
       settingsProvider.overrideWith(_OfflineSettings.new),
       firstRunProvider.overrideWith((ref) async => false),
@@ -142,19 +132,10 @@ void main() {
           AppRoutes.offlineDownloads);
       expect(find.text('Offline downloads'), findsOneWidget);
     }
-    await tester.tap(find.byTooltip('Open navigation menu'));
+    router.go('/podcasts');
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('library_navigation_podcasts')));
-    await tester.pumpAndSettle();
-    expect(find.text('All podcast episodes'), findsOneWidget);
-    expect(await container.read(podcastScopeProvider.future),
-        podcastAccountScope('https://saved.example:8443', 7));
-    expect(container.read(podcastServerMetadataProvider), isNull);
-    expect(await container.read(podcastServerSubscriptionsProvider.future),
-        isNull);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(find.text('Offline downloads'), findsOneWidget);
+    expect(router.routeInformationProvider.value.uri.path,
+        AppRoutes.offlineDownloads);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

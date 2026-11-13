@@ -28,15 +28,6 @@ const _kProbeTimeout = Duration(seconds: 60);
 /// responsible for those concerns (Separation of Concerns / ISP).
 class DioPlayerApiClient extends PlayerApiClient
     implements TimestampedProgressSyncClient {
-  @override
-  Future<Map<String, dynamic>> syncPodcasts(Map<String, dynamic> state) async {
-    final response = await rawDio.post<Map<String, dynamic>>(
-        '/api/v1/podcasts/sync',
-        data: state,
-        options: _personalOptions);
-    return response.data!;
-  }
-
   Future<Map<String, dynamic>> syncPlayback(
       int mediaId, Map<String, dynamic> state) async {
     final response = await rawDio.post<Map<String, dynamic>>(
@@ -604,37 +595,6 @@ class DioPlayerApiClient extends PlayerApiClient
   }
 
   // ---------------------------------------------------------------------------
-  // Podcasts
-  // ---------------------------------------------------------------------------
-
-  /// Subscribes to a new podcast feed and returns the created [PodcastFeed].
-  ///
-  /// POST /api/v1/podcasts
-  /// Requires admin privileges (the server returns 403 for non-admin users).
-  ///
-  /// [feedUrl] is the URL of the RSS/Atom feed to subscribe to.
-  /// [setName] is an optional human-readable name for the podcast set;
-  /// when omitted the server derives it from the feed's own title element.
-  @override
-  Future<PodcastFeed> subscribePodcast({
-    required String feedUrl,
-    String? setName,
-  }) async {
-    // Omit set_name from the request body when not provided so the server falls
-    // back to the feed's title rather than receiving an explicit null.
-    final body = <String, dynamic>{
-      'feed_url': feedUrl,
-      if (setName != null && setName.isNotEmpty) 'set_name': setName,
-    };
-
-    final response = await rawDio.post<Map<String, dynamic>>(
-      '$_kApiV1/podcasts',
-      data: body,
-    );
-    return PodcastFeed.fromJson(response.data!);
-  }
-
-  // ---------------------------------------------------------------------------
   // Notes and saved positions
   // ---------------------------------------------------------------------------
 
@@ -965,88 +925,6 @@ class DioPlayerApiClient extends PlayerApiClient
       '$_kApiV1/progress/batch',
       data: {'updates': updates},
       options: _personalOptions,
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Podcasts (remaining methods)
-  // ---------------------------------------------------------------------------
-
-  /// Lists all subscribed podcast feeds visible to the authenticated user.
-  ///
-  /// GET /api/v1/podcasts — returns all [PodcastFeed] objects the user can see.
-  @override
-  Future<List<PodcastFeed>> listPodcasts() async {
-    final response = await rawDio.get<List<dynamic>>('$_kApiV1/podcasts');
-    return (response.data ?? [])
-        .cast<Map<String, dynamic>>()
-        .map(PodcastFeed.fromJson)
-        .toList();
-  }
-
-  @override
-  Future<List<Map<String, dynamic>>> listSubscribedPodcastEpisodes(
-      String feedKey,
-      {int offset = 0,
-      int limit = 200}) async {
-    final response = await rawDio.get<List<dynamic>>(
-        '$_kApiV1/podcasts/episodes',
-        options: _personalOptions,
-        queryParameters: {
-          'feed_key': feedKey,
-          'filter': 'all',
-          'offset': offset,
-          'limit': limit
-        });
-    return (response.data ?? [])
-        .map((row) => Map<String, dynamic>.from(row as Map))
-        .toList();
-  }
-
-  /// Lists episodes for a podcast feed identified by its set ID.
-  ///
-  /// GET /api/v1/podcasts/{id}/episodes — [podcastSetId] is the **set ID**
-  /// (not the feed ID).  Supports optional pagination via [limit] and [offset].
-  @override
-  Future<List<PodcastEpisode>> listEpisodes(
-    int podcastSetId, {
-    int? limit,
-    int? offset,
-  }) async {
-    final response = await rawDio.get<List<dynamic>>(
-      '$_kApiV1/podcasts/$podcastSetId/episodes',
-      queryParameters: {
-        if (limit != null) 'limit': limit,
-        if (offset != null) 'offset': offset,
-      },
-    );
-    return (response.data ?? [])
-        .cast<Map<String, dynamic>>()
-        .map(PodcastEpisode.fromJson)
-        .toList();
-  }
-
-  /// Triggers a server-side download of a podcast episode.
-  ///
-  /// POST /api/v1/podcasts/episodes/{episode_id}/download
-  /// The server downloads the audio file and creates a [Media] row for it.
-  /// Returns the newly created [Media] on success.
-  @override
-  Future<Media> downloadEpisode(int episodeId) async {
-    final response = await rawDio.post<Map<String, dynamic>>(
-      '$_kApiV1/podcasts/episodes/$episodeId/download',
-    );
-    return Media.fromJson(response.data!);
-  }
-
-  /// Toggles the per-user completion state of a podcast episode.
-  ///
-  /// POST /api/v1/podcasts/episodes/{episode_id}/complete
-  /// Returns 204 No Content — the new state must be re-fetched if needed.
-  @override
-  Future<void> toggleEpisodeComplete(int episodeId) async {
-    await rawDio.post<void>(
-      '$_kApiV1/podcasts/episodes/$episodeId/complete',
     );
   }
 

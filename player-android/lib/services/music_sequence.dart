@@ -8,7 +8,6 @@ bool isMusicTrack(Media media, Iterable<MediaSet> sets) {
   final matching = sets.where((set) => set.id == media.setId);
   final set = matching.isEmpty ? null : matching.first;
   return media.type == 'audio' &&
-      set?.isPodcast != true &&
       !RegExp(r'\.m4b$', caseSensitive: false).hasMatch(media.fileName) &&
       !RegExp(r'(^|[^a-z])audio[\s_-]*books?([^a-z]|$)', caseSensitive: false)
           .hasMatch('${media.fileName} ${media.relPath} ${set?.name ?? ''}');

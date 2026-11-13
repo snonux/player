@@ -93,7 +93,7 @@ class _OfflineDownloadsScreenState
             padding: const EdgeInsets.all(16),
             child: Text(offline
                 ? 'Offline · ${auth!.user!.username}\n${ref.watch(playerBaseUrlProvider).origin}\n'
-                    'This account’s saved files and podcasts are available. Playback progress syncs after reconnecting.'
+                    'This account’s saved files are available. Playback progress syncs after reconnecting.'
                 : 'Play saved files without signing in or connecting. Removing a download keeps the server file.')),
         TextButton.icon(
             icon: const Icon(Icons.library_music),

@@ -80,7 +80,6 @@ const SCENARIOS_DIR = path.resolve(__dirname, '../../scenarios');
 // workflow. A smoke test is not evidence that an unrelated scenario passed.
 export const SCENARIO_SPECS: Readonly<Record<string, string>> = {
   S01: 'scenario-S01.test.ts',
-  S02: 'scenario-S02.test.ts',
   S03: 'scenario-S03.test.ts',
   S04: 'scenario-S04.test.ts',
   S05: 'scenario-S05.test.ts',
@@ -95,7 +94,6 @@ export const SCENARIO_SPECS: Readonly<Record<string, string>> = {
   S14: 'scenario-S14.test.ts',
   S15: 'scenario-S15.test.ts',
   S16: 'scenario-S16.test.ts',
-  S17: 'scenario-S17.test.ts',
   S18: 'scenario-S18.test.ts',
   S19: 'scenario-S19.test.ts',
   S20: 'scenario-S20.test.ts',

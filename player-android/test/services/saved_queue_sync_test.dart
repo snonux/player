@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:player_android/services/music_queue_snapshot.dart';
 import 'package:player_android/services/saved_queue_sync.dart';
-import 'package:player_android/services/podcast_sync.dart';
+import 'package:player_android/services/sync_account.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

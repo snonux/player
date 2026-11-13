@@ -11,7 +11,6 @@ import '../widgets/headset_settings.dart';
 import '../widgets/music_automation_settings.dart';
 import '../widgets/navigation_settings.dart';
 import '../widgets/server_endpoint_settings.dart';
-import '../widgets/podcast_association.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -111,7 +110,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: _openLocalLibrary,
               ),
-              const PodcastAssociationSettings(),
               if (!onServer)
                 ListTile(
                   key: const Key('settings_connect_server'),

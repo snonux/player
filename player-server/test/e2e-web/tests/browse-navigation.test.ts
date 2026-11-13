@@ -33,7 +33,7 @@ test('b opens Browse with focus inside; j/k move, Esc closes and returns focus',
   await page.keyboard.press('b');
   await expect(sidebar(page)).toHaveClass(/open/);
   await expect(page.locator('#sidebar-toggle')).toHaveAttribute('aria-expanded', 'true');
-  for (const heading of ['Music', 'Podcasts', 'Radio', 'Sets']) {
+  for (const heading of ['Music', 'Radio', 'Sets']) {
     await expect(sidebar(page).getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
   const focused = () => page.evaluate(() => document.activeElement?.id || document.activeElement?.getAttribute('aria-label'));

@@ -12,7 +12,7 @@ export function initKeyboard(handlers) {
     // Set/folder open buttons keep DOM focus while j/k/h/l move the
     // selection, so Enter there opens the selected card instead of
     // whichever card button happens to hold focus.
-    const gridNavigation = e.target.matches?.('.set-open, .folder-open, .media-open, .song-open, .collection-open, .podcast-feed-open');
+    const gridNavigation = e.target.matches?.('.set-open, .folder-open, .media-open, .song-open, .collection-open');
 
     // Browser chords and editable/native controls own keys before any mode.
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -86,7 +86,7 @@ export function initKeyboard(handlers) {
       return;
     }
 
-    // Any other open dialog (help, notes, tags, upload, admin, podcasts) owns
+    // Any other open dialog (help, notes, tags, upload, admin) owns
     // the keyboard. Focused dialog buttons no longer swallow letter keys, so
     // grid, playback, and rescan shortcuts must not act behind the dialog.
     // Escape and help-local ? / pass through.
@@ -368,16 +368,6 @@ export function initKeyboard(handlers) {
       case 'd': handlers.toggleDetach?.(e); break;
       case 'D': handlers.download?.(e); break;
       case 'u': handlers.upload?.(e); break;
-      case 'v':
-      case 'Delete':
-        if (e.isComposing || e.repeat || e.target.closest?.('[popover], [role="menu"], #sidebar')) return;
-        if (handlers.podcastAction?.(e.key === 'v' ? 'complete' : 'delete-episode')) e.preventDefault();
-        break;
-      case 'o':
-        if (e.isComposing || e.repeat) return;
-        e.preventDefault();
-        handlers.podcasts?.(e);
-        break;
       case 'w':
         e.preventDefault();
         handlers.radio?.(e);

@@ -30,7 +30,6 @@ import 'package:player_android/api/player_api_client.dart';
 import 'package:player_android/models/models.dart';
 import 'package:player_android/providers/api_client_provider.dart';
 import 'package:player_android/screens/media_detail_screen.dart';
-import 'package:player_android/widgets/podcast_artwork.dart';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -337,34 +336,6 @@ Future<void> _pumpScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
-  testWidgets(
-      'downloaded podcast details show canonical title, date, feed artwork and safe show notes',
-      (tester) async {
-    final client = _FakeApiClient()
-      ..mediaResult = Media.fromJson({
-        ..._kAudio.toJson(),
-        'music': {'title': 'Title Placeholder'},
-        'podcast': {
-          'title': 'Canonical podcast episode',
-          'feed_title': 'Beyond Coding',
-          'published_at': '2026-10-28T13:01:04Z',
-          'image_url': '',
-          'feed_image_url': '',
-          'description': '<p>Publisher &amp; notes</p><script>bad()</script>'
-        }
-      });
-    await _pumpScreen(tester, client, mediaId: '7');
-    await tester.pumpAndSettle();
-    expect(find.text('Canonical podcast episode'), findsWidgets);
-    expect(find.byType(PodcastArtwork), findsOneWidget);
-    expect(find.text('Published Oct 28, 2026'), findsOneWidget);
-    await tester.ensureVisible(find.text('Show notes'));
-    await tester.tap(find.text('Show notes'));
-    await tester.pumpAndSettle();
-    expect(tester.widget<SelectableText>(find.byType(SelectableText)).data,
-        'Publisher & notes');
-    expect(tester.takeException(), isNull);
-  });
   // --------------------------------------------------------------------------
   // Loading state
   // --------------------------------------------------------------------------

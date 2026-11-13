@@ -21,13 +21,13 @@ The project is a **self-hosted media player** designed for simplicity (KISS): mi
 | Layer | Package | Role |
 |-------|---------|------|
 | Entrypoint | `cmd/player` | Flags, config, starts `internal/app` |
-| Wiring | `internal/app` | Builds every dependency, starts and stops background workers (GC, scans, podcast checker, transcodes, jukebox, plugins) before the database closes; the only importer of `api` |
+| Wiring | `internal/app` | Builds every dependency, starts and stops background workers (GC, scans, transcodes, jukebox, plugins) before the database closes; the only importer of `api` |
 | HTTP | `internal/api` | Routes, middleware (sessions, CSRF, CORS), request decoding and response encoding; calls services |
 | Business logic | `internal/service` | Authorization and use cases; no mutable package-level state |
 | Persistence | `internal/repository` | SQLite schema, migrations and queries; imports only `clock`, `model` and `podcast` |
 | Domain | `internal/model` | Plain data types shared by every layer; imports nothing from the project |
 | Media pipeline | `internal/scanner`, `probe`, `ffsafe`, `thumb`, `transcode` | Library scanning, ffprobe/ffmpeg (always through `ffsafe`), thumbnails, compatibility renditions |
-| Integrations | `internal/podcast`, `radio`, `renderer`, `jukebox`, `plugin`, `subsonic`, `auth` | Feed parsing, web radio, DLNA renderers, mpv, WASM plugins, Subsonic protocol, password/session/proxy auth |
+| Integrations | `internal/podcast` (legacy identity keys only), `radio`, `renderer`, `jukebox`, `plugin`, `subsonic`, `auth` | Legacy podcast keys, web radio, DLNA renderers, mpv, WASM plugins, Subsonic protocol, password/session/proxy auth |
 | Leaf helpers | `internal/clock`, `mediatype`, `fileversion`, `setassign`, `web` | Small dependency-free helpers and embedded web assets |
 
 Dependencies point downwards only: `app` → `api` → `service` → `repository` → `model`. Never import `api` or `app` from a lower layer, and keep `repository` free of `service`. `go list -deps` must show no cycles.
@@ -160,9 +160,7 @@ Global shortcuts are registered in `web/js/keyboard.js`. They are **disabled** w
 | `F` | Toggle favorite for the selected media |
 | `A` | Open the admin panel (admins only) |
 | `u` | Upload to the current set |
-| `o` | Open All podcast episodes, newest first |
-| `v` / `Delete` | Selected podcast episode: toggle listened / delete with confirmation |
-| `b` | Open / close the Browse sidebar (Music, Podcasts, Radio, Sets) and move focus into it; inside it `j`/`k` move, `Enter` opens, underlined letters jump, `Esc` or `b` closes and returns focus to the content. While focus is outside the open sidebar, every global key keeps working |
+| `b` | Open / close the Browse sidebar (Music, Radio, Sets) and move focus into it; inside it `j`/`k` move, `Enter` opens, underlined letters jump, `Esc` or `b` closes and returns focus to the content. While focus is outside the open sidebar, every global key keeps working |
 | `w` | Open web radio (explore, auto explore, bookmarks); inside it `j`/`k`/arrows move between stations, `Enter` plays, `Esc` closes while the station keeps playing |
 
 ---
@@ -222,7 +220,7 @@ Generated thumbnails live in `.thumbnails` next to the source file, named
 or, with `THUMBNAIL_CACHE_DIR` set, at the same relative path below that
 directory. Where a thumbnail goes is decided by one `thumb.Layout`
 (`PathFor`, built in `app.WireWithRunner` and handed to the maker, the
-scanner, the write/podcast services and the GC worker); never derive the
+scanner, the write service and the GC worker); never derive the
 path of a new thumbnail with `thumb.ThumbnailPathFor` directly, which only
 knows the place beside the source. The file streamer serves cache
 thumbnails through `WithThumbnailCache`; every other path outside
@@ -241,8 +239,8 @@ audio/video only, `ffsafe.OutputArg` for a file ffmpeg writes. A playlist
 disguised as media (`evil.avi` holding an ffconcat list) is refused instead
 of followed. The prober reports such a file as `probe.ErrUnreadable` and
 does not retry it (retries are for failures to run ffprobe or reach the
-file); the scanner logs a warning and does not index it; an upload, podcast
-download or "regenerate thumbnail" of it fails with
+file); the scanner logs a warning and does not index it; an upload or
+"regenerate thumbnail" of it fails with
 `service.ErrUnreadableMedia`, HTTP `415` and a fixed text. Error detail of a
 failed upload (absolute paths, ffprobe output) is logged, never sent to the
 client. See "ffmpeg input hardening" below before adding an ffmpeg call.
@@ -273,8 +271,6 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 | `THUMBNAIL_CACHE_DIR` | unset | writable directory outside `MEDIA_ROOT` | When set, all generated thumbnails are stored there (mirroring the media tree) instead of in `.thumbnails` beside each media file; unset keeps them beside the media |
 | `RADIO_BROWSER_URL` | `https://all.api.radio-browser.info` | http(s) URL | Radio Browser API that web radio searches |
 | `RADIO_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let the radio relay connect to loopback/private addresses (stations on your own network); off by default because station entries come from a public directory |
-| `PODCAST_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let podcast feed, cover and episode downloads connect to loopback/private addresses (feeds on your own network); off by default because feeds are third-party documents whose URLs must not reach services on the server's network |
-| `PODCAST_CHECK_INTERVAL_MINUTES` | `60` | ≥ 1 | Podcast feed refresh interval; the first background check runs one minute after start |
 | `MEDIA_PAGE_SIZE` | `100` | ≥ 1 | Items displayed per thumbnail grid page |
 | `PROXY_AUTH_TRUSTED_SOURCES` | unset | comma-separated IPs/CIDRs, `@` for a UNIX socket peer | Enables reverse-proxy authentication: only requests whose immediate peer is listed may assert a user through `PROXY_AUTH_USER_HEADER`. Unset disables it (the other two `PROXY_AUTH_*` settings then must be unset too) |
 | `PROXY_AUTH_USER_HEADER` | `Remote-User` | header name; requires `PROXY_AUTH_TRUSTED_SOURCES` | Header carrying the username of an existing account from a trusted proxy |
@@ -311,48 +307,17 @@ client. See "ffmpeg input hardening" below before adding an ffmpeg call.
 
 ---
 
-## Podcast Support
+## Podcasts (removed)
 
-Podcasts live under one shared **podcast set** (`sets.is_podcast = 1`, `root_path = "podcast"`). Each subscribed podcast is a `podcast_feeds` row and gets its own folder inside that single set.
-
-### Subscribing
-
-Admin opens the **Podcasts** button in the admin panel (or calls `POST /api/podcasts`):
-- Submit an RSS/Atom feed URL.
-- Server creates or reuses the shared `podcast` set, creates a feed folder inside it, parses the feed, downloads the cover image, and inserts episodes into `podcast_episodes`.
-
-### Episode Management
-
-Episodes are stored in `podcast_episodes` and rendered in the browse grid under the shared podcast set:
-- **Undownloaded** episodes show a **Download to server** button (calls `POST /api/podcasts/episodes/{id}/download`).
-- **Downloaded** episodes become regular `media` rows and appear as normal media cards.
-- Users can mark episodes as listened/unlistened via the checkmark button.
-
-### Background Feed Checker
-
-`service.PodcastCheckWorker` runs `CheckFeeds` one minute after start and then every hour (configurable via `PODCAST_CHECK_INTERVAL_MINUTES`). It is part of the worker lifecycle: `RunWithSignal` stops it (cancelling in-flight fetches and waiting for them) before the database closes. One run fetches at most four feeds at once and skips a feed a manual refresh is fetching. It uses conditional GET (`If-None-Match`, `If-Modified-Since`) to avoid re-downloading unchanged feeds.
-
-### New Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/podcasts` | List subscribed podcast feeds |
-| `POST` | `/api/podcasts` | Subscribe to a new feed (admin) |
-| `DELETE` | `/api/podcasts/{id}` | Unsubscribe a feed and delete its downloaded episodes (admin) |
-| `GET` | `/api/podcasts/{id}/episodes` | List episodes with status |
-| `POST` | `/api/podcasts/episodes/{id}/download` | Server-side download |
-| `POST` | `/api/podcasts/episodes/{id}/complete` | Toggle completion |
-
-### New Files
-
-- `internal/model/podcast.go` — PodcastFeed, PodcastEpisode, PodcastStatus
-- `internal/repository/podcast.go` — CRUD and queries
-- `internal/podcast/feed.go` — RSS/Atom parser using `gofeed`
-- `internal/podcast/cover.go` — Cover image downloader
-- `internal/service/podcast.go` — Business logic and background checker
-- `internal/api/handlers_podcast.go` — REST handlers
-- `internal/service/import.go` — Shared `ImportMediaFile` helper (used by uploads + downloader)
-- `web/js/podcasts.js` — Feed manager modal and episode renderer
+Podcast support was removed from the server, the web UI and the Android app.
+The podcast tables (`podcast_feeds`, `podcast_episodes`, `podcast_status`,
+`podcast_subscriptions`, `podcast_episode_state`, ...) and their data stay in
+existing databases and are not read any more. Their schema steps still run
+(`internal/repository/legacy_podcast_schema.go`,
+`legacy_podcast_sync_migration.go`, which use the key functions left in
+`internal/podcast/identity.go`), so older databases keep upgrading to the same
+shape. A set with `is_podcast = 1` is browsed like any other set and stays
+excluded from music. Do not add new reads or writes of the podcast tables.
 
 ---
 

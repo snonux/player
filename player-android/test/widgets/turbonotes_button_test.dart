@@ -38,16 +38,11 @@ void main() {
   }
 
   testWidgets('opens the note for an audiobook', (tester) async {
-    await pump(tester, const NoteSubject(title: 'Dune', podcast: false));
+    await pump(tester, const NoteSubject(title: 'Dune'));
     expect(find.byTooltip('Book note in TurboNotes'), findsOneWidget);
     await tester.tap(find.byKey(const Key('turbonotes_button')));
     await tester.pumpAndSettle();
     expect(launcher.opened.single.notePath, 'Book-And-Podcast-Notes/Dune.md');
-  });
-
-  testWidgets('podcast episodes get an episode note', (tester) async {
-    await pump(tester, const NoteSubject(title: 'Ep 1', podcast: true));
-    expect(find.byTooltip('Episode note in TurboNotes'), findsOneWidget);
   });
 
   testWidgets('no button for music', (tester) async {
@@ -57,7 +52,7 @@ void main() {
 
   testWidgets('says so when TurboNotes is not installed', (tester) async {
     launcher.installed = false;
-    await pump(tester, const NoteSubject(title: 'Dune', podcast: false));
+    await pump(tester, const NoteSubject(title: 'Dune'));
     await tester.tap(find.byKey(const Key('turbonotes_button')));
     await tester.pumpAndSettle();
     expect(find.textContaining('Install TurboNotes'), findsOneWidget);
@@ -71,8 +66,7 @@ void main() {
         overrides: [
           turboNotesLauncherProvider.overrideWithValue(launcher),
           noteSubjectResolverProvider.overrideWithValue(
-              (request, client) async =>
-                  const NoteSubject(title: 'Dune', podcast: false)),
+              (request, client) async => const NoteSubject(title: 'Dune')),
         ],
         child: MaterialApp(
             home: Scaffold(

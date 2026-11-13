@@ -16,9 +16,7 @@ test('old offline music URLs require normal sign-in; device entries remain', asy
   await page.getByRole('link', { name: 'On this device', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'On this device', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Add files', exact: true })).toBeVisible();
-  await page.getByRole('link', { name: 'Podcasts', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Podcasts on this device', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Add feed URL', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Podcasts', exact: true })).toHaveCount(0);
 });
 
 test('signed-in legacy URLs load online library and retain download settings and bytes', async ({ page }) => {
@@ -47,7 +45,7 @@ test('signed-in legacy URLs load online library and retain download settings and
   expect(await page.evaluate(async () => (await (await caches.open('player-offline-v1-999')).match('/saved-sentinel'))?.text())).toBe('saved bytes');
 });
 
-test('device files persist and standalone podcasts remain usable without sign-in', async ({ page }) => {
+test('device files persist without sign-in', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/index.html?local=files');
   await page.locator('[data-file-input]').setInputFiles({
@@ -56,16 +54,6 @@ test('device files persist and standalone podcasts remain usable without sign-in
   await expect(page.locator('[data-results]')).toContainText('Device song with a long readable title.wav');
   await page.reload();
   await expect(page.locator('[data-results]')).toContainText('Device song with a long readable title.wav');
-  await page.getByRole('link', { name: 'Podcasts', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Podcasts on this device', exact: true })).toBeVisible();
-  await page.route('https://device-podcast.example/feed.xml', route => route.fulfill({
-    contentType: 'application/rss+xml', body: '<rss version="2.0"><channel><title>Device podcast</title><item><guid>one</guid><title>Device episode</title><enclosure url="https://device-podcast.example/one.mp3" type="audio/mpeg"/></item></channel></rss>',
-  }));
-  page.once('dialog', dialog => dialog.accept('https://device-podcast.example/feed.xml'));
-  await page.getByRole('button', { name: 'Add feed URL', exact: true }).click();
-  await expect(page.locator('[data-results]')).toContainText('Device podcast');
-  await page.reload();
-  await expect(page.locator('[data-results]')).toContainText('Device podcast');
   await page.setViewportSize({ width: 844, height: 390 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/snonux/player/internal/model"
-	"github.com/snonux/player/internal/repository"
 	"github.com/snonux/player/internal/service"
 )
 
@@ -26,10 +25,9 @@ func TestEmptyCollectionResponses(t *testing.T) {
 	}
 	admin := &service.MockAdminService{ListPermissionsFunc: func(context.Context) (*service.PermissionsMatrix, error) { return &service.PermissionsMatrix{}, nil }}
 	server := &Server{
-		media:      MediaServices{Browse: media, Tag: media, Share: media, Progress: &service.MockProgressService{}},
-		adminSvc:   admin,
-		podcastSvc: nilPodcasts{},
-		logger:     slog.Default(),
+		media:    MediaServices{Browse: media, Tag: media, Share: media, Progress: &service.MockProgressService{}},
+		adminSvc: admin,
+		logger:   slog.Default(),
 	}
 	cases := []struct {
 		name    string
@@ -44,9 +42,6 @@ func TestEmptyCollectionResponses(t *testing.T) {
 		{"shares", server.handleListShares, nil},
 		{"my shares", server.handleMyShares, nil},
 		{"in progress", server.handleInProgress, nil},
-		{"podcasts", server.handleListPodcasts, nil},
-		{"episodes", server.handleListEpisodes, nil},
-		{"subscribed episodes", server.handleListSubscribedEpisodes, nil},
 		{"browse", server.handleBrowseSet, []string{"folders", "media"}},
 		{"detail", server.handleGetMedia, []string{"tags"}},
 		{"permissions", server.handleListPermissions, []string{"sets", "users", "permissions"}},
@@ -77,18 +72,4 @@ func TestEmptyCollectionResponses(t *testing.T) {
 			}
 		})
 	}
-}
-
-// nilPodcasts returns nil lists; unused methods panic via the nil embedded
-// interface so an unexpected call fails the test loudly.
-type nilPodcasts struct{ service.PodcastEpisodeService }
-
-func (nilPodcasts) ListFeeds(context.Context, int64) ([]model.PodcastFeed, error) { return nil, nil }
-
-func (nilPodcasts) ListEpisodes(context.Context, int64, int64, int, int) ([]model.PodcastEpisodeWithStatus, error) {
-	return nil, nil
-}
-
-func (nilPodcasts) ListSubscribedEpisodes(context.Context, int64, repository.PodcastEpisodeQuery) ([]model.PodcastEpisodeView, error) {
-	return nil, nil
 }

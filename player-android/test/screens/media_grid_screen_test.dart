@@ -76,11 +76,11 @@ class _FakeApiClient extends PlayerApiClient {
   Future<List<MediaSet>> listSets() async => [
         for (final id in [10, 20])
           MediaSet(
-              id: id,
-              name: id == 10 ? 'Movies' : 'Other',
-              rootPath: '',
-              coverThumbnailPath: '',
-              isPodcast: false),
+            id: id,
+            name: id == 10 ? 'Movies' : 'Other',
+            rootPath: '',
+            coverThumbnailPath: '',
+          ),
       ];
   @override
   Future<List<Tag>> listTags() async => const [Tag(id: 1, name: 'keep')];

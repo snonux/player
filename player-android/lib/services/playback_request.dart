@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import '../models/music_metadata.dart';
-import '../models/media.dart' show MediaPodcastMetadata;
 
 enum PlaybackSourceKind { server, local, publicShare }
 
@@ -23,7 +22,6 @@ sealed class PlaybackRequest {
     this.artist = '',
     this.album = '',
     this.artworkUri,
-    this.podcast,
     this.music,
     required this.sourceUri,
     this.startPosition,
@@ -39,11 +37,8 @@ sealed class PlaybackRequest {
   final String artist;
   final String album;
   final Uri? artworkUri;
-  final MediaPodcastMetadata? podcast;
   final MusicMetadata? music;
   String get subtitle {
-    final feedTitle = podcast?.feedTitle.trim() ?? '';
-    if (feedTitle.isNotEmpty) return feedTitle;
     return [artist.isEmpty ? 'Unknown artist' : artist, album]
         .where((s) => s.isNotEmpty)
         .join(' · ');
@@ -56,9 +51,6 @@ sealed class PlaybackRequest {
   final SavePlaybackPosition? savePosition;
   final SaveListeningPosition? saveListeningPosition;
   final MarkPlaybackFinished? markFinished;
-
-  bool get naturalEndOnly => false;
-  SavePlaybackPosition? get finishAtPosition => null;
 
   PlaybackSourceKind get kind;
 }
@@ -75,7 +67,6 @@ final class ServerPlaybackRequest extends PlaybackRequest {
     super.artist,
     super.album,
     super.artworkUri,
-    super.podcast,
     super.music,
     super.startPosition,
     super.readPosition,
@@ -100,7 +91,6 @@ final class ServerPlaybackRequest extends PlaybackRequest {
         artist: artist,
         album: album,
         artworkUri: artworkUri,
-        podcast: podcast,
         music: music,
         startPosition: startPosition,
         readPosition: readPosition,
@@ -131,42 +121,6 @@ final class LocalPlaybackRequest extends PlaybackRequest {
   }) : super(identity: 'local:$localMediaId');
 
   final int localMediaId;
-
-  @override
-  PlaybackSourceKind get kind => PlaybackSourceKind.local;
-}
-
-/// Publisher audio owned by this device; scoped history has no server media ID.
-@immutable
-final class PodcastPlaybackRequest extends PlaybackRequest {
-  const PodcastPlaybackRequest({
-    required super.identity,
-    required super.sourceUri,
-    required super.title,
-    super.sourceName,
-    super.podcast,
-    super.readPosition,
-    super.savePosition,
-    super.markFinished,
-    this.synchronize,
-    this.finishAtPosition,
-    this.readPositionForDuration,
-    this.continuation,
-    this.deleteEpisode,
-  });
-
-  /// Removes this episode from the podcast lists and its device copy, as the
-  /// episode list's Delete episode action does.
-  final Future<void> Function()? deleteEpisode;
-
-  /// Remaining episodes in feed order, captured when this episode opens.
-  final Future<List<PlaybackRequest>> Function(bool offline)? continuation;
-  final Future<void> Function()? synchronize;
-  final Future<double?> Function(Duration?)? readPositionForDuration;
-  @override
-  final SavePlaybackPosition? finishAtPosition;
-  @override
-  bool get naturalEndOnly => true;
 
   @override
   PlaybackSourceKind get kind => PlaybackSourceKind.local;

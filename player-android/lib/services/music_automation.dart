@@ -55,7 +55,7 @@ bool automationMusicOwned(PlaybackRequest request, String origin, int userId) {
   };
 }
 
-/// Catalog membership supplies source-set/podcast classification; tags and
+/// Catalog membership supplies source-set classification; tags and
 /// filenames cannot establish music eligibility. Server snapshots are checked
 /// afresh, while offline copies retain validated membership from download time.
 Future<void> validateAutomationQueueMusic(
@@ -80,7 +80,7 @@ Future<void> validateAutomationQueueMusic(
       if (!current()) throw StateError('Music action superseded. Retry.');
       if (checked[request.mediaId] != true) {
         throw StateError(
-            'Music automation cannot play podcasts or other spoken audio. Choose music in Player first.');
+            'Music automation cannot play audiobooks or other spoken audio. Choose music in Player first.');
       }
     } else if (request is OfflinePlaybackRequest &&
         !request.automationMusicEligible) {

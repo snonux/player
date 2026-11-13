@@ -1,17 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player_android/services/global_sync_coordinator.dart';
-import 'package:player_android/services/podcast_repository.dart';
-import 'package:player_android/services/podcast_sync_store.dart';
-import 'package:player_android/services/podcast_sync.dart';
+import 'package:player_android/services/sync_account.dart';
 import 'package:player_android/providers/global_sync_provider.dart';
-import 'package:player_android/providers/podcast_association_provider.dart';
 import 'package:player_android/widgets/global_sync_status.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class _VisibleSync extends GlobalSyncCoordinator {
-  _VisibleSync()
-      : super(PodcastSync(PodcastSyncStore(PodcastRepository())), () => null);
+  _VisibleSync() : super(GlobalSyncStatusStore(), () => null);
 
   void Function()? onSyncNow;
   bool manual = false;
@@ -43,7 +39,6 @@ void main() {
     await tester.pumpWidget(ProviderScope(
         overrides: [
           globalSyncCoordinatorProvider.overrideWith((ref) => sync),
-          podcastAssociationOfferProvider.overrideWith((ref) async => null),
         ],
         child:
             const MaterialApp(home: GlobalSyncChrome(child: Text('Library')))));
@@ -92,7 +87,6 @@ void main() {
     await tester.pumpWidget(ProviderScope(
         overrides: [
           globalSyncCoordinatorProvider.overrideWith((ref) => sync),
-          podcastAssociationOfferProvider.overrideWith((ref) async => null),
         ],
         child:
             const MaterialApp(home: GlobalSyncChrome(child: Text('Library')))));
@@ -111,7 +105,6 @@ void main() {
     await tester.pumpWidget(ProviderScope(
         overrides: [
           globalSyncCoordinatorProvider.overrideWith((ref) => sync),
-          podcastAssociationOfferProvider.overrideWith((ref) async => null),
         ],
         child:
             const MaterialApp(home: GlobalSyncChrome(child: Text('Library')))));

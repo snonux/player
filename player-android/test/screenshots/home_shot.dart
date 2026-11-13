@@ -27,20 +27,19 @@ class ShotApi extends PlayerApiClient {
   ShotApi() : super(dio: Dio());
   @override
   Future<List<MediaSet>> listSets() async => [
-        for (final (i, name, podcast) in [
-          (1, 'Movies', false),
-          (2, 'TV Shows', false),
-          (3, 'Music', false),
-          (4, 'Podcasts', true),
-          (5, 'Family photos', false),
-          (6, 'Audiobooks', false),
+        for (final (i, name) in [
+          (1, 'Movies'),
+          (2, 'TV Shows'),
+          (3, 'Music'),
+          (4, 'Family photos'),
+          (5, 'Audiobooks'),
         ])
           MediaSet(
-              id: i,
-              name: name,
-              rootPath: name,
-              coverThumbnailPath: '',
-              isPodcast: podcast)
+            id: i,
+            name: name,
+            rootPath: name,
+            coverThumbnailPath: '',
+          )
       ];
   @override
   String setFolderCoverUrl(int setId, {String? folder}) => '';

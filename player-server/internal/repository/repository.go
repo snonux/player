@@ -10,7 +10,6 @@ import (
 
 // Store is the composite interface for all repositories.
 type Store interface {
-	RetainPodcastEpisodes(context.Context) error
 	MusicArtworkRepo
 	MusicEnrichmentRepo
 	MusicRatingRepo
@@ -34,12 +33,6 @@ type Store interface {
 	ShareRepo
 	NoteRepo
 	BookmarkRepo
-	PodcastRepo
-	PodcastSubscriptionRepo
-	PodcastSyncRepo
-	PodcastCatalogRepo
-	PodcastEpisodeStateRepo
-	PodcastEpisodeViewRepo
 	RadioRepo
 }
 

@@ -2,9 +2,6 @@
 export function localFilesMode() {
  return new URLSearchParams(globalThis.location?.search || '').get('local') === 'files';
 }
-export function localPodcastsMode() {
- return new URLSearchParams(globalThis.location?.search || '').get('local') === 'podcasts';
-}
 export function deviceLibraryMode() {
- return localFilesMode() || localPodcastsMode();
+ return localFilesMode();
 }

@@ -1,5 +1,5 @@
 import 'network_policy.dart';
-import 'podcast_sync.dart' show SyncDeferred;
+import 'sync_account.dart' show SyncDeferred;
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';

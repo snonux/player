@@ -295,10 +295,6 @@ class PlayerApiClient implements ProgressSyncClient {
   // Config
   // ---------------------------------------------------------------------------
 
-  /// Reconcile account podcast registers; audio and server media IDs are absent.
-  Future<Map<String, dynamic>> syncPodcasts(Map<String, dynamic> state) =>
-      throw UnimplementedError('Podcast sync is unavailable');
-
   Future<Map<String, dynamic>> getConfig() => throw UnimplementedError();
 
   // ---------------------------------------------------------------------------
@@ -574,37 +570,6 @@ class PlayerApiClient implements ProgressSyncClient {
   Future<double?> getMediaProgress(int mediaId) => throw UnimplementedError();
 
   Future<List<Media>> listInProgress() => throw UnimplementedError();
-
-  // ---------------------------------------------------------------------------
-  // Podcasts
-  // ---------------------------------------------------------------------------
-
-  Future<List<PodcastFeed>> listPodcasts() => throw UnimplementedError();
-
-  /// One personal-subscription catalogue page, including listened episodes.
-  Future<List<Map<String, dynamic>>> listSubscribedPodcastEpisodes(
-          String feedKey,
-          {int offset = 0,
-          int limit = 200}) =>
-      throw UnimplementedError();
-
-  Future<List<PodcastEpisode>> listEpisodes(
-    int podcastSetId, {
-    int? limit,
-    int? offset,
-  }) =>
-      throw UnimplementedError();
-
-  Future<Media> downloadEpisode(int episodeId) => throw UnimplementedError();
-
-  Future<void> toggleEpisodeComplete(int episodeId) =>
-      throw UnimplementedError();
-
-  Future<PodcastFeed> subscribePodcast({
-    required String feedUrl,
-    String? setName,
-  }) =>
-      throw UnimplementedError();
 
   // ---------------------------------------------------------------------------
   // Web radio

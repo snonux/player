@@ -159,7 +159,6 @@ MediaSet _makeSet({required int id, required String name}) {
     name: name,
     rootPath: '/media/$name',
     coverThumbnailPath: '',
-    isPodcast: false,
   );
 }
 

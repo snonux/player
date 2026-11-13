@@ -6,12 +6,6 @@ import (
 	"github.com/snonux/player/internal"
 )
 
-// podcastSyncVersion is the podcast_sync capability advertised in the
-// config (docs/podcast-sync-contract.md §6.1): the server implements
-// POST /api/v1/podcasts/sync with subscription and episode registers. A
-// client that does not find it runs podcasts standalone for that account.
-const podcastSyncVersion = 1
-
 // handleConfig serves the client configuration and capabilities.
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	pageSize := internal.DefaultMediaPageSize
@@ -19,12 +13,10 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		pageSize = s.cfg.MediaPageSize
 	}
 	body := map[string]any{
-		"media_page_size":          int64(pageSize),
-		"user_id":                  userIDFromContext(r),
-		"podcast_sync":             podcastSyncVersion,
-		"podcast_episode_deletion": true,
-		"auth":                     s.authModeInfo(),
-		"subsonic":                 s.subsonicStatusInfo(),
+		"media_page_size": int64(pageSize),
+		"user_id":         userIDFromContext(r),
+		"auth":            s.authModeInfo(),
+		"subsonic":        s.subsonicStatusInfo(),
 	}
 	if s.jukeboxSvc != nil && s.jukeboxSvc.Enabled() {
 		_, isAdmin := s.jukeboxCaller(r)

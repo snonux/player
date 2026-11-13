@@ -917,38 +917,6 @@ SSID deny/approximate/precise/Location-off checks, canonical download/cache keys
 and original queue/profile restoration. Browser controls retain their page
 origin under U01; native pairing does not create a separate saved account.
 
-# Podcast multi-client acceptance
-
-`podcast_sync_e2e.py` uses two already installed, persistent Android clients and
-the external isolated publisher/server fixture. It never installs an APK or
-clears app data. The parent establishes each client's server and publisher
-reverse mappings and supplies `--serial`, `--client A|B`, and one `--stage`.
-Audio stages also need `--emulator-wav` pointing at that emulator's real QEMU
-output. Each run writes a separate result and sanitized evidence directory.
-
-After the main A/B completion and cleanup journey, run `held-account` on A
-while signed into the primary account with Alpha subscribed and downloaded. The
-fixture must include its separate `other` account. This stage holds a real
-upstream scoped reply, signs out before release, checks the other account's UI
-and persisted scope, then restores the primary account. Run `end-outage-next`
-with Alpha and Beta subscribed: it downloads their short episodes directly,
-forces podcast sync transport failure through a real HTTP proxy, verifies local
-natural completion, and requires the next episode to play audibly. Neither
-stage should be claimed as passing until run on the installed APK.
-
-Run `download-negatives` on A while signed into the primary account with
-Alpha and Beta subscribed. It uses the existing publisher reverse mapping and
-an owned proxy to hold Beta Episode 003's real publisher response until native
-Cancel is tapped. It then returns a real HTTP `503` for Alpha Episode 003,
-requires visible Retry and durable failed state, and forwards the retry to the
-publisher for byte verification. The proxy restores the original mapping and
-does not alter publisher fixture fault files. Run `offline-seek` after the
-successful `end-outage-next` stage has left a downloaded Beta Episode 002 on A;
-pass `--emulator-wav`. It temporarily removes both owned reverse mappings,
-seeks through the actual Android player slider, requires continuing QEMU audio
-and durable local position, then restores those mappings. Each check needs an
-installed-app run before it is counted as platform evidence.
-
 # M36 personal music listening
 
 `music_personal_counts_e2e.py` checks the real 85-second **Qualified Listening**

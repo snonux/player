@@ -14,7 +14,6 @@ import '../providers/auth_state_provider.dart';
 import 'dart:async';
 
 import 'package:cookie_jar/cookie_jar.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'media_playback_navigation.dart';
@@ -43,14 +42,12 @@ import '../widgets/audio_format_line.dart';
 import '../widgets/turbonotes_button.dart';
 import '../widgets/lyrics_panel.dart';
 import '../widgets/audio_cover_art.dart';
-import '../widgets/podcast_show_notes.dart';
 import '../widgets/audio_visuals.dart';
 import '../widgets/cast_controls.dart';
 import '../widgets/sleep_timer_control.dart';
 import '../widgets/playback_loading_view.dart';
 import '../widgets/personal_media_actions.dart';
 import '../widgets/overflow_menu.dart';
-import '../widgets/podcast_episode_delete.dart';
 import '../services/personal_media_store.dart';
 import 'cast_screen_mixin.dart';
 import 'playback_preparation_mixin.dart';
@@ -235,11 +232,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     // Completed setup belongs to the background handler. An abandoned setup
     // must release its source, even when credentials or resume reads are pending.
     final lease = _sessionLease;
-    if (!_isLoading &&
-        lease?.isCurrent == true &&
-        _activeRequest is PodcastPlaybackRequest) {
-      unawaited(_handler?.saveProgress());
-    }
     if (_isLoading &&
         lease?.isCurrent == true &&
         _handler?.musicState == null) {
@@ -491,14 +483,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   /// provider error starts at zero.
   Future<double?> _readResumePosition(PlaybackRequest request,
       {Duration? loadedDuration}) async {
-    if (request is PodcastPlaybackRequest) {
-      try {
-        return await request.readPositionForDuration?.call(loadedDuration) ??
-            await request.readPosition?.call();
-      } catch (_) {
-        return null;
-      }
-    }
     final lastKnown = _lastKnownPosition;
     if (lastKnown != null) return lastKnown.inMilliseconds / 1000.0;
     final readPosition = request.readPosition;
@@ -528,8 +512,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         saveListeningPosition: request.saveListeningPosition,
         listeningOccurrenceID: _remoteReturnOccurrence,
         markFinished: request.markFinished!,
-        naturalEndOnly: request.naturalEndOnly,
-        finishAtPosition: request.finishAtPosition,
       );
     }
     if (_musicEntries.isNotEmpty) _attachMusicSequence(attempt);
@@ -603,8 +585,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
   }
 
   /// Builds the request, looking up the playback URL when the route supplied
-  /// only a media ID (no typed request and no URL in the route extra), as the
-  /// podcast episode list does.
+  /// only a media ID (no typed request and no URL in the route extra).
   Future<PlaybackRequest> _resolveRequest(int generation) async {
     var request = _effectiveRequest();
     if (_remoteReturnRequest != null) {
@@ -623,30 +604,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
           request, ref.read(apiClientProvider));
     }
     request = await _refreshRetryQuality(request, generation);
-    if (request is PodcastPlaybackRequest && request.continuation != null) {
-      final podcast = request;
-      final accountOffline = ref.exists(authStateProvider) &&
-          ref.read(authStateProvider).valueOrNull?.isOffline == true;
-      _musicEntries = [podcast];
-      // The handler calls this only when the selected episode finishes or
-      // Next is pressed. Starting local audio never waits for optional metadata.
-      _expandMusic = () async {
-        var offline = accountOffline;
-        try {
-          offline = offline ||
-              (await Connectivity().checkConnectivity())
-                  .every((result) => result == ConnectivityResult.none);
-        } catch (_) {
-          // Cached playback also works without connectivity metadata.
-        }
-        try {
-          return [podcast, ...await podcast.continuation!(offline)];
-        } catch (_) {
-          return [podcast];
-        }
-      };
-      return request;
-    }
     if (request is! ServerPlaybackRequest || widget.sequence.isEmpty) {
       return request;
     }
@@ -668,7 +625,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         artist: media.music?.artist ?? '',
         album: media.music?.album ?? '',
         music: media.music,
-        podcast: media.podcast,
         artworkUri: media.thumbnailPath.isNotEmpty
             ? Uri.parse(client.thumbnailUrl(media.id))
             : null,
@@ -715,7 +671,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
         artist: display.artist,
         album: display.album,
         music: display.music,
-        podcast: display.podcast,
         artworkUri: display.artworkUri,
         sourceName: request.sourceName,
         startPosition: request.startPosition,
@@ -749,27 +704,21 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     final lease = attempt.lease;
     final coordinator = ref.read(playbackSessionCoordinatorProvider);
     handler.startMusicSequence(
-        queueLabel: _activeRequest is PodcastPlaybackRequest
-            ? _activeRequest!.podcast?.feedTitle ?? 'Podcast'
-            : widget.sequence.firstOrNull?.music?.album ?? context.tr('Album'),
+        queueLabel:
+            widget.sequence.firstOrNull?.music?.album ?? context.tr('Album'),
         sequenceLease: lease,
         claimQueue: (request) => coordinator.claim(
             kind: request.kind,
             identity: request.identity,
             sourceUri: request.sourceUri.toString(),
             stop: handler.stop),
-        wrap: _activeRequest is! PodcastPlaybackRequest &&
-            _remoteReturnRequest == null &&
-            !widget.albumCollection,
+        wrap: _remoteReturnRequest == null && !widget.albumCollection,
         entries: _musicEntries,
         index: _musicStartIndex,
         expand: _expandMusic!,
         changed: lease.updateSource,
-        load: _activeRequest is PodcastPlaybackRequest
-            ? (request, current) async =>
-                current() ? AudioSource.uri(request.sourceUri) : null
-            : ref.read(cachedAudioLoaderProvider(
-                ref.read(credentialMutationQueueProvider).generation)));
+        load: ref.read(cachedAudioLoaderProvider(
+            ref.read(credentialMutationQueueProvider).generation)));
     _watchMusicState(handler, lease);
   }
 
@@ -1168,8 +1117,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     final ready = request != null && !_isLoading && _error == null;
     final personal = ready && !casting && !widget.isPublicShare;
     final store = personal ? _personalBinding.storeFor(ref, request) : null;
-    final music =
-        handler.musicState != null && _activeRequest is! PodcastPlaybackRequest;
+    final music = handler.musicState != null;
     return [
       if (music && ready && !casting && !handler.musicQueue.active)
         OverflowMenuItem(
@@ -1202,13 +1150,12 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
       if (personal) TurboNotesButton(request: request, asMenuItem: true),
       SleepTimerMenuItem(timer: handler.sleepTimer, playerContext: context),
       if (ready && !casting) ...[
-        if (request is! PodcastPlaybackRequest)
-          OverflowMenuItem(
-              key: const Key('audio_player_speed_selector'),
-              icon: Icons.speed,
-              label: 'Playback speed',
-              subtitle: '${_playbackSpeed}x',
-              onSelected: _showSpeedSheet),
+        OverflowMenuItem(
+            key: const Key('audio_player_speed_selector'),
+            icon: Icons.speed,
+            label: 'Playback speed',
+            subtitle: '${_playbackSpeed}x',
+            onSelected: _showSpeedSheet),
         if (music) ...[
           OverflowMenuItem(
               key: const Key('audio_player_seek_back_15'),
@@ -1240,44 +1187,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               label: 'Remove provider lyrics',
               onSelected: _lyricsActions.removeProvider),
       ],
-      // Destructive, so it stays last and apart from routine playback.
-      if (request is PodcastPlaybackRequest &&
-          request.deleteEpisode != null &&
-          !casting)
-        OverflowMenuItem(
-            key: const Key('podcast_player_delete_episode'),
-            icon: Icons.delete_outline,
-            label: 'Delete episode',
-            onSelected: () => _deleteEpisode(request)),
     ];
-  }
-
-  /// Deletes the open episode with the episode list's confirmation and flow.
-  /// Playback moves on to the feed's next episode; when none is left it stops
-  /// and the player closes.
-  Future<void> _deleteEpisode(PodcastPlaybackRequest request) async {
-    if (!await confirmEpisodeDelete(context) || !mounted) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    final handler = ref.read(audioHandlerProvider);
-    bool playing() => handler.musicState?.request.identity == request.identity;
-    final wasPlaying = playing();
-    if (wasPlaying) await handler.skipToNext();
-    final moved = wasPlaying && !playing();
-    try {
-      await request.deleteEpisode!();
-    } catch (_) {
-      messenger?.showSnackBar(
-          const SnackBar(content: Text('Could not delete episode. Retry.')));
-      return;
-    }
-    messenger?.showSnackBar(const SnackBar(content: Text('Episode deleted')));
-    if (moved || !mounted) return;
-    final lease = _sessionLease;
-    if (lease?.isCurrent == true &&
-        _activeRequest?.identity == request.identity) {
-      await lease!.stop();
-    }
-    if (mounted) await Navigator.of(context).maybePop();
   }
 
   /// Loudness, EQ, quality, visuals and gapless share one nested sheet so the
@@ -1500,12 +1410,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                     ])),
                 const SizedBox(height: 16),
                 _buildSeekBar(handler),
-                if (_activeRequest?.podcast != null)
-                  PodcastShowNotes(
-                    key: ValueKey('player-notes:${_activeRequest!.identity}'),
-                    description: _activeRequest!.podcast!.description,
-                    initiallyExpanded: true,
-                  ),
                 if (_activeRequest?.kind != PlaybackSourceKind.local)
                   _buildAudioFormat(),
                 StreamBuilder<void>(
@@ -1694,36 +1598,21 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
     );
   }
 
-  /// Playback controls. Music: prev/play/next (long-press ±15s). Podcast/media:
-  /// ±15s stays visible beside play.
+  /// Playback controls. Music: prev/play/next (long-press ±15s). Other
+  /// media: ±15s stays visible beside play.
   ///
   /// All tap handlers delegate to [handler] instead of calling the underlying
   /// [AudioPlayer] directly, so the media-session notification stays in sync
   /// with every button press (Law of Demeter: one collaborator for mutations).
   Widget _buildControls(PlayerAudioHandler handler) {
-    final music =
-        handler.musicState != null && _activeRequest is! PodcastPlaybackRequest;
+    final music = handler.musicState != null;
     return StreamBuilder<bool>(
       stream: handler.player.playingStream,
       builder: (context, snapshot) {
         final isPlaying = snapshot.data ?? false;
-        final podcast = _activeRequest is PodcastPlaybackRequest;
-        // Podcasts change speed often: keep it one tap away, with an equal
-        // slot on the other side so Play stays centered.
-        final speed = Expanded(
-            child: Center(
-                child: TextButton(
-                    key: const Key('podcast_speed_button'),
-                    style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(48, 48)),
-                    onPressed: _showSpeedSheet,
-                    child: Text('${_playbackSpeed}x',
-                        semanticsLabel: 'Playback speed ${_playbackSpeed}x'))));
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (podcast) speed,
             IconButton(
               key: const Key('audio_player_skip_back'),
               icon: Icon(music ? Icons.skip_previous : Icons.fast_rewind,
@@ -1736,7 +1625,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                   ? '${context.tr('Previous track')} · hold −15s'
                   : 'Skip back 15 seconds',
             ),
-            SizedBox(width: podcast ? 8 : 16),
+            const SizedBox(width: 16),
             IconButton(
               key: const Key('audio_player_play_pause'),
               icon: Icon(
@@ -1762,7 +1651,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
               },
               tooltip: isPlaying ? context.tr('Pause') : context.tr('Play'),
             ),
-            SizedBox(width: podcast ? 8 : 16),
+            const SizedBox(width: 16),
             IconButton(
               key: const Key('audio_player_skip_forward'),
               icon: Icon(
@@ -1778,7 +1667,6 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen>
                   ? '${context.tr('Next track')} · hold +15s'
                   : 'Skip forward 15 seconds',
             ),
-            if (podcast) const Spacer(),
           ],
         );
       },

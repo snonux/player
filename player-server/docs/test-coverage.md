@@ -1,6 +1,6 @@
 # Test Coverage Audit
 
-Generated: 2026-05-18  
+Generated: 2026-05-18 (podcast entries removed 2026-11-13 with podcast support)  
 Tool: `go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out`  
 Total coverage: **73.6%** (target: 60% per project style guide)
 
@@ -17,11 +17,10 @@ Total coverage: **73.6%** (target: 60% per project style guide)
 | `internal/clock` | 100.0% | Full |
 | `internal/mediatype` | 42.5% | `MIMETypeForExt` almost entirely untested (11.5%); only a small subset of MIME types exercised |
 | `internal/model` | 100.0% | Full |
-| `internal/podcast` | 98.4% | Only `ParseFeed` HTTP-error path missing |
 | `internal/probe` | 88.7% | `Probe` retry path and `Remux` context-cancellation edge cases are covered; image-EXIF path well tested |
-| `internal/repository` | 59.6% | Lowest non-trivial package; `progress_transaction.go` is 0%, several podcast repo methods 0% |
+| `internal/repository` | 59.6% | Lowest non-trivial package; `progress_transaction.go` is 0% |
 | `internal/scanner` | 73.7% | `NewFSScanner` / `os.FS` adapter 0%; `thumbnailForImage`, `buildThumbnailPath` largely untested |
-| `internal/service` | 75.5% | `Bootstrap`, `Login`, `ListTags`, `ToggleEpisodeComplete`, podcast sub-service lifecycle methods all 0% |
+| `internal/service` | 75.5% | `Bootstrap`, `Login`, `ListTags` all 0% |
 | `internal/setassign` | (no stmts) | Package contains no executable statements; only type definitions |
 | `internal/thumb` | 94.4% | Near-full; only FFmpeg error path in `Generate` slightly below 100% |
 
@@ -38,13 +37,6 @@ These functions have 0% statement coverage and contain real logic (excluding moc
 #### `internal/repository/progress_transaction.go` — entire file (0%)
 
 `WithProgressTransaction`, `UpsertProgress`, `GetProgress`, `GetAccumulator`, `UpsertAccumulator`, `IncrementPlayCount` — the transactional progress wrapper is never exercised by any test. This is the code path used by the batch-progress offline sync endpoint, making it a higher-risk gap.
-
-#### `internal/repository/podcast.go` — several methods (0%)
-
-- `UpdateFeed` — feed metadata refresh path
-- `ListFeedsBySetID` — listing feeds for a given media set
-- `ListFeeds` — global feed listing
-- `ListEpisodesByFeed` — episode listing
 
 #### `internal/repository/media.go`
 
@@ -74,15 +66,6 @@ These functions have 0% statement coverage and contain real logic (excluding moc
 
 - `NewPlaybackHintsService` (0%), `GetPlaybackHint` (0%) — the service constructor and its only public method; only the pure helper functions (`buildPlaybackHint`, `containerFromPath`, etc.) are tested in isolation
 
-#### `internal/service/podcast_sub.go`
-
-- `ListFeeds` (0%), `EditFeed` (0%) — podcast subscription lifecycle beyond the subscribe and unsubscribe paths (`UnsubscribeFeed` is covered by `podcast_unsubscribe_test.go`)
-- `rollbackSet` (0%) — error-cleanup path
-
-#### `internal/service/podcast_episode.go`
-
-- `ToggleEpisodeComplete` (0%)
-
 #### `internal/service/tag.go`
 
 - `ListTags` (0%)
@@ -111,19 +94,11 @@ These functions have 0% statement coverage and contain real logic (excluding moc
 | Location | Coverage | Gap description |
 |----------|----------|-----------------|
 | `mediatype.MIMETypeForExt` | 11.5% | Large switch with ~50 MIME mappings; only a handful are exercised |
-| `api.handleToggleComplete` | 29.4% | Podcast episode toggle — only error branch tested |
-| `service.podcast_sub.findPodcastSet` | 33.3% | Set-lookup branching logic |
 | `scanner.updateAudioThumbnails` | 42.9% | Audio cover-art update during scan |
-| `service.podcast_checker.checkFeed` | 43.6% | Per-feed refresh including HTTP-error and parse-error paths |
 | `scanner.gatherCoverImages` | 50.0% | Cover image collection from directories |
-| `service.podcast_sub.findExistingFeed` | 50.0% | Duplicate-feed detection |
-| `api.handleListPodcasts` | 50.0% | Error path not covered |
-| `api.handleSubscribePodcast` | 52.4% | Multiple error branches untested |
 | `service.browse.GetThumbnail` | 53.8% | Thumbnail lookup fallback paths |
 | `api.handleDownloadEpisode` | 55.6% | Episode download error cases |
-| `service.podcast_episode.persistDownloadedEpisode` | 55.6% | Post-download persistence error paths |
 | `api.handleListAPITokens` | 57.1% | Token listing edge cases |
-| `service.podcast_sub.SubscribeFeed` | 68.8% | Error + rollback paths |
 
 ---
 
@@ -175,9 +150,6 @@ Checks that all expected CORS response headers are present for a given origin.
 **`newMockClock() *clock.MockClock`** — `media_test.go:18`  
 Returns a `MockClock` fixed at a stable reference time. Used by every service test that involves time-sensitive logic (progress accumulation, GC age, session expiry).
 
-**`setupPodcastService(t) (*podcastService, *repository.MockStore)`** — `podcast_test.go:23`  
-Builds a fully wired `podcastService` with a `MockStore`, a temp media root, a discarding `slog.Logger`, and a fixed clock. The canonical starting point for podcast-service tests.
-
 ### 3.4 `internal/scanner` package
 
 **`mockDirEntry` / `mockFileInfo`** — `scanner_test.go:22-51`  
@@ -207,7 +179,7 @@ These mocks are separately validated by their own tests (`mock_test.go` files in
 All repository tests open an `":memory:"` database via `newTestStore`, run full schema migrations, and exercise real SQL. There is no mocking at the SQL layer; this gives high confidence in queries, scan functions, and constraint behaviour.
 
 ### `t.TempDir()` for filesystem tests
-Service and scanner tests that need real files (podcast download, thumbnail generation, media upload) use `t.TempDir()` which is automatically cleaned up. They do not patch global paths.
+Service and scanner tests that need real files (thumbnail generation, media upload) use `t.TempDir()` which is automatically cleaned up. They do not patch global paths.
 
 ### Fake binary injection via PATH
 `installFakeFFmpeg` writes a shell script as `ffmpeg` to a temp dir and prepends it to `PATH`. The same pattern could be applied to `ffprobe` for probe tests that need deterministic binary output.

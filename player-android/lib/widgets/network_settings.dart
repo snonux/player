@@ -91,7 +91,7 @@ class _MusicNetworkSettingsState extends State<MusicNetworkSettings> {
               const Text(
                   'Session sync waits for Wi-Fi; queue edits stay on this device.'),
             const Text(
-                'Choose quality for each network in the audio player’s Stream quality sheet. Prefetch also needs Playback cache prefetch enabled. Changes affect new tracks and transfers. Downloads, live radio, public shares, Cast, progress and podcast sync keep their own policy.'),
+                'Choose quality for each network in the audio player’s Stream quality sheet. Prefetch also needs Playback cache prefetch enabled. Changes affect new tracks and transfers. Downloads, live radio, public shares, Cast and progress sync keep their own policy.'),
             if (error != null)
               Text(error!,
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),

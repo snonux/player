@@ -1,6 +1,4 @@
-import { preservePodcastSelection } from '../podcast-multiselect.js';
 import { bindSetSort, readSetSort } from '../set-sort.js';
-import { publicationDate, showNotesHTML, episodeArtworkHTML, bindPodcastMetadata } from '../podcast-metadata.js';
 import { bindMediaMultiselect } from './media-multiselect.js';
 import { downloadMusic } from '../music-downloads.js';
 import { songActionButtons, bindSongActions } from '../queue-actions.js';
@@ -66,24 +64,9 @@ export function initMediaGrid(options = {}) {
       enterFolder(folder.dataset.name);
     }
   });
-
-  // A downloaded episode becomes a normal media card; reload so it shows up
-  // and, for Play, start it once the card exists.
-  // Play works even when the new card sorts onto another page, because it
-  // plays from the loaded list by media ID rather than from the DOM.
-  grid?.addEventListener('podcast:episode-stream', async e => {
-    if (!(await callbacks.playMediaById?.(e.detail?.media?.id))) toast('Select the episode to play', 'info');
-  });
-  grid?.addEventListener('podcast:episode-downloaded', async (e) => {
-    await loadMedia();
-    const mediaId = e.detail?.media?.id;
-    if (!e.detail?.play || !mediaId) return;
-    if (!(await callbacks.playMediaById?.(mediaId))) toast('Episode downloaded; select it to play', 'info');
-  });
 }
 
 export async function loadMedia(options = {}) {
-  if (preservePodcastSelection()) return;
   const revision = ++loadRevision;
   document.dispatchEvent?.(new CustomEvent('library:navigating', { detail: options }));
   const grid = document.getElementById('media-grid');
@@ -116,31 +99,6 @@ export async function loadMedia(options = {}) {
       setMedia(list);
       const page = renderGrid(list, 'No in-progress media.', options.mediaId);
       resultCount.textContent = resultText(list.length, page);
-    } else if (state.virtualSet === 'podcasts') {
-      breadcrumb?.classList.add('hidden');
-      syncMediaPage(`virtual:podcasts:${state.podcastFeedKey || ''}:${state.podcastFilter || 'uncompleted'}`, options.page);
-      setMedia([]);
-      const { renderPodcastVirtualView } = await import('../podcast-views.js');
-      if (revision !== loadRevision) return;
-      const page = await renderPodcastVirtualView(grid, {
-        revision,
-        alive: () => revision === loadRevision,
-        pageSize: mediaPageSize,
-      });
-      if (revision !== loadRevision) return;
-      if (page) {
-        const shown = page.items?.length || 0;
-        if (!shown) resultCount.textContent = '0 items';
-        else if (page.hasPrev || page.hasNext) {
-          resultCount.textContent = page.hasNext
-            ? `${page.start + 1}–${page.end}+ items`
-            : `${page.start + 1}–${page.end} items`;
-        } else {
-          resultCount.textContent = `${shown} items`;
-        }
-      } else {
-        resultCount.textContent = '';
-      }
     } else if (!singleSetId && !setIds && !callbacks.isShuffle?.() && !hasActiveFilters()) {
       breadcrumb?.classList.add('hidden');
       setMedia([]);
@@ -154,7 +112,7 @@ export async function loadMedia(options = {}) {
       updateBreadcrumb(data.current_path);
       setMedia(mediaWithBrowsePath(data.media || [], data.current_path || ''));
       const page = renderBrowse(data, options.page === undefined ? options.mediaId : null);
-      const total = (data.media?.length || 0) + (data.folders?.length || 0) + (data.episodes?.length || 0);
+      const total = (data.media?.length || 0) + (data.folders?.length || 0);
       resultCount.textContent = resultText(total, page);
     } else {
       breadcrumb?.classList.add('hidden');
@@ -249,7 +207,6 @@ export function navigateBack() {
   if (!state.folderPath) {
     if (state.virtualSet) {
       state.virtualSet = '';
-      state.podcastFeedKey = '';
       state.mediaPage = 0;
       callbacks.onVirtualSetCleared?.();
       loadMedia();
@@ -305,7 +262,7 @@ function renderSetCard(set, index) {
         </div>
         <div class="meta">
           <div class="title">${escapeHtml(set.name)}</div>
-          <div class="subtitle">${set.is_podcast ? 'Podcast set' : 'Set'}</div>
+          <div class="subtitle">Set</div>
         </div>
       </button>
       <div class="card-actions">
@@ -353,8 +310,7 @@ function renderBrowse(data, mediaId) {
   if (!grid) return;
   const folders = data.folders || [];
   const media = mediaWithBrowsePath(data.media || [], data.current_path || '');
-  const episodes = data.episodes || [];
-  if (!folders.length && !media.length && !episodes.length) {
+  if (!folders.length && !media.length) {
     const page = paginateItems([], state.mediaPage);
     state.mediaPage = page.page;
     grid.innerHTML = '<p class="text-muted text-sm grid-full">Folder is empty.</p>';
@@ -364,7 +320,6 @@ function renderBrowse(data, mediaId) {
   const entries = [
     ...folders.map((folder, index) => ({ type: 'folder', item: folder, index })),
     ...media.map((item, index) => ({ type: 'media', item, index })),
-    ...episodes.map((item, index) => ({ type: 'episode', item, index })),
   ];
   revealPage(entries, mediaId);
   const page = paginateItems(entries, state.mediaPage);
@@ -377,9 +332,6 @@ function renderBrowse(data, mediaId) {
     .filter((entry) => entry.type === 'media')
     .map((entry) => renderItem(entry.item, entry.index))
     .join('');
-  const pageEpisodes = page.items
-    .filter((entry) => entry.type === 'episode')
-    .map((entry) => entry.item);
   grid.innerHTML = renderPager(page, 'top') + folderHtml + mediaHtml + renderPager(page, 'bottom');
   clearSelection();
 
@@ -414,14 +366,6 @@ function renderBrowse(data, mediaId) {
 
   bindMediaItems(grid);
   bindPager(grid);
-
-  if (pageEpisodes.length) {
-    import('../podcasts.js').then(m => {
-      m.renderPodcastEpisodes(grid, pageEpisodes, {
-        before: grid.querySelector('[data-page-pager="bottom"]'),
-      });
-    }).catch(() => {});
-  }
   return page;
 }
 
@@ -514,7 +458,6 @@ function bindMediaItems(grid) {
     if (song?.type === 'audio') row.insertAdjacentHTML('beforeend', songActionButtons(song));
   });
   bindSongActions(grid);
-  bindPodcastMetadata(grid);
   grid.querySelectorAll('.media-card, .media-row').forEach((el) => {
     el.querySelector('.media-open')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -662,14 +605,13 @@ function renderItem(m, index) {
     <div class="media-card audio-card" data-id="${m.id}" data-index="${index}" data-flattened-folder="${flattenedFolder}" role="group" aria-label="${title}">
       <button type="button" class="media-open" aria-label="${title}"></button>
       <div class="thumb-wrap">
-        ${m.podcast ? episodeArtworkHTML(m.podcast, { thumbnailURL: m.thumbnail_path ? `/api/media/${m.id}/thumbnail` : '' }) : m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No cover</span>`}
+        ${m.thumbnail_path ? `<img src="/api/media/${m.id}/thumbnail" alt="" loading="lazy">` : `<span class="placeholder">No cover</span>`}
         <span class="badge">${fmtDur(m.duration)}${sizeText ? ' • ' + sizeText : ''}</span>
       </div>
       ${renderMediaActions(m)}
       <div class="meta">
         <div class="title" title="${title}">${title}</div>
-        <div class="subtitle">${escapeHtml(m.podcast ? publicationDate(m.podcast.published_at) : musicSubtitle(m))}</div>
-        ${m.podcast ? showNotesHTML(m.podcast.description) : ''}
+        <div class="subtitle">${escapeHtml(musicSubtitle(m))}</div>
       </div>
     </div>
   `;

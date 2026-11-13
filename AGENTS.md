@@ -41,7 +41,7 @@ and browsing experience: KISS, less is more, and content comes first.
   readable text, visible focus, accessible names, and keyboard navigation.
   Do not make actions available only on hover or through an unlabeled gesture.
 - Match controls to context: keep core music transport prominent, and retain
-  convenient seek/resume controls for podcasts and video. Separate destructive
+  convenient seek/resume controls for audiobooks and video. Separate destructive
   actions from routine playback and preserve confirmation where appropriate.
 - Keep interaction responsive. Avoid blocking browsing or playback on optional
   metadata, artwork, or background work. Show clear loading, progress, empty,

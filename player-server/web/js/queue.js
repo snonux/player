@@ -1,4 +1,3 @@
-import { localPodcastResumeSeconds } from './local-podcast-resume.js';
 import { deviceLibraryMode } from './offline-context.js';
 import { cachedMediaDetail } from './playback-cache.js';
 import { preparedQueuePlan } from './queue-prepared.js';
@@ -263,8 +262,6 @@ export async function jumpQueue(at, automatic = false, preserveNext = false, res
   let position = restored && positionEntry === entry.id ? savedPosition : 0;
   if (!deviceLibraryMode() && !restart && !(restored && positionEntry === entry.id) && entry.media.duration > 1200) {
     try { const p = (await API.mediaDetail(entry.media.id))?.progress; position = p?.finished ? 0 : p?.position_seconds || 0; } catch {}
-  } else if (!restart && !(restored && positionEntry === entry.id) && entry.media.localPodcastEpisode) {
-    try { position = localPodcastResumeSeconds(entry.media.localPodcastEpisode); } catch { /* Start fresh without storage. */ }
   }
   if (operation !== revision || !isPlaybackIntent(intent) || entries[index]?.id !== entry.id) return;
   savedPosition = position; positionEntry = entry.id; restored = false; restoreError = false;
@@ -313,7 +310,7 @@ export async function insertQueue(songs, action = 'next', {replace = false, sour
   if (!added.length) return false;
   restoreError = false;
   autoplay.cancel();
-  if (replace) { autoplay.reset(); if (added[0]?.media.localPodcast) repeat = 'off'; }
+  if (replace) autoplay.reset();
   remember();
   const previous = undo;
   if (replace) { entries = []; index = -1; label = source; invalidateNext(); shuffle = shuffled; shuffleMode = 'tracks'; canonical = []; if (shuffled) { const ordered = [...added]; added.splice(0, added.length, ...shuffledCopy(added)); canonical = ordered.map(e => e.id); } }

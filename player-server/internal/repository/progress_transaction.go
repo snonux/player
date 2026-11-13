@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -31,15 +32,14 @@ func (s *SQLite) WithProgressTransaction(ctx context.Context, fn func(ProgressUp
 // progressTxStore runs the progress service's reads and writes on one
 // transaction.
 type progressTxStore struct {
-	tx sqlTx
+	tx *sql.Tx
 	// now is the store's server time (see SQLite.now).
 	now func() time.Time
 }
 
-// UpsertProgress writes progress, or the episode registers of an episode
-// copy (see upsertProgressOrEpisode).
+// UpsertProgress writes progress.
 func (s *progressTxStore) UpsertProgress(ctx context.Context, progress *model.PlaybackProgress) error {
-	return upsertProgressOrEpisode(ctx, s.tx, progress, s.now())
+	return upsertProgress(ctx, s.tx, progress)
 }
 
 func (s *progressTxStore) GetProgress(ctx context.Context, userID, mediaID int64) (*model.PlaybackProgress, error) {

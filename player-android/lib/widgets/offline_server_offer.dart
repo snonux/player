@@ -12,7 +12,7 @@ Future<bool> offerOfflineServer(
           title: const Text('Server unavailable'),
           content: Text('${credential.origin} could not be reached.\n\n'
               'Use offline mode for ${credential.user.username}? '
-              'Only this account’s saved files and podcasts will be shown. '
+              'Only this account’s saved files will be shown. '
               'Playback progress syncs after reconnecting.'),
           actions: [
             TextButton(

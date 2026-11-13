@@ -4,16 +4,16 @@ import '../api/player_api_client.dart';
 import 'audio_visuals.dart' show isAudiobook;
 import 'playback_request.dart';
 
-/// The TurboNotes folder that collects notes on audiobooks and podcasts.
+/// The TurboNotes folder that collects notes on audiobooks. Its name stays
+/// as it is so notes written earlier keep opening.
 const kTurboNotesFolder = 'Book-And-Podcast-Notes';
 
-/// What a note in TurboNotes is about: an audiobook or a podcast episode.
+/// What a note in TurboNotes is about: an audiobook.
 class NoteSubject {
-  const NoteSubject({required this.title, required this.podcast});
+  const NoteSubject({required this.title});
 
-  /// The book's or the episode's title, the new note's heading.
+  /// The book's title, the new note's heading.
   final String title;
-  final bool podcast;
 
   /// The note's path in the TurboNotes folder,
   /// `Book-And-Podcast-Notes/TITLE.md`.
@@ -51,26 +51,11 @@ String audiobookTitle(String relPath, {String fallback = ''}) {
   return isAudiobook(folder) ? stem : folder;
 }
 
-/// The episode title in [title]: the podcast screen passes the episode's
-/// title, other screens the server's file name for it,
-/// `2024-01-01 - Episode 1.mp3`, which loses its date and extension.
-String podcastEpisodeTitle(String title) {
-  final file = RegExp(r'\.(mp3|m4a|m4b|aac|ogg|oga|opus|flac|wav|mp4)$',
-      caseSensitive: false);
-  if (!file.hasMatch(title)) return title;
-  final name = title
-      .replaceFirst(file, '')
-      .replaceFirst(RegExp(r'^\d{4}-\d{2}-\d{2} - '), '')
-      .trim();
-  return name.isEmpty ? title : name;
-}
-
 /// The note subject of what [request] plays, or null for anything that is
-/// neither an audiobook nor a podcast episode (music, public shares).
+/// not an audiobook (music, public shares).
 ///
-/// Server media is looked up: episodes of podcast sets are podcasts, and
-/// the set, folder and file names tell audiobooks apart like the visuals
-/// do. Files on the device only have their name to go by.
+/// Server media is looked up: the set, folder and file names tell
+/// audiobooks apart like the visuals do. Files on the device only have their name to go by.
 Future<NoteSubject?> noteSubjectFor(
   PlaybackRequest request,
   PlayerApiClient client,
@@ -81,30 +66,21 @@ Future<NoteSubject?> noteSubjectFor(
       final set = (await client.listSets())
           .where((set) => set.id == media.setId)
           .firstOrNull;
-      if (set?.isPodcast ?? false) {
-        return NoteSubject(
-            title: podcastEpisodeTitle(request.title), podcast: true);
-      }
       final names = '${set?.name ?? ''} ${set?.rootPath ?? ''} '
           '${media.relPath} ${media.fileName}';
       if (!isAudiobook(names)) return null;
       final relPath = media.relPath.isEmpty ? media.fileName : media.relPath;
       return NoteSubject(
         title: audiobookTitle(relPath, fallback: request.title),
-        podcast: false,
       );
     case LocalPlaybackRequest() || OfflinePlaybackRequest():
       final name = '${request.title} ${Uri.decodeFull(request.sourceUri.path)}';
       if (!isAudiobook(name)) return null;
       return NoteSubject(
         title: audiobookTitle(request.title, fallback: request.title),
-        podcast: false,
       );
     case PublicSharePlaybackRequest():
       return null;
-    case PodcastPlaybackRequest():
-      return NoteSubject(
-          title: podcastEpisodeTitle(request.title), podcast: true);
     case LiveRadioPlaybackRequest():
       return null;
   }

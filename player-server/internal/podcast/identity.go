@@ -10,10 +10,10 @@ import (
 	"unicode/utf8"
 )
 
-// Identity key prefixes and limits from the podcast synchronization contract
-// (docs/podcast-sync-contract.md, "3. Stable identities"). Every client derives
-// the same keys from the same feed document, so these values are part of the
-// wire contract: changing one is a breaking change for every client.
+// Identity key prefixes and limits of the former podcast synchronization
+// contract. Podcast support was removed; the legacy schema migration still
+// derives these keys for podcast rows kept in existing databases, so the
+// values must not change.
 const (
 	feedKeyPrefix      = "feed:"
 	guidKeyPrefix      = "guid:"
@@ -25,12 +25,6 @@ const (
 	// maxVerbatimGUIDBytes is the longest GUID kept verbatim in a key; longer
 	// GUIDs are hashed so keys stay bounded. Bytes of UTF-8, not characters.
 	maxVerbatimGUIDBytes = 1024
-	// MaxEpisodeAliases caps the aliases ingest records for one episode, so
-	// a publisher that keeps changing GUIDs cannot grow the table unbounded.
-	MaxEpisodeAliases = 16
-	// MaxFeedAliases caps the aliases (permanent redirects, new-feed-url)
-	// the server records for one feed.
-	MaxFeedAliases = 16
 )
 
 // ErrInvalidIdentityURL reports a feed or enclosure URL that cannot be turned

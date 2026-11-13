@@ -343,7 +343,7 @@ The optional private auth file contains `username` and `password`. The suite
 checks legacy `?offline=music` URLs follow normal sign-in and online library
 behavior, the removed entry stays absent, saved browser bytes survive, and
 playback cache/download management remains reachable. It also checks local file
-import/reload and standalone podcast navigation without sign-in, including
+import/reload without sign-in, including
 narrow and landscape layouts. It writes only browser-local device data and
 signs in; run against a disposable server. Existing M47/M48/provider suites use
 the retained **Play downloaded** collection control while signed in.
@@ -1242,54 +1242,6 @@ No cross-origin browser routing or CORS configuration is needed for this scope.
 Native pairing/security/SSID/offline acceptance and retained evidence are in
 [`music-m53-implementation.md`](../../../docs/music-m53-implementation.md).
 
-## Podcast episode conflict acceptance
-
-For 3i3 automatic podcast completion, use a fresh marked podcast fixture
-attached to a disposable Player server running the current binary. Subscribe
-the two publisher feeds with the existing `catalog` stage, then run this
-focused stage serially in installed Chrome and Firefox:
-
-```sh
-PLAYER_PODCAST_FIXTURE=/absolute/podcast-fixture \
-PLAYER_PODCAST_STAGE=natural-end PLAYER_E2E_PULSE_SINK=player_e2e_null \
-  npx --no-install playwright test -c playwright.podcasts.config.ts \
-  --project=chrome --workers=1
-# Repeat with --project=firefox on the same fixture.
-```
-
-It imports a fresh short enclosure, plays to the actual HTML `ended` event,
-checks automatic completion and both list filters, and writes the event trace
-under the fixture's external `evidence/` directory. The earlier `resume` stage
-allows manual fallback and therefore does not verify automatic completion.
-
-Against the marked, isolated podcast fixture, run after the Alpha catalog is
-subscribed and the publisher and Player server are running:
-
-```sh
-PLAYER_PODCAST_FIXTURE=/absolute/podcast-5i3 \
-PLAYER_PODCAST_STAGE=episode-conflict \
-  npx playwright test -c playwright.podcasts.config.ts
-```
-
-Each installed browser uses its own short Alpha episode. One visible browser
-session completes it while its real successful sync response is held; a second
-session uncompletes it and plays its own server copy to save a position. After
-the older response arrives, the first session pulls the newer completion and
-position. The stage creates a server audio copy for those two episodes and
-writes evidence under `evidence/{chrome,firefox}/<run>/` in the fixture.
-The `combined-deletion` stage uses the same marked fixture after subscription.
-It opens two existing tabs, delays storage events, deletes two episodes through
-visible menus while sync is unavailable, reloads, checks the exact pending edit
-IDs, and retries both to the server. A fresh browser context must omit both
-items, and scoped reads must preserve their position and completion registers.
-Fixture-only cleanup restores those two targets for the next browser run.
-
-```sh
-PLAYER_PODCAST_FIXTURE=/absolute/podcast-5i3 \
-PLAYER_PODCAST_STAGE=combined-deletion \
-  npx playwright test -c playwright.podcasts.config.ts --grep combined-deletion
-```
-
 # A03c provider lyrics and offline snapshots
 
 Run the deterministic local provider in one shell, keeping its mode and call
@@ -1378,46 +1330,6 @@ explicitly disabled and ongoing detection with default settings, then finds
 each arriving song through native browsing and checks Scan settings. It clears
 Player app data and restores the fixture port's prior adb reverse route.
 
-## Podcast discovery acceptance
-
-Use a marked, disposable music or podcast fixture with a Player server running
-the current binary (`state.json` supplies the origin and `auth.json` supplies
-fixture-only credentials). Run from `player-server/test/e2e-web`:
-
-```sh
-PLAYER_DISCOVERY_FIXTURE=/absolute/disposable-fixture \
-PLAYER_DISCOVERY_FEED_URL=https://isolated-public-test.example/discovery.xml \
-  npx --no-install playwright test -c playwright.discovery.config.ts --workers=1
-```
-
-The config runs installed Google Chrome and Mozilla Firefox. The device test
-intercepts directory and publisher responses while exercising the real device
-subscription UI and IndexedDB. It checks no request on opening Explore, popular
-charts, search, RSS subscription, manual URL submission, Escape/focus
-restoration, narrow layout and directory failure.
-
-The account test signs in through the real login form using the fixture's
-ordinary user when available, intercepts only directory results, then subscribes
-through visible controls for both a directory result and a manually entered RSS
-URL. Real subscription POST acknowledgements, own-register readback and the sidebar
-after reload must agree on each canonical feed key. It creates two fixture
-account subscriptions per browser run; never point this test at production.
-A bounded metadata refresh must then return real publisher episodes; the test
-opens that feed, checks the episode title and uses its Refresh feed control.
-`PLAYER_DISCOVERY_FEED_URL` selects the controlled public RSS publisher; if
-omitted it uses NPR's public Planet Money feed. Never relax private-address
-policy for acceptance. Each run creates four catalog identities across the two
-browsers, subject to the normal per-user hourly quota; use a fresh fixture for
-repeated acceptance runs. The actual manual URL exercises query preservation and fragment removal. The
-shared identity vectors additionally cover host case, zero-padded default ports
-and Unicode/path rules. The controlled publisher must accept its own host
-spelling; no ingress-policy bypass is part of this test. Unit tests additionally use the exact Go/Dart identity vector fixture
-for canonical URL bytes and rejection rules; existing browser-device IDs remain
-unchanged.
-
-Also smoke-test a live directory search/chart (the deterministic test does not
-verify Apple's availability), and native Android Explore/search/chart/
-subscription on a device or emulator before release.
 
 For continuous video playback and shuffle, add synthetic clips to a disposable
 music fixture, then run the focused suite in the installed browsers:

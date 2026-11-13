@@ -1,6 +1,4 @@
 import '../widgets/set_sort_button.dart';
-import '../widgets/podcast_artwork.dart';
-import '../widgets/podcast_publication_date.dart';
 import '../widgets/music_mini_player.dart';
 import '../widgets/music_queue_sheet.dart';
 import 'package:flutter/material.dart';
@@ -607,7 +605,8 @@ class _MediaGridScreenState extends ConsumerState<MediaGridScreen> {
 
     // Show an error view with a retry button if the load failed.
     if (_error != null) {
-      return ErrorRetryView(keyPrefix: 'media', message: _error!, onRetry: _load);
+      return ErrorRetryView(
+          keyPrefix: 'media', message: _error!, onRetry: _load);
     }
 
     // [RefreshIndicator] wraps the scrollable content so pull-to-refresh
@@ -844,19 +843,10 @@ class _MediaCard extends ConsumerWidget {
               fit: StackFit.expand,
               children: [
                 // Thumbnail fills the full card area.
-                if (item.podcast != null)
-                  PodcastArtwork(
-                      imageUrl: item.podcast!.imageUrl,
-                      fallbackUrl: item.podcast!.feedImageUrl,
-                      title: item.displayTitle,
-                      size: null,
-                      unavailable: _ThumbnailImage(
-                          thumbnailUrl: thumbnailUrl, fileName: item.fileName))
-                else
-                  _ThumbnailImage(
-                    thumbnailUrl: thumbnailUrl,
-                    fileName: item.fileName,
-                  ),
+                _ThumbnailImage(
+                  thumbnailUrl: thumbnailUrl,
+                  fileName: item.fileName,
+                ),
                 // Info overlay anchored to the bottom of the card.
                 Positioned(
                   left: 0,
@@ -1062,10 +1052,6 @@ class _InfoOverlay extends StatelessWidget {
               ),
             ],
           ),
-          if (item.podcast != null)
-            PodcastPublicationDate(
-                date: item.podcast!.publishedAt,
-                style: const TextStyle(color: Colors.white70, fontSize: 12)),
           if (item.musicSubtitle.isNotEmpty)
             Text(item.musicSubtitle,
                 maxLines: 1,

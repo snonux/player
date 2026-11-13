@@ -5,10 +5,6 @@ export const state = {
   selectedSetId: null,
   selectedSetIds: [], // multi-selection
   virtualSet: '',
-  // podcastFeedKey is set with virtualSet === 'podcasts' for one
-  // subscription folder; empty means All podcast episodes.
-  podcastFeedKey: '',
-  podcastFilter: 'uncompleted',
   media: [],
   filters: {
     type: '',

@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api/dio_client.dart';
 import '../api/dio_player_api_client.dart';
 import '../services/automatic_music.dart';
-import '../services/podcast_sync.dart';
+import '../services/sync_account.dart';
 import '../services/download_quality.dart';
 import '../services/network_policy.dart';
 import '../services/offline_downloads.dart';

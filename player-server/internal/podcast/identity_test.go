@@ -4,14 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 )
 
-// identityVectors mirrors testdata/identity-vectors.json, the cross-client
-// fixture of the podcast synchronization contract. The Android client must
-// pass the same file (see docs/podcast-sync-contract.md).
+// identityVectors mirrors the feed and episode key parts of
+// testdata/identity-vectors.json. The keys are still computed by the legacy
+// schema migration of existing podcast rows.
 type identityVectors struct {
 	Version  int `json:"version"`
 	FeedKeys []struct {
@@ -24,20 +23,6 @@ type identityVectors struct {
 		Items []IdentityItem `json:"items"`
 		Keys  []string       `json:"keys"`
 	} `json:"episode_documents"`
-	IngestScenarios []struct {
-		Name    string         `json:"name"`
-		Known   []KnownEpisode `json:"known"`
-		Items   []IdentityItem `json:"items"`
-		Results []IngestMatch  `json:"results"`
-	} `json:"ingest_scenarios"`
-	ClientResolution []struct {
-		Name         string         `json:"name"`
-		Known        []KnownEpisode `json:"known"`
-		Key          string         `json:"key"`
-		EnclosureURL string         `json:"enclosure_url"`
-		Resolved     string         `json:"resolved"`
-		OK           bool           `json:"ok"`
-	} `json:"client_resolution"`
 }
 
 func loadIdentityVectors(t *testing.T) identityVectors {
@@ -50,7 +35,7 @@ func loadIdentityVectors(t *testing.T) identityVectors {
 	if err := json.Unmarshal(data, &v); err != nil {
 		t.Fatalf("parse vectors: %v", err)
 	}
-	if v.Version != 3 || len(v.FeedKeys) == 0 || len(v.InvalidFeedURLs) == 0 || len(v.EpisodeDocuments) == 0 || len(v.IngestScenarios) == 0 || len(v.ClientResolution) == 0 {
+	if v.Version != 3 || len(v.FeedKeys) == 0 || len(v.InvalidFeedURLs) == 0 || len(v.EpisodeDocuments) == 0 {
 		t.Fatalf("vectors incomplete: %+v", v)
 	}
 	return v
@@ -79,46 +64,6 @@ func TestEpisodeKeyVectors(t *testing.T) {
 		got := EpisodeKeys(doc.Items)
 		if strings.Join(got, "\n") != strings.Join(doc.Keys, "\n") || len(got) != len(doc.Keys) {
 			t.Errorf("%s: EpisodeKeys = %q; want %q", doc.Name, got, doc.Keys)
-		}
-	}
-}
-
-func TestMatchEpisodesVectors(t *testing.T) {
-	for _, sc := range loadIdentityVectors(t).IngestScenarios {
-		got := MatchEpisodes(sc.Known, sc.Items)
-		if len(got) != len(sc.Results) {
-			t.Errorf("%s: %d results, want %d", sc.Name, len(got), len(sc.Results))
-			continue
-		}
-		for i := range got {
-			if got[i] != sc.Results[i] {
-				t.Errorf("%s: item %d = %+v, want %+v", sc.Name, i, got[i], sc.Results[i])
-			}
-		}
-	}
-}
-
-// TestMatchEpisodesClaimsEachEpisodeOnce feeds every scenario's items twice
-// in one document and checks that no known episode is matched twice and no
-// key is created twice.
-func TestMatchEpisodesClaimsEachEpisodeOnce(t *testing.T) {
-	for _, sc := range loadIdentityVectors(t).IngestScenarios {
-		items := append(append([]IdentityItem{}, sc.Items...), sc.Items...)
-		seen := map[string]bool{}
-		for _, r := range MatchEpisodes(sc.Known, items) {
-			if r.Key != "" && seen[r.Key] {
-				t.Errorf("%s: key %q assigned twice", sc.Name, r.Key)
-			}
-			seen[r.Key] = true
-		}
-	}
-}
-
-func TestResolveClientEpisodeVectors(t *testing.T) {
-	for _, tc := range loadIdentityVectors(t).ClientResolution {
-		got, ok := ResolveClientEpisode(tc.Known, tc.Key, tc.EnclosureURL)
-		if got != tc.Resolved || ok != tc.OK {
-			t.Errorf("%s: ResolveClientEpisode = %q, %v; want %q, %v", tc.Name, got, ok, tc.Resolved, tc.OK)
 		}
 	}
 }
@@ -166,24 +111,6 @@ func sameKeySet(a, b []string) bool {
 		}
 	}
 	return true
-}
-
-func TestMatchEpisodesCapsNewEpisodes(t *testing.T) {
-	items := make([]IdentityItem, MaxNewEpisodesPerIngest+5)
-	for i := range items {
-		items[i] = IdentityItem{GUID: "g" + strconv.Itoa(i), EnclosureURL: "https://cdn.example.com/" + strconv.Itoa(i) + ".mp3"}
-	}
-	created := 0
-	for i, r := range MatchEpisodes(nil, items) {
-		if r.New {
-			created++
-		} else if i < MaxNewEpisodesPerIngest || r.Key != "" {
-			t.Fatalf("item %d: unexpected result %+v", i, r)
-		}
-	}
-	if created != MaxNewEpisodesPerIngest {
-		t.Errorf("created %d episodes, want %d", created, MaxNewEpisodesPerIngest)
-	}
 }
 
 func TestIdentityRejectsInvalidUTF8(t *testing.T) {

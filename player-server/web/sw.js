@@ -1,4 +1,4 @@
-const CACHE = 'kiss-v107';
+const CACHE = 'kiss-v108';
 const ASSETS = [
   '/',
   '/index.html',
@@ -21,20 +21,10 @@ const ASSETS = [
   '/js/idb.js',
   '/js/local-files-store.js',
   '/js/local-files.js',
-  '/js/local-podcast-resume.js',
-  '/js/local-podcast-state.js',
-  '/js/local-podcasts-store.js',
-  '/js/local-podcasts.js',
   '/js/music-libraries.js',
   '/js/offline-context.js',
-  '/js/podcast-detached.js',
-  '/js/podcast-discovery.js',
-  '/js/podcast-global-sync.js',
-  '/js/podcast-identity.js',
-  '/js/podcast-playback.js',
-  '/js/podcast-downloads.js',
-  '/js/podcast-retention.js',
-  '/js/podcast-deletion-store.js',
+  '/js/resume-position.js',
+  '/js/sync-account.js',
   '/js/set-sort.js',
   '/js/queue-autoplay.js',
   '/js/i18n.js',
@@ -128,16 +118,6 @@ const ASSETS = [
   '/js/admin.js',
   '/js/dom.js',
   '/js/utils.js',
-  '/js/podcasts.js',
-  '/js/podcast-metadata.js',
-  '/js/podcast-views.js',
-  '/js/podcast-multiselect.js',
-  '/js/podcast-player-delete.js',
-  '/js/podcast-resume.js',
-  '/js/swipe-delete.js',
-  '/js/podcast-episode-state.js',
-  '/js/podcast-pending-store.js',
-  '/js/podcast-subscriptions.js',
   '/js/radio-core.js',
   '/js/pwa.js',
   '/js/views/admin-status.js',
@@ -187,7 +167,7 @@ self.addEventListener('fetch', (e) => {
       .catch(async () => {
         const exact = await caches.match(e.request);
         if (exact) return exact;
-        // On-device files and podcasts use query-string entry points. Reuse
+        // On-device files use a query-string entry point. Reuse
         // the app shell for offline navigation; the page still reads the query.
         if (e.request.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
           return caches.match('/index.html');

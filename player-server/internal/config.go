@@ -23,7 +23,6 @@ const (
 	DefaultSessionTimeoutHours    = 24
 	DefaultGCIntervalMinutes      = 30
 	DefaultShareDefaultExpiryDays = 7
-	DefaultPodcastCheckMinutes    = 60
 	DefaultMediaPageSize          = 100
 	DefaultScanWatchSeconds       = 30
 	DefaultLogLevel               = "info"
@@ -81,7 +80,6 @@ type Config struct {
 	SessionTimeoutHours    int
 	GCIntervalMinutes      int
 	ShareDefaultExpiryDays int
-	PodcastCheckMinutes    int
 	MediaPageSize          int
 	LogLevel               string
 	SecureCookies          bool
@@ -109,12 +107,6 @@ type Config struct {
 	// and private addresses (a station on the home network). Off by
 	// default: station URLs come from a public directory.
 	RadioAllowPrivateNetworks bool
-	// PodcastAllowPrivateNetworks lets podcast feed, cover and episode
-	// downloads connect to loopback and private addresses (a feed on the
-	// home network). Off by default: feeds are third-party documents, and
-	// their episode and image URLs must not reach services on the server's
-	// own network.
-	PodcastAllowPrivateNetworks bool
 }
 
 // envInt reads an integer environment variable, validates it with the given check,
@@ -160,7 +152,6 @@ func defaultConfig() *Config {
 		SessionTimeoutHours:    DefaultSessionTimeoutHours,
 		GCIntervalMinutes:      DefaultGCIntervalMinutes,
 		ShareDefaultExpiryDays: DefaultShareDefaultExpiryDays,
-		PodcastCheckMinutes:    DefaultPodcastCheckMinutes,
 		MediaPageSize:          DefaultMediaPageSize,
 		ScanWatchSeconds:       DefaultScanWatchSeconds,
 		LogLevel:               DefaultLogLevel,
@@ -201,7 +192,6 @@ func loadNumericSettings(cfg *Config) error {
 		{"SESSION_TIMEOUT_HOURS", func(n int) { cfg.SessionTimeoutHours = n }},
 		{"GC_INTERVAL_MINUTES", func(n int) { cfg.GCIntervalMinutes = n }},
 		{"SHARE_DEFAULT_EXPIRY_DAYS", func(n int) { cfg.ShareDefaultExpiryDays = n }},
-		{"PODCAST_CHECK_INTERVAL_MINUTES", func(n int) { cfg.PodcastCheckMinutes = n }},
 		{"MEDIA_PAGE_SIZE", func(n int) { cfg.MediaPageSize = n }},
 		{"TRANSCODE_CACHE_MAX_MB", func(n int) { cfg.TranscodeCacheMaxMB = n }},
 		{"TRANSCODE_MAX_JOBS", func(n int) { cfg.TranscodeMaxJobs = n }},
@@ -302,18 +292,14 @@ func loadJukeboxSettings(cfg *Config) error {
 	return nil
 }
 
-// loadRadioSettings reads RADIO_ALLOW_PRIVATE_NETWORKS and
-// PODCAST_ALLOW_PRIVATE_NETWORKS and checks RADIO_BROWSER_URL.
+// loadRadioSettings reads RADIO_ALLOW_PRIVATE_NETWORKS and checks
+// RADIO_BROWSER_URL.
 func loadRadioSettings(cfg *Config) error {
 	u, err := url.Parse(cfg.RadioBrowserURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return fmt.Errorf("invalid RADIO_BROWSER_URL: %q is no http(s) URL", cfg.RadioBrowserURL)
 	}
-	if err := envBool("RADIO_ALLOW_PRIVATE_NETWORKS", func(b bool) { cfg.RadioAllowPrivateNetworks = b }); err != nil {
-		return err
-	}
-	return envBool("PODCAST_ALLOW_PRIVATE_NETWORKS", func(b bool) { cfg.PodcastAllowPrivateNetworks = b })
-
+	return envBool("RADIO_ALLOW_PRIVATE_NETWORKS", func(b bool) { cfg.RadioAllowPrivateNetworks = b })
 }
 
 // loadCORSSettings reads comma-separated CORS origins from the environment.

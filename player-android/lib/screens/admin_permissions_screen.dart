@@ -262,13 +262,18 @@ class _AdminPermissionsScreenState
     }
 
     if (_error != null) {
-      return ErrorRetryView(keyPrefix: 'admin_perms', message: _error!, onRetry: _load);
+      return ErrorRetryView(
+          keyPrefix: 'admin_perms', message: _error!, onRetry: _load);
     }
 
     final users = _users;
     final sets = _sets;
     if (users == null || sets == null || users.isEmpty || sets.isEmpty) {
-      return const EmptyStateView(icon: Icons.lock_outline, title: 'No users or sets found', titleKey: Key('admin_perms_empty'), scrollable: false);
+      return const EmptyStateView(
+          icon: Icons.lock_outline,
+          title: 'No users or sets found',
+          titleKey: Key('admin_perms_empty'),
+          scrollable: false);
     }
 
     if (_showMatrix) {
@@ -494,7 +499,6 @@ class _UserPermissionEditor extends StatelessWidget {
               key: Key('admin_perms_set_tile_${set.id}'),
               contentPadding: EdgeInsets.zero,
               title: Text(set.name),
-              subtitle: set.isPodcast ? const Text('Podcast') : null,
               trailing: SizedBox(
                 width: 120,
                 child: _RoleDropdown(

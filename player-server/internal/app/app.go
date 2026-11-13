@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -37,27 +36,23 @@ import (
 // wiring stage and the server-start stage so that the two concerns remain
 // clearly separated.
 type Deps struct {
-	trashLock     *sync.Mutex
-	Store         repository.Store
-	Hasher        auth.Hasher
-	SM            auth.SessionManager
-	Cfg           *internal.Config
-	Clk           clock.Clock
-	MediaSvc      service.MediaService
-	Playlists     *service.PlaylistService
-	AdminSvc      service.AdminService
-	PluginSvc     service.PluginService
-	PluginMgr     *plugin.Manager
-	JukeboxSvc    service.JukeboxService
-	MusicLibs     *service.MusicLibraryService
-	MusicIdentity *service.MusicIdentityService
-	PathRoots     *service.PathRoots
-	ProgressSvc   service.ProgressService
-	AuthSvc       service.AuthService
-	PodcastSvc    service.PodcastEpisodeService
-	// PodcastChecker runs PodcastSvc.CheckFeeds in the background.
-	PodcastChecker  *service.PodcastCheckWorker
-	PodcastSyncSvc  service.PodcastSyncService
+	trashLock       *sync.Mutex
+	Store           repository.Store
+	Hasher          auth.Hasher
+	SM              auth.SessionManager
+	Cfg             *internal.Config
+	Clk             clock.Clock
+	MediaSvc        service.MediaService
+	Playlists       *service.PlaylistService
+	AdminSvc        service.AdminService
+	PluginSvc       service.PluginService
+	PluginMgr       *plugin.Manager
+	JukeboxSvc      service.JukeboxService
+	MusicLibs       *service.MusicLibraryService
+	MusicIdentity   *service.MusicIdentityService
+	PathRoots       *service.PathRoots
+	ProgressSvc     service.ProgressService
+	AuthSvc         service.AuthService
 	PlaybackHintSvc service.PlaybackHintsService
 	CompatSvc       service.CompatStreamService
 	RadioSvc        service.RadioService
@@ -112,8 +107,8 @@ func Wire(cfg *internal.Config, store repository.Store, logger *slog.Logger, app
 // without running ffmpeg.
 func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.Logger, appCtx context.Context, runner transcode.Runner) *Deps {
 	clk := clock.RealClock{}
-	// The store clamps and stamps server-side episode edits with the same
-	// clock as the services.
+	// The store clamps and stamps server-side edits with the same clock as
+	// the services.
 	if sqlite, ok := store.(*repository.SQLite); ok {
 		store = sqlite.WithClock(clk)
 	}
@@ -132,8 +127,7 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	trashLock := new(sync.Mutex)
 	helper := service.NewAccessHelper(store)
 	pathRoots := service.NewPathRoots(cfg.MediaRoot)
-	browser := service.NewPodcastBrowseService(store, cfg.MediaRoot)
-	mediaSvc := service.NewMediaServiceWithDeps(store, clk, cfg.MediaRoot, thumbGen, prober, browser, thumbResolver).
+	mediaSvc := service.NewMediaServiceWithDeps(store, clk, cfg.MediaRoot, thumbGen, prober, thumbResolver).
 		WithThumbnailLayout(thumbLayout).WithTrashLock(trashLock).WithPathRoots(pathRoots)
 	if lyricStore, ok := store.(repository.ProviderLyricsRepo); ok {
 		mediaSvc.WithLyricsProvider(service.NewProviderLyrics(cfg.LyricsProviderURL, lyricStore))
@@ -152,9 +146,6 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	adminSvc.WithScanAutomation(cfg.ScanWatchSeconds, cfg.ScanIntervalMinutes, func(ctx context.Context) (string, error) {
 		return fsScanner.SourceSignature(ctx, cfg.MediaRoot)
 	})
-
-	podcastSvc := service.NewPodcastServiceWithLogger(store, clk, cfg.MediaRoot, helper, prober, thumbGen, podcastHTTPClient(cfg.PodcastAllowPrivateNetworks), cfg.PodcastCheckMinutes, logger).
-		WithThumbnailLayout(thumbLayout)
 
 	pluginMgr, err := plugin.NewManager(plugin.Options{Dir: cfg.PluginDir})
 	if err != nil {
@@ -175,27 +166,23 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	jukeboxSvc := service.NewJukeboxService(jukeboxEngine)
 
 	deps := &Deps{
-		trashLock:     trashLock,
-		Store:         store,
-		Hasher:        hasher,
-		SM:            sm,
-		Cfg:           cfg,
-		Clk:           clk,
-		MediaSvc:      mediaSvc,
-		Playlists:     playlists,
-		AdminSvc:      adminSvc,
-		PluginMgr:     pluginMgr,
-		PluginSvc:     service.NewPluginService(pluginMgr),
-		JukeboxSvc:    jukeboxSvc,
-		MusicLibs:     musicLibs,
-		MusicIdentity: musicIdentity,
-		PathRoots:     pathRoots,
-		ProgressSvc:   service.NewProgressService(store, clk),
-		AuthSvc:       service.NewAuthService(store, clk, hasher, sm, tm),
-		PodcastSvc:    podcastSvc,
-		PodcastChecker: service.NewPodcastCheckWorker(appCtx, podcastSvc,
-			time.Duration(cfg.PodcastCheckMinutes)*time.Minute, service.DefaultPodcastCheckDelay, logger),
-		PodcastSyncSvc:  service.NewPodcastSyncService(store, clk, cfg.PodcastCheckMinutes, cfg.MediaRoot),
+		trashLock:       trashLock,
+		Store:           store,
+		Hasher:          hasher,
+		SM:              sm,
+		Cfg:             cfg,
+		Clk:             clk,
+		MediaSvc:        mediaSvc,
+		Playlists:       playlists,
+		AdminSvc:        adminSvc,
+		PluginMgr:       pluginMgr,
+		PluginSvc:       service.NewPluginService(pluginMgr),
+		JukeboxSvc:      jukeboxSvc,
+		MusicLibs:       musicLibs,
+		MusicIdentity:   musicIdentity,
+		PathRoots:       pathRoots,
+		ProgressSvc:     service.NewProgressService(store, clk),
+		AuthSvc:         service.NewAuthService(store, clk, hasher, sm, tm),
 		PlaybackHintSvc: service.NewPlaybackHintsService(helper),
 		Scanner:         fsScanner,
 		Scans:           adminSvc,
@@ -206,23 +193,6 @@ func WireWithRunner(cfg *internal.Config, store repository.Store, logger *slog.L
 	}
 	wireTranscoding(deps, runner)
 	return deps
-}
-
-// podcastHTTPClient returns the client for podcast feeds, covers and
-// episodes. Feed documents are third-party content, and the episode and
-// image URLs in them are fetched by the server (episode downloads on any
-// signed-in user's request), so unless allowPrivate is set it refuses to
-// connect to loopback, private and other non-public addresses, like the
-// radio relay. The check runs on the dialled address, so it covers
-// redirects and DNS names too, and there is no proxy for the same reason.
-func podcastHTTPClient(allowPrivate bool) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if !allowPrivate {
-		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: radio.RefusePrivate}
-		transport.DialContext = dialer.DialContext
-		transport.Proxy = nil
-	}
-	return &http.Client{Timeout: service.DefaultHTTPClientTimeout, Transport: transport}
 }
 
 // wireRadio builds the web radio service: the Radio Browser directory and
@@ -277,7 +247,6 @@ func wireTranscoding(deps *Deps, runner transcode.Runner) {
 	// hard-deleted media.
 	deps.GCWorker = service.NewGCWorker(deps.Store, deps.Clk, cfg.MediaRoot, time.Duration(cfg.GCIntervalMinutes)*time.Minute, deps.Logger).WithTrashLock(deps.trashLock).
 		WithRenditionCache(deps.Transcodes).
-		WithPodcastRetention(deps.Store.RetainPodcastEpisodes).
 		WithThumbnailLayout(deps.Thumbnails)
 }
 
@@ -316,8 +285,8 @@ func checkTranscoding(deps *Deps, runner *transcode.FFmpegRunner) {
 	}
 }
 
-// StartBackgroundWorkers launches background goroutines (GC worker, podcast
-// feed checker). It must be called after Wire() and before RunServer().
+// StartBackgroundWorkers launches background goroutines (GC worker, scan
+// automation). It must be called after Wire() and before RunServer().
 // Workers are stopped either by cancelling AppCtx or by calling
 // deps.GCWorker.Stop().
 func StartBackgroundWorkers(deps *Deps) {
@@ -325,10 +294,6 @@ func StartBackgroundWorkers(deps *Deps) {
 	if deps.Scans != nil {
 		deps.Scans.StartScanAutomation()
 	}
-
-	// The podcast feed checker runs inside the worker lifecycle: Stop (deferred
-	// before the store closes) cancels in-flight fetches and waits for them.
-	deps.PodcastChecker.Start()
 
 	// Signal to callers (typically tests) that all workers are running.
 	if deps.WorkersStarted != nil {
@@ -443,8 +408,6 @@ func NewAPIServer(deps *Deps, staticFS http.FileSystem, logger *slog.Logger) (*a
 			Plugins:        deps.PluginSvc,
 			Jukebox:        deps.JukeboxSvc,
 			Auth:           deps.AuthSvc,
-			Podcast:        deps.PodcastSvc,
-			PodcastSync:    deps.PodcastSyncSvc,
 			MusicLibraries: deps.MusicLibs,
 			MusicIdentity:  deps.MusicIdentity,
 			PathRoots:      deps.PathRoots,
@@ -482,7 +445,6 @@ func RunWithSignal(cfg *internal.Config, logger *slog.Logger, sigCh <-chan os.Si
 	deps := WireWithRunner(cfg, store, logger, appCtx, runner)
 	defer deps.Scans.StopScans()
 	defer deps.GCWorker.Stop()
-	defer deps.PodcastChecker.Stop()
 	defer stopTranscoding(deps)
 	if deps.PluginMgr != nil {
 		defer func() { _ = deps.PluginMgr.Close(context.Background()) }()

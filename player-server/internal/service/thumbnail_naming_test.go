@@ -3,8 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,36 +67,6 @@ func TestImportMediaFile_RowUpdateFailureKeepsSVG(t *testing.T) {
 	}
 	if !fileExists(src) {
 		t.Error("the SVG itself was deleted")
-	}
-}
-
-// TestDownloadEpisode_UndoneDownloadRemovesThumbnail: a video episode gets a
-// thumbnail when it is imported. If the download is then undone because the
-// episode cannot be linked, the thumbnail goes with the file and the row.
-func TestDownloadEpisode_UndoneDownloadRemovesThumbnail(t *testing.T) {
-	f := newUnsubscribeFixture(t)
-	f.svc.thumbs = newThumbnailMaker(writingThumbGen(), nil)
-	ctx, cancel := context.WithCancel(context.Background())
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("video"))
-	}))
-	defer server.Close()
-	episode, err := f.store.CreateEpisode(ctx, &model.PodcastEpisode{FeedID: f.other, GUID: "v", Title: "v", EpisodeURL: server.URL + "/video.mp4", CreatedAt: time.Now()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.svc.store = &cancelOnLink{SQLite: f.store, cancel: cancel}
-
-	if _, err := f.svc.DownloadEpisode(ctx, episode, f.admin); err == nil {
-		t.Fatal("expected the failed link to be reported")
-	}
-	folder := filepath.Dir(f.otherFile)
-	if left, _ := filepath.Glob(filepath.Join(folder, "*video*")); len(left) != 0 {
-		t.Fatalf("episode file left behind: %v", left)
-	}
-	if fileExists(thumb.ThumbnailDir(folder)) {
-		entries, _ := os.ReadDir(thumb.ThumbnailDir(folder))
-		t.Errorf("thumbnail of the undone download left behind: %v", entries)
 	}
 }
 
@@ -778,59 +746,8 @@ func TestGCWorker_KeepsThumbnailWhenPurgeFails(t *testing.T) {
 	}
 }
 
-// TestUnsubscribeFeed_RemovesThumbnailsOfDeletedMedia: a video episode and
-// indexed feed artwork have generated thumbnails in the feed folder's
-// .thumbnails directory. They go with their media, or the directory would
-// keep the folder in place after unsubscribing.
-func TestUnsubscribeFeed_RemovesThumbnailsOfDeletedMedia(t *testing.T) {
-	f := newUnsubscribeFixture(t)
-	ctx := context.Background()
-	feed, _ := f.store.GetFeedByID(ctx, f.other)
-	writeThumb := func(src string) string {
-		t.Helper()
-		p := thumb.ThumbnailPathFor(src)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte("jpg"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return p
-	}
-	// The episode, as a video podcast's would be after its download.
-	if err := f.store.UpdateMediaThumbnail(ctx, f.otherMedia, writeThumb(f.otherFile)); err != nil {
-		t.Fatal(err)
-	}
-	// The cover, as a rescan indexes it.
-	if _, err := f.store.CreateMedia(ctx, &model.Media{
-		SetID: feed.SetID, RelPath: "Other/cover.jpg", FileName: "cover.jpg", AbsPath: f.otherCoverImg,
-		Type: model.MediaTypeImage, ThumbnailPath: writeThumb(f.otherCoverImg), CreatedAt: time.Now(),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.svc.UnsubscribeFeed(ctx, f.other, f.admin); err != nil {
-		t.Fatal(err)
-	}
-	if fileExists(filepath.Dir(f.otherFile)) {
-		t.Fatal("feed folder was left behind because of its media's thumbnails")
-	}
-}
-
-// TestUnsubscribeFeed_KeepsOtherThumbnails: a thumbnail that belongs to none
-// of the deleted media is not feed-owned and keeps the folder in place.
-func TestUnsubscribeFeed_KeepsOtherThumbnails(t *testing.T) {
-	f := newUnsubscribeFixture(t)
-	foreign := filepath.Join(thumb.ThumbnailDir(filepath.Dir(f.otherFile)), "mine.mp4.jpg")
-	if err := os.MkdirAll(filepath.Dir(foreign), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(foreign, []byte("jpg"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.svc.UnsubscribeFeed(context.Background(), f.other, f.admin); err != nil {
-		t.Fatal(err)
-	}
-	if !fileExists(foreign) {
-		t.Fatal("a thumbnail of something else was deleted")
-	}
+// fileExists reports whether path exists.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

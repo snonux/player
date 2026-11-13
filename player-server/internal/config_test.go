@@ -509,22 +509,3 @@ func TestLoadConfig_Radio(t *testing.T) {
 		t.Fatalf("overrides = %q %v", cfg.RadioBrowserURL, cfg.RadioAllowPrivateNetworks)
 	}
 }
-
-func TestLoadConfig_PodcastPrivateNetworks(t *testing.T) {
-	clearEnv()
-	cfg, err := LoadConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.PodcastAllowPrivateNetworks {
-		t.Fatal("podcast private networks must be refused by default")
-	}
-	setEnvPairs(t, []envPair{{"PODCAST_ALLOW_PRIVATE_NETWORKS", "true"}})
-	cfg, err = LoadConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cfg.PodcastAllowPrivateNetworks {
-		t.Fatal("PODCAST_ALLOW_PRIVATE_NETWORKS=true was ignored")
-	}
-}

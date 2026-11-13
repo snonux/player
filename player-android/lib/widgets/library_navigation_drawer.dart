@@ -6,7 +6,7 @@ import '../l10n/music_localizations.dart';
 /// Stable library destinations across connected, device and offline modes.
 ///
 /// Destinations come first and are grouped under short section labels;
-/// [extras] add mode-specific library destinations right after Podcasts and
+/// [extras] add mode-specific library destinations right after
 /// Downloads, and [children] add further sections below a divider.
 class LibraryNavigationDrawer extends StatelessWidget {
   const LibraryNavigationDrawer(
@@ -26,7 +26,6 @@ class LibraryNavigationDrawer extends StatelessWidget {
             ),
             DrawerSectionLabel(context.tr('Library')),
             for (final destination in const [
-              (Icons.podcasts, 'Podcasts', AppRoutes.podcasts),
               (
                 Icons.download_outlined,
                 'Downloads',

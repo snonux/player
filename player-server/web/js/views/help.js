@@ -19,7 +19,7 @@ export function closeSidebar() {
 }
 
 /**
- * After a navigation choice (set, folder, music, podcast), hide the overlay
+ * After a navigation choice (set, folder, music), hide the overlay
  * sidebar on narrow viewports and move focus into the content. Desktop keeps
  * the sidebar open; Esc / ✕ / ☰ stay available for manual close/toggle.
  */
@@ -34,7 +34,7 @@ export function dismissSidebarAfterNav() {
     // Prefer a card's primary open control; otherwise the first rendered
     // control (hidden toolbars such as bulk selection come first in the DOM).
     const grid = document.getElementById('media-grid');
-    const target = grid?.querySelector('.folder-open, .set-open, .media-open, .song-open, .collection-open, .podcast-feed-open')
+    const target = grid?.querySelector('.folder-open, .set-open, .media-open, .song-open, .collection-open')
       || [...(grid?.querySelectorAll('button, [href]') || [])].find(el => el.getClientRects().length);
     target?.focus?.();
   };

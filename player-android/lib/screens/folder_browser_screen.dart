@@ -1,6 +1,4 @@
 import '../widgets/set_sort_button.dart';
-import '../widgets/podcast_artwork.dart';
-import '../widgets/podcast_publication_date.dart';
 import '../widgets/music_mini_player.dart';
 import '../widgets/music_queue_sheet.dart';
 import 'package:flutter/material.dart';
@@ -375,7 +373,8 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
 
     // Error view with a retry button.
     if (_error != null) {
-      return ErrorRetryView(keyPrefix: 'folder', message: _error!, onRetry: _load);
+      return ErrorRetryView(
+          keyPrefix: 'folder', message: _error!, onRetry: _load);
     }
 
     return ThumbnailZoom(
@@ -407,7 +406,12 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
         if (result == null || (result.folders.isEmpty && result.media.isEmpty))
           const SliverFillRemaining(
             hasScrollBody: false,
-            child: EmptyStateView(icon: Icons.folder_open_outlined, title: 'This folder is empty', titleKey: Key('folder_empty'), message: 'Pull down to refresh.', scrollable: false),
+            child: EmptyStateView(
+                icon: Icons.folder_open_outlined,
+                title: 'This folder is empty',
+                titleKey: Key('folder_empty'),
+                message: 'Pull down to refresh.',
+                scrollable: false),
           )
         else ...[
           // Subfolder tiles shown before media items.
@@ -687,25 +691,13 @@ class _MediaTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       title: Row(children: [
-        if (item.podcast != null)
-          PodcastArtwork(
-              imageUrl: item.podcast!.imageUrl,
-              fallbackUrl: item.podcast!.feedImageUrl,
-              title: item.displayTitle,
-              size: thumbnailSize,
-              unavailable: _MediaThumbnail(
-                  thumbnailUrl: thumbnailUrl,
-                  fileName: item.fileName,
-                  type: item.type,
-                  size: thumbnailSize))
-        else
-          _MediaThumbnail(
-            key: Key('media_thumb_${item.id}'),
-            thumbnailUrl: thumbnailUrl,
-            fileName: item.fileName,
-            type: item.type,
-            size: thumbnailSize,
-          ),
+        _MediaThumbnail(
+          key: Key('media_thumb_${item.id}'),
+          thumbnailUrl: thumbnailUrl,
+          fileName: item.fileName,
+          type: item.type,
+          size: thumbnailSize,
+        ),
         const SizedBox(width: 16),
         Expanded(
             child: Column(
@@ -717,8 +709,6 @@ class _MediaTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            if (item.podcast != null)
-              PodcastPublicationDate(date: item.podcast!.publishedAt),
             if (item.musicSubtitle.isNotEmpty)
               Text(item.musicSubtitle,
                   maxLines: 1, overflow: TextOverflow.ellipsis),

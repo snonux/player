@@ -1,19 +1,14 @@
-import { localFilesMode, localPodcastsMode } from './offline-context.js';
+import { localFilesMode } from './offline-context.js';
 import { initLocalFilesApp } from './local-files.js';
-import { initLocalPodcastsApp } from './local-podcasts.js';
-import { initPodcastPlayerDelete } from './podcast-player-delete.js';
 import { initLanguage } from './i18n.js';
 import { initOfflinePinLibrary } from './offline-pin-library.js';
 import { mountMusicPresence } from './music-presence.js';
-import { mountPodcastResume } from './podcast-resume.js';
-import { mountLocalPodcastResume } from './local-podcast-resume.js';
-import { currentMediaId } from './playback.js';
 import { initRadio } from './radio.js';
 import { stopRenderer } from './renderer.js';
 import { setListeningProgressAccount } from './listening-progress.js';
 import { initGlobalSyncControls } from './global-sync-controls.js';
 import { initHeaderMenu } from './header-menu.js';
-import { setPodcastAccount } from './podcast-episode-state.js';
+import { setSyncAccount } from './sync-account.js';
 import { initListeningHistory } from './listening-history.js';
 import { initAPITokens } from './api-tokens.js';
 import { initSongNotifications, clearSongNotifications } from './song-notifications.js';
@@ -62,8 +57,6 @@ import { initNotes } from './notes.js';
 import { initAdmin } from './admin.js';
 import { initTrash, moveToTrash } from './trash.js';
 import { initModalFocus } from './modal-focus.js';
-import { initPodcasts } from './podcasts.js';
-import { initPodcastViews, openAllPodcastEpisodes, openPodcastFeed, selectedPodcastEpisodeAction, updatePodcastSidebarUI, clearPodcastView } from './podcast-views.js';
 import { state, setAuthenticatedUser } from './state.js';
 import { initPWA } from './pwa.js';
 import { closeAllModals } from './dom.js';
@@ -98,7 +91,6 @@ import {
 import {
   navigatePlayable,
   initPlaybackNav,
-  playMediaById,
   playRandom,
   playSelected,
   seekByKeyboard,
@@ -136,7 +128,6 @@ function main() {
   if (page === 'login') initLogin();
   else if (page === 'bootstrap') initBootstrap();
   else if (localFilesMode()) initLocalFilesApp();
-  else if (localPodcastsMode()) initLocalPodcastsApp();
   else initApp();
   initThemes();
   initLanguage();
@@ -148,7 +139,6 @@ function initLogin() {
   if (!form) return;
   explainLoginAuthMode();
   tryProxySignIn();
-  void mountLocalPodcastResume(document.getElementById('login-podcast-resume'));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     err.textContent = '';
@@ -240,7 +230,6 @@ async function initApp() {
     onNext: (options) => navigatePlayable(options?.delta ?? 1, options),
     onPrevious: (options) => navigatePlayable(options?.delta ?? -1, options),
   });
-  initPodcastPlayerDelete({ next: () => navigatePlayable(1, { completed: true }) });
   initSelection();
   initMusicCatalog(loadMedia);
   let navigatedDuringStartup = false;
@@ -265,8 +254,6 @@ async function initApp() {
       if(music) {state.music=nextMusicSearch(state.music,music);loadMedia();return;}
       state.music = null;
       state.virtualSet = '';
-      clearPodcastView();
-      state.podcastFeedKey = '';
       syncChromeVirtualSets();
       applySearchSet(parsed);
       delete parsed.set;
@@ -296,7 +283,6 @@ async function initApp() {
       forgetSearchView();
       state.music = null;
       state.virtualSet = '';
-      state.podcastFeedKey = '';
       syncChromeVirtualSets();
       loadMedia();
     },
@@ -310,7 +296,6 @@ async function initApp() {
     openTagsForElement,
     openSet,
     playSelected,
-    playMediaById,
     regenThumb,
     markAsFinished: markAsFinishedAndRefresh,
     markAsNotStarted: markAsNotStartedAndRefresh,
@@ -318,20 +303,10 @@ async function initApp() {
     moveToTrash,
     onVirtualSetCleared: syncChromeVirtualSets,
   });
-  initPodcastViews({
-    onLoadMedia: () => {
-      forgetSearchView();
-      syncChromeVirtualSets();
-      loadMedia();
-    },
-    playMediaById,
-  });
   initKeyboard({
     ...keyboardHandlers(),
     isQueueFocused, queueKey, toggleQueue, cycleQueueRepeat,
     queueNext: () => queueSelected('next'), queueAppend: () => queueSelected('append'),
-    podcasts: openAllPodcastEpisodes,
-    podcastAction: selectedPodcastEpisodeAction,
     radio: () => document.getElementById('radio-toggle')?.click(),
     browse: toggleSidebarFromKeyboard,
     menu: () => headerMenu?.open(),
@@ -345,7 +320,6 @@ async function initApp() {
   initModalFocus();
   // Admin actions such as restoring from trash change what the grid shows.
   document.addEventListener('library:changed', () => loadMedia());
-  initPodcasts();
   initPWA();
   initUpload({ onLoadMedia: loadMedia });
   initHelp();
@@ -376,7 +350,7 @@ async function initApp() {
     if (state.user && presenceHost) closeMusicPresence = mountMusicPresence(presenceHost);
     setPlaybackCacheAccount(cfg?.user_id);
     setListeningProgressAccount(cfg?.user_id);
-    setPodcastAccount(cfg?.user_id);
+    setSyncAccount(cfg?.user_id);
     initSongNotifications(cfg?.user_id);
     setMediaPageSize(cfg?.media_page_size);
     state.sets = (sets || []).slice().sort((a, b) => a.name.localeCompare(b.name));
@@ -394,8 +368,6 @@ async function initApp() {
     if (queueState().restored) toast('Queue restored, paused. Open Now Playing to resume.', 'info');
     await navigation.restore();
     if (!navigatedDuringStartup && initialCollection !== 'library' && !location.search && !location.hash) openCollection(initialCollection);
-    // Start page shortcut back into the podcast episode in progress.
-    if (state.user && !location.search && !location.hash) mountPodcastResume(presenceHost, { isPlaying: () => Boolean(currentMediaId()) });
   } catch (err) {
     toast(err.message || 'Error loading sets', 'error');
   }
@@ -420,20 +392,12 @@ function isDialogOpen() {
   return Boolean(document.querySelector('.modal-overlay.open'));
 }
 
-function navigatePodcastSelection(navigate) {
-  navigate();
-  const selected = currentElement();
-  if (selected?.classList.contains('episode-card')) {
-    selected.querySelector('[data-action="play"]')?.focus({preventScroll:true});
-  }
-}
-
 function keyboardHandlers() {
   return {
-    navUp: () => navigatePodcastSelection(navUp),
-    navDown: () => navigatePodcastSelection(navDown),
-    navLeft: () => navigatePodcastSelection(navLeft),
-    navRight: () => navigatePodcastSelection(navRight),
+    navUp,
+    navDown,
+    navLeft,
+    navRight,
     seekBackward: (e) => seekByKeyboard(-1, e.repeat),
     seekForward: (e) => seekByKeyboard(1, e.repeat),
     seekPercent: (e, percent) => {
@@ -518,7 +482,6 @@ function keyboardHandlers() {
     tags: openTagsForSelected,
     favorite: () => {
       const el = currentElement();
-      // Streamed episodes carry a negative stand-in id: no server media to favorite.
       if (Number(el?.dataset.id) > 0) toggleFavorite(el.dataset.id, el.querySelector('[data-action="favorite"]'));
     },
     // The admin toggle is hidden for non-admins; A does nothing for them.
@@ -594,7 +557,6 @@ function firstGridElement() {
 function activateGridElement(el) {
   if (!el) return;
   selectByElement(el);
-  if (el.dataset.podcastFeedKey) { openPodcastFeed(el.dataset.podcastFeedKey); return; }
   if (el.dataset.collectionKey) { el.querySelector('.collection-open')?.click(); return; }
   if (el.dataset.playlist) { el.click(); return; }
   if (el.dataset.artistCard) { el.click(); return; }
@@ -608,12 +570,6 @@ function activateGridElement(el) {
     enterFolder(el.dataset.name);
     return;
   }
-  if (el.classList.contains('episode-card')) {
-    // Episode cards stand for episodes not yet downloaded; Enter behaves
-    // like their Play button (download, then play).
-    el.querySelector('[data-action="play"]')?.click();
-    return;
-  }
   const idx = parseInt(el.dataset.index, 10);
   const media = state.media[idx];
   if (media) playSelected();
@@ -623,9 +579,7 @@ function openSet(id) {
   forgetSearchView();
   state.music = null;
   if (!Number.isFinite(id)) return;
-  if (state.sets.some(set => set.id === id && set.is_podcast)) { openAllPodcastEpisodes(); return; }
   state.virtualSet = '';
-  state.podcastFeedKey = '';
   state.selectedSetId = id;
   state.selectedSetIds = [id];
   state.folderPath = '';
@@ -651,7 +605,6 @@ async function markAsNotStartedAndRefresh(id) {
 function openInProgress() {
   state.music = null;
   state.virtualSet = state.virtualSet === 'in-progress' ? '' : 'in-progress';
-  state.podcastFeedKey = '';
   state.selectedSetId = null;
   state.selectedSetIds = [];
   state.folderPath = '';
@@ -671,7 +624,6 @@ function syncMusicNavActive() {
 
 function syncChromeVirtualSets() {
   document.getElementById('in-progress-toggle')?.classList.toggle('active', state.virtualSet === 'in-progress');
-  updatePodcastSidebarUI();
 }
 
 function initChrome() {
@@ -699,7 +651,7 @@ function initChrome() {
     closeSidebar();
   });
 
-  // Mark the current music destination in the sidebar like sets and podcasts.
+  // Mark the current music destination in the sidebar like sets.
   document.addEventListener('library:navigated', syncMusicNavActive);
 
   document.getElementById('sidebar-scrim')?.addEventListener('click', () => {
@@ -725,7 +677,7 @@ function initChrome() {
     try {
       try { await stopRenderer(); } catch {}
       setListeningProgressAccount(null);
-      setPodcastAccount(null);
+      setSyncAccount(null);
       clearSongNotifications();
       releasePlaybackCache();
       const result = await API.logout();

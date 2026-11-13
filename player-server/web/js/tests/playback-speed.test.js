@@ -41,8 +41,8 @@ for (const speed of PLAYBACK_SPEEDS) {
 }
 rate.step(1); assert.equal(rate.get(), 2, 'upper rate clamps');
 rate.set(0.5); rate.step(-1); assert.equal(rate.get(), 0.5, 'lower rate clamps');
-rate.set(1.5); rate.setMedia({ type: 'audio', is_podcast: true });
-assert.equal(rate.get(), 1.5, 'podcasts and music use one explicit preference');
+rate.set(1.5); rate.setMedia({ type: 'audio' });
+assert.equal(rate.get(), 1.5, 'every item uses one explicit preference');
 audio.playbackRate = 1; audio.emit('loadedmetadata'); assert.equal(audio.playbackRate, 1.5, 'source reload restores rate');
 rate.setCasting(true); assert.equal(select.disabled, true); assert.match(status.textContent, /unavailable while casting/);
 rate.set(2); assert.equal(audio.playbackRate, 1.5, 'never applies rate to Cast local placeholder');

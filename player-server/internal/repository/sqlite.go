@@ -90,7 +90,6 @@ func (s *SQLite) Ping(ctx context.Context) error {
 
 var _ Store = (*SQLite)(nil)
 var _ APITokenRepo = (*SQLite)(nil)
-var _ PodcastRepo = (*SQLite)(nil)
 var _ ProgressTransactionStore = (*SQLite)(nil)
 
 type sqlScanner interface {
@@ -105,19 +104,9 @@ type sqlQueryRower interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// sqlExecQueryRower runs statements and single-row queries.
-type sqlExecQueryRower interface {
-	sqlExecer
-	sqlQueryRower
-}
-
 func boolToInt(b bool) int {
 	if b {
 		return 1
 	}
 	return 0
-}
-
-func intToBool(i int) bool {
-	return i != 0
 }

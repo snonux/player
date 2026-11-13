@@ -2,11 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../app_routes.dart';
-import '../providers/auth_state_provider.dart';
-import '../providers/api_client_provider.dart';
 import '../providers/continue_listening_provider.dart';
-import '../providers/podcast_library_provider.dart';
 import '../utils/duration_formatter.dart';
 
 /// A compact, offline-first shortcut; opening a row uses the normal player.
@@ -52,7 +48,6 @@ class _ContinueListeningState extends ConsumerState<ContinueListening> {
                         [
                           item.source,
                           'Resume at ${formatDuration(item.position)}',
-                          if (item.streams) 'Streams',
                         ].join(' · '),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis),
@@ -70,30 +65,8 @@ class _ContinueListeningState extends ConsumerState<ContinueListening> {
 
   Future<void> _open(ContinueListeningItem item) async {
     setState(() => _opening = true);
-    // Device mode has no signed-in session to outlive; reading auth there
-    // would start the server graph the device shortcuts avoid.
-    final accountOwned =
-        !widget.deviceOnly && item.scope?.startsWith('account:') == true;
-    final auth = accountOwned ? ref.read(authStateProvider).valueOrNull : null;
-    final origin = accountOwned ? ref.read(playerBaseUrlProvider).origin : null;
     try {
-      final episode = item.episode;
-      if (episode == null) {
-        await context.push(item.path!);
-      } else {
-        final request = await ref
-            .read(podcastDownloadsProvider)
-            .playbackRequest(
-                item.scope!, episode['feed_key'] as String, episode,
-                allowStreaming: item.streams);
-        if (!mounted ||
-            accountOwned &&
-                (ref.read(authStateProvider).valueOrNull != auth ||
-                    ref.read(playerBaseUrlProvider).origin != origin)) {
-          return;
-        }
-        await context.push(AppRoutes.podcastPlayer, extra: request);
-      }
+      await context.push(item.path);
       if (mounted) ref.invalidate(continueListeningProvider(widget.deviceOnly));
     } catch (_) {
       if (mounted) {

@@ -1,4 +1,3 @@
-import { localPodcastsMode } from './offline-context.js';
 import { qualityPlaybackUrl } from './stream-quality.js';
 // Picks the URL a media item is played from and waits for the server's
 // compatibility stream (a transcoded MP4/M4A rendition of formats browsers
@@ -42,24 +41,8 @@ const TERMINAL_REASONS = {
   507: 'the server has no space left to convert this file',
 };
 
-// Device podcast enclosures are explicit publisher URLs, separate from saved
-// authenticated downloads. Only the standalone podcast app may select them.
-export function localPodcastSourceURL(media) {
-  if (!localPodcastsMode() || !media?.localPodcast || !media.localPodcastURL) return null;
-  try {
-    const url = new URL(media.localPodcastURL);
-    if (['http:', 'https:'].includes(url.protocol) && !url.username && !url.password) return url.href;
-  } catch { /* Invalid feed enclosures never become authenticated sources. */ }
-  return null;
-}
-
 // Library URL choice uses the server hint, never a file extension.
 export function mediaPlaybackUrl(media) {
-  const enclosure = localPodcastSourceURL(media);
-  if (enclosure) return enclosure;
-  if (Number.isSafeInteger(media?.podcast_stream_episode) && media.podcast_stream_episode > 0 && media.id === -media.podcast_stream_episode) {
-    return `/api/podcasts/episodes/${media.podcast_stream_episode}/stream`;
-  }
   // Only explicit Play downloaded entries select a saved rendition. Never
   // accept a foreign origin, arbitrary path or unrecognized profile here.
   if (media.offlinePinURL) {
