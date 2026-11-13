@@ -87,7 +87,7 @@ export function mountAutomaticMusicSettings(host,syncNow){
  }catch{panel.querySelector('[data-status]').textContent='Automatic music settings unavailable. Allow browser storage and reopen Settings.';}};
  panel.addEventListener('change',()=>{try{const p={};for(const f of ['enabled','playlists','starred','recent','wifiOnly'])p[f]=panel.querySelector(`[data-${f}]`).checked;p.hours=Number(panel.querySelector('[data-hours]').value);saveAutomaticMusicPolicy(p);error='';render();}catch{error='Could not save automatic music settings. Check browser storage.';render();}});
  panel.querySelector('[data-sync]').onclick=syncNow;panel.querySelector('[data-cancel]').onclick=cancelAutomaticMusic;
- document.addEventListener('automatic-music:changed',render);document.addEventListener('podcast:account-changed',()=>{cancelAutomaticMusic();render();});
+ document.addEventListener('automatic-music:changed',render);document.addEventListener('sync:account-changed',()=>{cancelAutomaticMusic();render();});
  document.addEventListener('music-network:changed',()=>{if(running)running.controller.abort();render();});
  window.addEventListener('storage',e=>{if(e.key?.startsWith('player-automatic-music-v1:')){cancelAutomaticMusic();render();}});
  render();

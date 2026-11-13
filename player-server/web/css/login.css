@@ -76,9 +76,6 @@ body {
   flex: 0 0 auto;
 }
 
-/* Started podcasts of this browser: resume without signing in. */
-.login-resume { width: min(100%, 24rem); }
-.login-resume[hidden] { display: none; }
 .local-resume-heading { margin: 0 0 0.5rem; font-size: 1rem; }
 .local-resume-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .local-resume-item {

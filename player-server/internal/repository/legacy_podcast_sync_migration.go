@@ -10,7 +10,9 @@ import (
 	"github.com/snonux/player/internal/podcast"
 )
 
-// The podcast synchronization migration (docs/podcast-sync-contract.md, §9.1).
+// The podcast synchronization migration of the former podcast sync contract.
+// Podcast support was removed, but this schema step still runs so databases
+// created before it keep upgrading to the same final shape.
 //
 // tablesSchema still creates podcast_feeds and podcast_episodes in their
 // pre-sync shape; migratePodcastSync upgrades both, for fresh and existing

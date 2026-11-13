@@ -38,8 +38,6 @@ export function initCompactControls(player) {
   panel.appendChild(header);
   for (const control of player.querySelectorAll(SECONDARY)) panel.appendChild(control);
   // Destructive, so it comes last, apart from routine playback controls.
-  const deleteEpisode = player.querySelector('#btn-delete-episode');
-  if (deleteEpisode) panel.appendChild(deleteEpisode);
 
   const more = document.createElement('button');
   more.type = 'button';
@@ -118,7 +116,7 @@ export function initCompactControls(player) {
     if (event.target.tagName === 'SELECT' && !keyed) dismiss();
   });
   panel.addEventListener('click', event => {
-    if (event.target.closest('#btn-minimize, #btn-save-position, #btn-bookmarks, #btn-player-notes, #btn-player-favorite, #btn-delete-episode')) dismiss();
+    if (event.target.closest('#btn-minimize, #btn-save-position, #btn-bookmarks, #btn-player-notes, #btn-player-favorite')) dismiss();
   }, true);
   // Firefox may consume Escape to leave native fullscreen before dispatching
   // a key event to the page. Close its controls on that path too.

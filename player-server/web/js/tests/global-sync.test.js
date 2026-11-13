@@ -2,27 +2,24 @@ import assert from 'node:assert/strict';
 import { GlobalSyncCoordinator, globalSyncPresentation as view, staleSyncMS } from '../global-sync.js';
 import { API } from '../api.js';
 const disk = new Map(), storage = { getItem: key => disk.get(key), setItem: (key, value) => disk.set(key, value) };
-let now = 1000, pending = ['episode:a', 'progress:a'], failed = false, release, block = false;
+let now = 1000, pending = ['progress:a', 'queue:a'], failed = false, release, block = false;
 const calls = [];
 const domains = {
-  pending: () => ({ ids: pending, podcasts: pending.filter(id => id.startsWith('episode:')).length }),
-  podcasts: async (current, commit) => {
-    calls.push('podcasts');
+  pending: () => ({ ids: pending }),
+  progress: async () => {
+    calls.push('progress');
     if (block) await new Promise(resolve => { release = resolve; });
-    if (!current()) return;
-    pending = pending.filter(id => !id.startsWith('episode:'));
-    await commit({ next_since: 7, epoch: 'one' });
-    if (failed) throw new TypeError('offline mid-pull');
+    pending = pending.filter(id => !id.startsWith('progress:'));
+    if (failed) throw new TypeError('offline mid-sync');
   },
-  progress: async () => { calls.push('progress'); pending = pending.filter(id => !id.startsWith('progress:')); },
-  queue: async () => { calls.push('queue'); },
+  queue: async () => { calls.push('queue'); pending = pending.filter(id => !id.startsWith('queue:')); },
 };
 const sync = new GlobalSyncCoordinator({ storage, domains, now: () => now });
 assert.equal(view(sync.state).hidden, true, 'standalone has no hint');
 sync.bind('server#1');
-assert.match(view(sync.state).text, /Not synced yet.*2 pending.*this tab/);
+assert.match(view(sync.state).text, /Not synced yet.*2 pending/);
 await sync.syncNow();
-assert.deepEqual(calls, ['podcasts', 'progress', 'queue']);
+assert.deepEqual(calls, ['progress', 'queue']);
 assert.equal(sync.state.lastFullSuccessMs, now);
 assert.equal(view(sync.state, now - 100).text, 'Synced', 'negative age is not stale');
 assert.equal(view(sync.state, now + staleSyncMS - 1).action, 'Sync now');
@@ -30,10 +27,10 @@ assert.equal(view(sync.state, now - 100).hidden, true, 'a fresh complete sync ne
 assert.equal(view(sync.state, now + staleSyncMS).hidden, false, 'stale sync asks for attention');
 assert.equal(view(sync.state, now + staleSyncMS).action, 'Retry');
 assert.match(view(sync.state, now + staleSyncMS).text, /Last synced 2 days ago/);
-failed = true; pending = ['episode:b', 'progress:b']; now += staleSyncMS;
+failed = true; pending = ['progress:b', 'queue:b']; now += staleSyncMS;
 await sync.syncNow();
-assert.equal(sync.state.lastFullSuccessMs, 1000, 'partial pull never advances full success');
-assert.equal(JSON.parse(disk.get('player-global-sync-v1:server#1')).cursor, 7, 'applied page survives later failure');
+assert.equal(sync.state.lastFullSuccessMs, 1000, 'a partial sync never advances full success');
+assert.equal(JSON.parse(disk.get('player-global-sync-v1:server#1')).errorKind, 'offline', 'the failure survives a reload');
 assert.match(view(sync.state, now).text, /Sync unavailable.*Last synced 2 days/);
 const restored = new GlobalSyncCoordinator({ storage, domains }); restored.bind('server#1');
 assert.equal(restored.state.lastFullSuccessMs, 1000);
@@ -56,13 +53,13 @@ assert.equal(sync.state.pending, 1);
 domains.progress = async () => {}; // Starting pending must be acknowledged.
 now++;
 await sync.syncNow(); assert.equal(sync.state.lastFullSuccessMs, now - 1);
-pending = ['episode:unsupported'];
-domains.podcasts = async () => ({ excluded: ['episode:unsupported'] });
+pending = ['queue:unsupported'];
+domains.queue = async () => ({ excluded: ['queue:unsupported'] });
 await sync.syncNow(); assert.equal(sync.state.lastFullSuccessMs, now, 'unsupported domain pending work does not block supported domains');
 sync.bind(null); assert.equal(view(sync.state).hidden, true);
 globalThis.location = { pathname: '/', search: '', hash: '', href: 'playing' };
 globalThis.fetch = async () => new Response(JSON.stringify({ error: 'Expired session' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
-for (const request of [() => API.syncConfig(), () => API.syncPodcast({}), () => API.progressBatch([], 1)]) {
+for (const request of [() => API.syncConfig(), () => API.progressBatch([], 1)]) {
   await assert.rejects(request(), error => error.status === 401);
   assert.equal(location.href, 'playing', 'background auth failure must not navigate away from playback');
 }

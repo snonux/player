@@ -127,26 +127,24 @@ applies to both places.
 
 Every thumbnail is generated into a temporary file (`.tmp-*.jpg` in the same
 `.thumbnails` directory) and renamed into place once complete, by rescan,
-upload, podcast download and "regenerate thumbnail" alike. A thumbnail in
+upload and "regenerate thumbnail" alike. A thumbnail in
 place is therefore always complete. Should the server be killed mid-way, the
 temporary file stays behind; a rescan deletes such files once they are more
 than an hour old.
 
 A thumbnail at its current path is deleted together with its media item
-(when the trash is purged, when a podcast is unsubscribed), and its
+(when the trash is purged), and its
 `.thumbnails` directory once empty. Not deleted is a thumbnail still stored
 under the old naming described below, because it may be shared with another
-item: purging or unsubscribing such an item before the upgrade rescan has
-migrated it leaves its old JPEG behind for good, and that file can keep an
-otherwise empty podcast folder in place. Run the upgrade rescan first to
-avoid this.
+item: purging such an item before the upgrade rescan has migrated it leaves
+its old JPEG behind for good. Run the upgrade rescan first to avoid this.
 
 A video thumbnail is a frame from a random position, kept one second away
 from the end of the video; if no frame can be had there (for instance under
 an audio track that runs longer than the picture) the first frame is used.
 
 A thumbnail that cannot be generated never blocks anything. Whether the file
-comes from a rescan, an upload or a podcast download, it is stored and
+comes from a rescan or an upload, it is stored and
 indexed all the same: a video without a thumbnail, an image with the image
 itself standing in, and the reason logged as a warning. That is also what
 happens in a folder the server cannot write to, unless `THUMBNAIL_CACHE_DIR`

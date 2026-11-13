@@ -14,12 +14,14 @@ test('mapped scenario IDs select distinct executable specs', () => {
   assert.equal(SCENARIO_SPECS.S05, 'scenario-S05.test.ts');
   assert.equal(SCENARIO_SPECS.S14, 'scenario-S14.test.ts');
   assert.notEqual(SCENARIO_SPECS.S05, SCENARIO_SPECS.S14);
-  assert.equal(Object.keys(SCENARIO_SPECS).length, 25);
+  // S02 and S17 covered podcasts, which were removed; their IDs stay unused.
+  const retired = new Set(['S02', 'S17']);
+  assert.equal(Object.keys(SCENARIO_SPECS).length, 23);
   for (let i = 1; i <= 25; i++) {
     const id = `S${String(i).padStart(2, '0')}`;
-    assert.equal(scenarioSpec(id), `scenario-${id}.test.ts`);
+    assert.equal(scenarioSpec(id), retired.has(id) ? undefined : `scenario-${id}.test.ts`);
   }
-  assert.equal(new Set(Object.values(SCENARIO_SPECS)).size, 25);
+  assert.equal(new Set(Object.values(SCENARIO_SPECS)).size, 23);
   assert.equal(scenarioSpec('S26'), undefined);
   assert.equal(scenarioSpec('constructor'), undefined);
   assert.equal(scenarioSpec('toString'), undefined);

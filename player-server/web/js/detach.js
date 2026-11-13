@@ -1,5 +1,4 @@
 import { mediaPlaybackUrl } from './streamSource.js';
-import { transferPodcastMedia } from './podcast-detached.js';
 
 let deps = {};
 let detachWindow = null;
@@ -134,8 +133,7 @@ function reattachDetached({ closePopup = true } = {}) {
   deps.els?.().player?.classList.remove('hidden');
 
   if (state?.media) {
-    const media = transferPodcastMedia(state.media);
-    if (!media) return;
+    const media = { ...state.media };
     deps.setCurrentMediaState?.(media, Number.isInteger(state.index) ? state.index : undefined);
     deps.setPlaybackLoudness?.(state.loudness);
     deps.loadMedia?.(media, state.currentTime || 0);
@@ -178,7 +176,7 @@ function detachedLoadMessage(media, resumeFrom = 0, play = true) {
   const remote = readDetachedWindowState(detachWindow) || detachedPlaybackState;
   return {
     type: 'detach-load',
-    media: transferPodcastMedia(media),
+    media: { ...media },
     index: deps.getCurrentMediaIndex?.() ?? -1,
     // The compat stream for media the server flags as "transcoded".
     streamUrl: mediaPlaybackUrl(media),

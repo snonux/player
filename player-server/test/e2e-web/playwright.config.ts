@@ -9,11 +9,10 @@ export default defineConfig({
   testDir: './tests',
   // Scenario specs use separate credentials and are run only by the scenario
   // runner's dedicated Playwright configuration; music specs need the music
-  // fixture and run only with playwright.music.config.ts. Podcast acceptance
-  // likewise needs its explicit stage and playwright.podcasts.config.ts.
+  // fixture and run only with playwright.music.config.ts.
   // Radio starts its own fake directory and server (playwright.radio.config.ts)
   // and bulk selection needs a touch-enabled context (playwright.selection.config.ts).
-  testIgnore: [/scenario-S\d+\.test\.ts$/, /music-.*\.test\.ts$/, /podcast-sync\.test\.ts$/, /image-gestures\.test\.ts$/,
+  testIgnore: [/scenario-S\d+\.test\.ts$/, /music-.*\.test\.ts$/, /image-gestures\.test\.ts$/,
     /radio\.test\.ts$/, /media-multiselect\.test\.ts$/],
 
   // Run each test file in its own isolated context. Tests within the same

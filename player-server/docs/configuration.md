@@ -23,8 +23,6 @@ All settings are environment variables. Unset variables use defaults.
 | `THUMBNAIL_CACHE_DIR` | unset | writable directory outside `MEDIA_ROOT` | When set, all generated thumbnails are stored there (mirroring the media tree) instead of in `.thumbnails` beside each media file; unset keeps them beside the media |
 | `RADIO_BROWSER_URL` | `https://all.api.radio-browser.info` | http(s) URL | Radio Browser API that web radio searches |
 | `RADIO_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let the radio relay connect to loopback/private addresses (stations on your own network); off by default because station entries come from a public directory |
-| `PODCAST_ALLOW_PRIVATE_NETWORKS` | `false` | `true` / `false` | Let podcast feed, cover and episode downloads connect to loopback/private addresses (feeds on your own network); off by default because feeds are third-party documents whose URLs must not reach services on the server's network |
-| `PODCAST_CHECK_INTERVAL_MINUTES` | `60` | ≥ 1 | Podcast feed refresh interval; the first background check runs one minute after start |
 | `MEDIA_PAGE_SIZE` | `100` | ≥ 1 | Items displayed per thumbnail grid page |
 | `PROXY_AUTH_TRUSTED_SOURCES` | unset | comma-separated IPs/CIDRs, `@` for a UNIX socket peer | Enables reverse-proxy authentication: only requests whose immediate peer is listed may assert a user through `PROXY_AUTH_USER_HEADER`. Unset disables it (the other two `PROXY_AUTH_*` settings then must be unset too) |
 | `PROXY_AUTH_USER_HEADER` | `Remote-User` | header name; requires `PROXY_AUTH_TRUSTED_SOURCES` | Header carrying the username of an existing account from a trusted proxy |

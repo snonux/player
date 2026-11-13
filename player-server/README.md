@@ -7,7 +7,7 @@ Player is an opinionated, self-hosted web media player designed around the KISS 
 
 Web music browsing uses the signed-in server library. Downloaded music browsing is
 available in the Android app. The web UI still supports **On this device** files
-and standalone podcasts without sign-in, along with signed-in playback cache,
+without sign-in, along with signed-in playback cache,
 pinned collection management, and download/export controls. Older
 `?offline=music` bookmarks open the normal web library and require normal sign-in;
 this change does not remove existing browser downloads.
@@ -29,7 +29,6 @@ Features
 - **Preview size** — use the visible Previews controls or `+` / `-` to resize library thumbnails; `0` resets the size. Five sizes are saved on this browser and apply to both regular and picture layouts. In image view these keys retain their image zoom actions.
 - **Audio / Audiobooks** — cover art display, progress tracking (resumes where you left off)
 - **Casting** — in Chrome (HTTPS or localhost), the player's cast button plays the current audio or video item on a Chromecast or other Google Cast device; play/pause, seeking and track changes then control the cast device, and stopping continues locally where it left off. The cast device fetches the media through a short-lived signed link, so it must reach the server at the page's address. Details: [docs/api.md](docs/api.md)
-- **Podcasts** — subscribe to RSS/Atom feeds, download episodes to the server, mark listened/unlistened
 - **Web radio** — press `w` or the 📻 button to search internet radio stations from the [Radio Browser](https://www.radio-browser.info/) directory by name, genre and country, sorted by popularity, votes, name or at random. Bookmark stations to find them again on every device (the Android app shares them). **Auto explore** plays random stations of the current filters one after another, moving on after 15, 30 or 60 seconds; Keep stays on the current one. The server relays the streams, so HTTP-only stations play on HTTPS pages too. See [docs/api.md](docs/api.md#web-radio)
 
 ### Organization
@@ -52,7 +51,6 @@ Features
 
 ### Integrations
 
-- **Podcast feed manager** — add feeds via URL, automatic background refresh with conditional GET
 - **File upload** — upload media directly to a set from the browser
 - **Library scanner** — `ffprobe`-backed metadata extraction and automatic thumbnail generation
 - **PWA** — installable as a Progressive Web App (`manifest.json` + service worker)
@@ -85,7 +83,6 @@ Documentation
 | [API Reference](docs/api.md) | Full REST API endpoint listing |
 | [Keyboard Shortcuts](docs/keyboard-shortcuts.md) | All key bindings and search syntax |
 | [Theming](docs/theming.md) | Theme system and adding custom themes |
-| [Podcast Support](docs/podcasts.md) | Subscribing, episode management, feed checker |
 | [Admin Guide](docs/admin.md) | Users, permissions, rescans, trash |
 
 Legacy MPEG video
@@ -98,82 +95,3 @@ copy; subsequent plays use the cache. Seeking works after preparation.
 Original files and downloads retain their bytes and `video/mpeg` MIME type.
 Run an admin rescan after upgrading to index files previously skipped.
 
-Podcast players display publisher show notes below the episode title, expanded
-by default. Long notes scroll separately from playback controls; collapse them
-with Show notes. Device podcast playback uses its cached episode description.
-Verify Chrome and Firefox with `npx playwright test -c playwright.podcast-notes.config.ts`
-from `test/e2e-web/`; this runs against a disposable local static server.
-
-## Continue listening
-
-When the app opens and nothing is playing, a **Continue listening** banner at
-the top of the library shows the podcast episode you listened to most recently
-and have not finished, with its podcast and saved position. **Resume** opens
-the **In progress** episode filter (unfinished episodes with a saved position,
-most recently listened first) and continues that episode where it stopped.
-**All in progress** opens that filter without starting anything. The banner
-disappears once anything plays; ✕ hides it. The Android app shows the same
-shortcut in its mini-player slot.
-
-The login page lists started **Podcasts on this device** (this browser's own
-subscriptions) under **Continue listening**, so they resume without signing in;
-browser-device episodes now also remember their position. Server account
-podcasts need a sign-in in the browser; the Android app shows them on its
-sign-in screen.
-
-## Podcast episode layouts
-
-Choose **List** or **Grid** above an episode list. Both layouts keep the existing titles,
-metadata, expandable show notes and playback and episode actions. The choice lasts while the app is open and follows navigation into
-subscriptions. Grid cards adapt to narrow screens and grow with enlarged text.
-Browser device podcasts have the same layout choice inside a subscription.
-
-Choose **Select episodes** above an episode list to select several episodes in
-List or Grid, then apply Mark completed/uncompleted or Delete episodes. Failed
-items stay selected for retry. Navigation, filters and page changes clear the
-selection; changing layout keeps it. Cancel selection or Escape returns to
-browsing. **Delete episodes** changes your personal podcast lists and keeps
-shared server files. The separate **Delete downloaded files** action removes
-shared server copies, subject to permissions and confirmation explaining other
-listeners and seven-day Trash. Browser device podcast deletions affect only that
-browser's lists.
-
-To delete one episode, use **Delete episode** in its row actions, press
-**Delete** on the selected episode, or swipe its row from right to left on a
-touch screen in List layout. Each asks for confirmation first. While an
-episode plays, **Delete episode** is also at the end of the player's controls
-menu (☰): playback moves on to the feed's next episode, or stops when none is
-left.
-
-Focused layout verification:
-
-```sh
-cd test/e2e-web
-npm ci
-npx playwright test -c playwright.episode-layout.config.ts
-```
-The Chrome/Firefox check exercises subscribed-episode rendering and device
-RSS browsing with deterministic metadata, including offline layout switching.
-
-Subscribed episode lists default to **Uncompleted**. Marking an episode
-completed or playing it to its natural end removes it from that list. Use
-**Completed** or **All** to find it again, or mark it uncompleted to restore it
-to the default list. Both list and grid layouts retain these filters.
-
-Podcast playback continues to the next uncompleted episode of the same feed
-in newest-first order and stops at the end. Server playback downloads the next
-episode when needed. Browser device podcasts queue the remaining episodes of
-the selected feed. A paused seek to the end or a playback failure does not skip
-to another episode. The focused Chrome and Firefox check uses the disposable
-podcast fixture:
-`PLAYER_URL=http://127.0.0.1:PORT PLAYER_PODCAST_FIXTURE=/path/to/fixture npx playwright test -c playwright.podcast-continuation.config.ts`
-from `test/e2e-web`.
-
-Podcast **Play** and **Resume** can stream immediately from the publisher, even
-while **Download to server** is saving the same episode. **Cancel download**
-stops that saved-copy transfer and removes unfinished bytes while playback
-continues. The control stays available after switching episode layouts or
-returning to the list. A finished download is used the next time the episode
-opens; it does not restart current playback. Already saved episodes continue
-to use their server copy. Streaming requires the publisher to be reachable and
-the audio format to be supported by the browser.

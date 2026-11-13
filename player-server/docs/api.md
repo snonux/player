@@ -26,8 +26,7 @@ document alone, mint a Bearer token, and begin implementing
 13. [Shares](#shares)
 14. [Tags](#tags)
 15. [Admin](#admin)
-16. [Podcasts](#podcasts)
-17. [Web Radio](#web-radio)
+16. [Web Radio](#web-radio)
 
 ---
 
@@ -664,12 +663,9 @@ a subdirectory.
   "folders": [
     { "name": "2023", "has_cover": true }
   ],
-  "media": [ { /* Media object — see Media schema */ } ],
-  "episodes": []
+  "media": [ { /* Media object — see Media schema */ } ]
 }
 ```
-
-`episodes` is present and non-empty only when the set is a podcast set.
 
 **Status codes:** `200`, `400`, `401`, `403`, `500`
 
@@ -1786,167 +1782,6 @@ List all soft-deleted media items.
 
 ---
 
-## Podcasts
-
-Podcasts are stored in a special set with `is_podcast: true`. Each feed gets
-its own subfolder inside the shared podcast set.
-
----
-
-### `GET /api/podcasts` · `GET /api/v1/podcasts`
-
-List all subscribed podcast feeds visible to the authenticated user.
-
-**Response `200`:**
-
-```json
-[
-  {
-    "id": 1,
-    "set_id": 4,
-    "feed_url": "https://example.com/feed.rss",
-    "title": "My Podcast",
-    "description": "A great podcast.",
-    "image_url": "https://example.com/cover.jpg",
-    "last_checked_at": "2026-05-17T06:00:00Z",
-    "last_etag": "\"abc123\"",
-    "check_interval_minutes": 60,
-    "auto_download": false,
-    "consecutive_failures": 0,
-    "next_check_at": "2026-05-17T07:00:00Z",
-    "created_at": "2026-01-10T00:00:00Z"
-  }
-]
-```
-
-**Status codes:** `200`, `401`, `500`
-
----
-
-### `POST /api/podcasts` · `POST /api/v1/podcasts`
-
-Subscribe to a new podcast feed. Admin only.
-
-**Request body:**
-
-```json
-{
-  "feed_url": "https://example.com/feed.rss",
-  "set_name": "Tech Podcasts"
-}
-```
-
-`set_name` is optional. When omitted the server uses the feed title.
-
-**Response `200`:** The created `PodcastFeed` object.
-
-**Status codes:** `200`, `400`, `401`, `403`, `500`
-
----
-
-### `DELETE /api/podcasts/{id}` · `DELETE /api/v1/podcasts/{id}`
-
-Unsubscribe from a podcast feed. Admin only. `{id}` is the **feed ID**.
-Deletes the feed, its episodes, and its downloaded episodes (media rows and
-files). Its folders (the current-title folder and any older-title folders
-its episodes were stored in) lose the feed artwork (`cover.jpg`,
-`.cover.jpg`) and are removed once empty. Anything else is kept: a folder
-another remaining feed uses by title, a folder that still holds other
-indexed media (uploads, another feed's episodes), and files that were never
-indexed.
-
-Deleting media also deletes every user's notes, bookmarks, progress, favorites
-and shares for it. After the feed is deleted, the remaining steps are
-best-effort: a failure to remove a file is reported as `500`, but the feed is
-already gone (a retry returns `404`) and the other items were still
-processed.
-
-**Response `204`:** No body.
-
-**Status codes:** `204`, `400`, `401`, `403`, `404`, `500`
-
----
-
-### `GET /api/podcasts/{id}/episodes` · `GET /api/v1/podcasts/{id}/episodes`
-
-List episodes for a podcast feed. `{id}` is the **set ID** (not the feed ID).
-
-**Query parameters:**
-
-| Parameter | Description |
-|-----------|-------------|
-| `limit` | Page size (default 50) |
-| `offset` | Page offset (default 0) |
-
-**Response `200`:**
-
-```json
-[
-  {
-    "id": 10,
-    "feed_id": 1,
-    "media_id": null,
-    "guid": "episode-guid-001",
-    "title": "Episode 1: Introduction",
-    "description": "The first episode.",
-    "published_at": "2026-01-05T00:00:00Z",
-    "episode_url": "https://example.com/ep1.mp3",
-    "duration_seconds": 3600.0,
-    "file_size": 52428800,
-    "file_name": "ep1.mp3",
-    "is_downloaded": false,
-    "created_at": "2026-01-05T01:00:00Z",
-    "is_completed": false,
-    "position_seconds": 0.0
-  }
-]
-```
-
-`media_id` is `null` until the episode is downloaded. `is_completed` and
-`position_seconds` are per-user.
-
-**Status codes:** `200`, `400`, `401`, `403`, `404`, `500`
-
----
-
-### `GET|HEAD /api/podcasts/episodes/{episode_id}/stream` · `/api/v1/podcasts/episodes/{episode_id}/stream`
-
-Stream the publisher enclosure immediately without importing a saved server
-copy. Requires a session and either read access to the feed's set or an active
-subscription. Range and If-Range requests and publisher range response headers
-are preserved; HEAD returns headers only. The per-feed outbound address policy
-also applies to this route. Session cookies and authorization headers are never
-sent to the publisher. Responses are private and not cached. Unsupported media
-or a publisher failure returns 502; invalid IDs return 400, unknown episodes
-404, and denied access 403.
-
-Streaming and the download POST are independent. Cancelling the download
-request stops its publisher transfer and cleans unfinished files without
-interrupting a separate playback stream. Completion of a saved copy does not
-replace an already-playing stream. Cancelling the stream closes its own
-publisher request.
-
-### `POST /api/podcasts/episodes/{episode_id}/download` · `POST /api/v1/podcasts/episodes/{episode_id}/download`
-
-Trigger a server-side download of a podcast episode. The episode is downloaded
-to the podcast set directory and a `Media` row is created.
-
-**Response `200`:** The newly created `Media` object.
-
-**Status codes:** `200`, `400`, `401`, `403`, `404`, `500`
-
----
-
-### `POST /api/podcasts/episodes/{episode_id}/complete` · `POST /api/v1/podcasts/episodes/{episode_id}/complete`
-
-Toggle the per-user completion state of a podcast episode.
-
-**Response `204 No Content`** (no body).
-
-**Status codes:** `204`, `400`, `401`, `403`, `404`, `500`
-
----
-
 ## Web Radio
 
 Internet radio stations come from the [Radio Browser](https://www.radio-browser.info/)
@@ -2132,12 +1967,6 @@ Removes a bookmark. Removing a station that is not bookmarked also succeeds.
 | `GET` | `in-progress` | session | List in-progress media |
 | `GET` | `shares` | session | List my shares |
 | `DELETE` | `shares/{token}` | session | Revoke share |
-| `GET` | `podcasts` | session | List podcast feeds |
-| `POST` | `podcasts` | admin | Subscribe to feed |
-| `GET` | `podcasts/{id}/episodes` | session | List episodes |
-| `GET/HEAD` | `podcasts/episodes/{episode_id}/stream` | session | Stream publisher audio without waiting for a saved copy |
-| `POST` | `podcasts/episodes/{episode_id}/download` | session | Download episode |
-| `POST` | `podcasts/episodes/{episode_id}/complete` | session | Toggle completion |
 | `GET` | `radio/stations` | session | Search radio stations |
 | `GET` | `radio/tags` | session | Radio tags by station count |
 | `GET` | `radio/countries` | session | Radio countries by station count |
@@ -2251,86 +2080,3 @@ server changes, and synchronizes only under that matching unlocked account.
 Older download resume positions without edit timestamps remain local until
 the next playback save or a server snapshot is available; migrated bookmarks
 keep their original creation timestamps.
-
-### Public podcast discovery
-
-`GET /api/podcast-discovery?q=<2–100 character search>` (also under
-`/api/v1/podcast-discovery`) searches Apple Podcasts, returning up to 30
-`{title, author, feed_url}` records. Alternatively, use
-`?popular=true&country=US` with a two-letter country code to retrieve up to 20
-popular chart shows with their RSS feed URLs. The UI offers common chart
-countries; unsupported store codes can produce an upstream error or empty list.
-No session is required, supporting browser device-only subscriptions. The
-server sends only an explicit search/country request to the fixed Apple host,
-never fetches result feeds or artwork, and never forwards user credentials.
-Responses use `Cache-Control: no-store`; bounded upstream result caching stays
-in server memory for 15 minutes. Invalid queries return 400, temporary upstream
-failures 502, and uncached requests inside the shared upstream rate limit 429
-with `Retry-After: 3`. An unavailable directory does not prevent manual RSS entry.
-
-### Refresh an account podcast subscription
-
-`POST /api/podcasts/refresh` (also `/api/v1/podcasts/refresh`) requires a
-session or bearer token and JSON `{"feed_key":"feed:example.com/rss"}`. Only
-an active subscription owned by the caller can be refreshed. The server
-resolves aliases and fetches the stored catalog URL; callers cannot supply a
-fetch URL. Success returns `{"feed_key":"feed:example.com/rss","status":"refreshed"}`,
-or `"status":"fresh"` when checked within the last minute. Fetches have a
-20-second deadline, two concurrent slots per server instance, duplicate-feed
-suppression, and existing feed/host failure backoff. A busy or backed-off
-refresh returns 429 with `Retry-After: 60`; clients should retain the current
-list and offer retry. Invalid keys return 400, missing or inactive own
-subscriptions/catalog rows 404, and publisher/policy/parse failures 502.
-Refresh stores feed and episode metadata only, without artwork, media downloads
-or set permission grants. Public outbound address and response-size restrictions
-apply even when an administrator created the catalog feed. Browsing can continue
-while a client awaits this optional refresh and then reloads its episode list.
-
-### Podcast artwork and server-copy metadata
-
-Podcast episode listings add `image_url` (publisher episode artwork) and
-`feed_image_url` (fallback feed artwork). `description` prefers complete publisher
-show notes when available; `published_at` remains the publisher's publication
-instant or null when unknown. These fields do not participate in identity.
-
-Ordinary media list/detail responses may include `podcast` with `title`,
-`feed_title`, `description`, `published_at`, `image_url`, and `feed_image_url` when
-that media is linked to a podcast episode. Clients prefer its title for display,
-without rewriting `file_name`, paths, or embedded `music` metadata. Publication
-instants are JSON RFC3339 UTC, preserving stored precision.
-
-### Personal podcast episode deletion
-
-`GET /api/config` and `/api/v1/config` advertise
-`podcast_episode_deletion: true`. Podcast sync accepts a third independent
-episode edit: `"deletion": {"edit_id": "unique-edit-id-0001", "deleted": true,
-"observed_ms": 1793275200000}`. Pulls return the same register without
-`edit_id`. Newer clocks win; deletion wins an equal positive-clock tie.
-Deleted episodes stay absent from the caller's episode lists through feed
-refresh and sync. History and other accounts are preserved. This action
-is distinct from removing downloaded bytes. Older clients can continue to
-synchronize position and completion without sending deletion.
-
-Completed podcast entries automatically leave personal lists after seven days
-from the server's first observation of their current completion edit. Existing
-completed entries receive the same grace on upgrade; delayed offline reports
-receive a full grace after arriving. Receiving the same completion again does
-not restart the clock. Uncompleting and completing again starts a fresh grace.
-Playback newer than completion and an explicit restore newer than completion
-prevent automatic deletion until a new completion edit.
-
-Server retention writes the normal per-account deletion register and change sequence,
-so every client receives the tombstone through ordinary podcast sync. Maintenance
-runs at startup and on GC ticks, and lists/sync also apply expiry. Catalog rows,
-shared server files and listening history are preserved. Clients may separately
-clean up their own expired downloaded copies, while preserving active playback
-and copies needed by another account.
-
-Devices independently observe completion and retain their own seven-day grace
-for downloaded-copy cleanup, including while offline. Device timer expiry is
-only a derived local list hide, never an outgoing deletion edit. Newer remote
-playback, completion or restore immediately invalidates that local hide when
-received. This avoids an offline timer overwriting another device's replay or
-restore. Only explicit manual deletion and the server's transactional retention
-sweep create synchronized tombstones. Browser device-only feeds keep local
-completion and deletion on that browser; they do not modify any account's feed.

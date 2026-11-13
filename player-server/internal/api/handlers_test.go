@@ -425,7 +425,7 @@ func TestServer_StaticPages(t *testing.T) {
 			authSvc := &service.MockAuthService{CountUsersFunc: func(context.Context) (int, error) { return count, nil }}
 			srv := newTestServer(t, store, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, authSvc, nil)
 			for _, method := range []string{http.MethodGet, http.MethodHead} {
-				for _, path := range []string{"/?local=podcasts", "/index.html?local=podcasts", "/?local=files", "/index.html?local=files"} {
+				for _, path := range []string{"/?local=files", "/index.html?local=files"} {
 					rr := httptest.NewRecorder()
 					srv.ServeHTTP(rr, httptest.NewRequest(method, path, nil))
 					if rr.Code != http.StatusOK || (method == http.MethodGet && !strings.Contains(rr.Body.String(), "index")) {
@@ -439,6 +439,8 @@ func TestServer_StaticPages(t *testing.T) {
 				{http.MethodGet, "/other?offline=music"}, {http.MethodGet, "/other?local=podcasts"},
 				{http.MethodGet, "/index.html?local=podcasts&set=1"}, {http.MethodGet, "/index.html?local=files&local=podcasts"},
 				{http.MethodGet, "/index.html?local=unknown"}, {http.MethodGet, "/index.html?local=podcasts&"},
+				// The browser-device podcast app was removed with podcast support.
+				{http.MethodGet, "/?local=podcasts"}, {http.MethodGet, "/index.html?local=podcasts"},
 				{http.MethodGet, "/api/sets?local=podcasts"}, {http.MethodGet, "/api/v1/sets?local=files"},
 				{http.MethodPost, "/index.html?local=podcasts"}, {http.MethodPost, "/?local=files"},
 			}

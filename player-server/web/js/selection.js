@@ -7,9 +7,6 @@ export function initSelection() {
     const card = e.target.closest('.media-card, .media-row');
     if (!card) return;
     selectByElement(card);
-    if (card.classList.contains('episode-card') && !e.target.closest('button, a, input, select, textarea, summary')) {
-      card.querySelector('[data-action="play"]')?.focus({preventScroll:true});
-    }
   });
   grid.addEventListener('focusin', (e) => {
     const card = e.target.closest('.media-card, .media-row');
@@ -22,7 +19,7 @@ export function initSelection() {
 export function focusSelectedCard() {
   const el = currentElement();
   const nested = typeof el?.querySelector === 'function'
-    ? el.querySelector('.set-open, .folder-open, .media-open, .collection-open, .podcast-feed-open')
+    ? el.querySelector('.set-open, .folder-open, .media-open, .collection-open')
     : null;
   const target = nested || el;
   target?.focus?.();

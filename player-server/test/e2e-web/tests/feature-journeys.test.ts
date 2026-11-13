@@ -99,7 +99,7 @@ test('folder browsing and Backspace return to the set and set grid', async ({ pa
   await expect(page.locator('#media-grid .folder-card').filter({ has: folder })).toHaveClass(/selected/);
   await page.keyboard.press('Enter');
   await expect(page.locator('#breadcrumb-bar')).toContainText('aesops-fables');
-  // Inside the folder, vi h/l move the selection between episode cards.
+  // Inside the folder, vi h/l move the selection between audio cards.
   const cards = page.locator('#media-grid .audio-card');
   await cards.first().locator('.media-open').focus();
   await expect(cards.first()).toHaveClass(/selected/);

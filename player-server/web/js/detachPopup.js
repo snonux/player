@@ -5,9 +5,8 @@ import { initModalFocus } from './modal-focus.js';
 import { initNotes } from './notes.js';
 import { closeAllModals } from './dom.js';
 import { toast } from './utils.js';
-import { setPodcastAccount } from './podcast-episode-state.js';
 import { setListeningProgressAccount } from './listening-progress.js';
-import { prepareDetachedPlayback } from './podcast-detached.js';
+import { savedResumePosition } from './resume-position.js';
 
 const openerOrigin = window.location.origin;
 document.addEventListener('player:sleep-expired', () => {
@@ -22,11 +21,13 @@ let lastStateSent = 0;
 let lastKnownPosition = 0;
 let sourceCycle = 0, completingCycle = null;
 let progressWrites = Promise.resolve();
+// Progress is written only once the popup knows it is signed in.
+let authenticated = false;
 
 // A failed load fires no pause event when nothing was playing yet (compat
 // stream still preparing), so the main window is told explicitly.
 initPlayer({ onPlaybackFailed: sendState, personalActions: true,
-  onNext: () => { if (currentMedia?.podcast_episode) post({ type: 'detach-next', completed: true }); },
+  onNext: () => {},
   onSessionPrevious: () => post({ type: 'detach-prev', play: true }),
   onSessionNext: () => post({ type: 'detach-next', play: true }) });
 initNotes((status, message) => toast(status === 'error' ? message || 'Could not update note.' : status === 'deleted' ? 'Note deleted' : 'Note saved', status === 'error' ? 'error' : 'info'));
@@ -70,7 +71,6 @@ document.addEventListener('loudness:changed', sendState);
   });
   el?.addEventListener('ended', async () => {
     if (el !== mediaElement() || !el.ended || !currentMedia) return;
-    if (currentMedia.podcast_episode) return; // central HTML ended guard owns podcast completion/advance
     const cycle = sourceCycle;
     if (completingCycle === cycle) return;
     completingCycle = cycle;
@@ -178,20 +178,38 @@ window.addEventListener('beforeunload', () => {
 
 post({ type: 'detach-ready' });
 
+// prepareDetachedPlayback waits, within one deadline, for the account and
+// then for the saved resume position. Without an account the transferred
+// item still plays, but its progress is not written.
+async function prepareDetachedPlayback(payload, timeoutMS = 3000) {
+  const deadline = Date.now() + timeoutMS;
+  let timer;
+  let cfg;
+  try {
+    cfg = await Promise.race([API.config().catch(() => null),
+      new Promise(resolve => { timer = setTimeout(() => resolve(null), timeoutMS); })]);
+  } finally { clearTimeout(timer); }
+  const media = { ...payload.media, resume_prepared: true };
+  let position = Number(payload.resumeFrom || 0);
+  if (!cfg?.user_id) return { media, position, authenticated: false };
+  initSongNotifications(cfg.user_id); setListeningProgressAccount(cfg.user_id);
+  const remaining = Math.max(0, deadline - Date.now());
+  if (remaining > 0) position = await savedResumePosition(media, position, remaining);
+  return { media, position, authenticated: true };
+}
+
 async function loadDetachedMedia(payload) {
   const cycle = ++sourceCycle;
   if (!payload.media) return;
-  const prepared = await prepareDetachedPlayback(payload, { accountReady: API.config(), onAccount: cfg => {
-    initSongNotifications(cfg.user_id); setPodcastAccount(cfg.user_id); setListeningProgressAccount(cfg.user_id);
-  } });
-  if (cycle !== sourceCycle || prepared.cancelled) return;
+  const prepared = await prepareDetachedPlayback(payload);
+  if (cycle !== sourceCycle) return;
   currentMedia = prepared.media;
   currentIndex = Number.isInteger(payload.index) ? payload.index : -1;
-  if (!currentMedia) return;
+  authenticated = prepared.authenticated;
   const resumeFrom = prepared.position;
   lastKnownPosition = resumeFrom;
   setPlaybackLoudness(payload.loudness, { remoteContext: true });
-  loadMediaDirect(currentMedia, payload.streamUrl, payload.thumbnailUrl, resumeFrom, { authenticated: prepared.authenticated });
+  loadMediaDirect(currentMedia, payload.streamUrl, payload.thumbnailUrl, resumeFrom, { authenticated });
   setPlaybackSpeed(payload.playbackRate ?? 1);
   setSleepDeadline(payload.sleepDeadline);
 
@@ -203,7 +221,6 @@ async function loadDetachedMedia(payload) {
   if (typeof payload.volume === 'number') el.volume = payload.volume;
   el.muted = !!payload.muted;
 
-  // Source startup owns podcast reconciliation and the loaded-duration rule.
   // requestPlay (playback.js) also covers a compat stream that is still being
   // prepared: playback then starts as soon as the element gets its source.
   if (payload.play && !(payload.sleepDeadline && payload.sleepDeadline <= performance.timeOrigin + performance.now())) requestPlay();
@@ -355,10 +372,10 @@ function startProgress() {
 }
 
 function enqueueProgress(id, seconds, finished = false) {
-  if (currentMedia?.podcast_episode || currentMedia?.podcast_lease === null) return Promise.resolve();
+  if (!authenticated) return Promise.resolve();
   progressWrites = progressWrites.catch(() => {}).then(async () => {
     await API.progress(id, seconds);
-    if (finished && currentMedia?.podcast_classified !== false) await API.progressStatus(id, 'finished');
+    if (finished) await API.progressStatus(id, 'finished');
   }).catch(() => {});
   return progressWrites;
 }

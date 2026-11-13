@@ -28,8 +28,7 @@ with a fresh SQLite database and a copy of `testdata/media` under a unique
 `/tmp/player-scenario-*` directory. It creates fixture artwork and an empty
 set, sets the upload limit to 1 MiB, and bootstraps `admin` / `TestPassw0rd!`.
 S01 performs bootstrap through the browser instead. Teardown removes the
-entire sandbox even after assertion failures. S02, S17 and S23 also start a
-local RSS fixture on an ephemeral port and stop it afterward. No production
+entire sandbox even after assertion failures. No production
 service, database, or source media is mutated.
 
 Do **not** start a server yourself. `PLAYER_URL` may change the unused local
@@ -66,7 +65,6 @@ and task command arguments without creating tasks.
 | ID | Executed assertions |
 |---|---|
 | S01 | Browser bootstrap/login, session, sole admin, closed bootstrap |
-| S02 | RSS subscription/list/download, real audio, progress, completion |
 | S03 | Bearer multipart upload, DB/detail, rescan, visible search card, cleanup |
 | S04 | Public player/title, login boundary, share listing/revocation |
 | S05 | Token metadata/secrecy, Bearer access/revocation, session logout |
@@ -81,13 +79,12 @@ and task command arguments without creating tasks.
 | S14 | Rescan counters/completion, populated media, nonadmin denial |
 | S15 | 401/403/404 boundaries, missing tag, empty-set cover error |
 | S16 | Disjoint pages, invalid query defaults, search/type/favorite/set filters, sorting |
-| S17 | Feed/episode shapes, missing/zero IDs, nonadmin subscribe denial |
 | S18 | Single progress threshold, two in-progress entries, validation, finished/reset |
 | S19 | Two users/two sets, viewer reads/personal writes, forbidden tags/delete, owner writes |
 | S20 | HEAD and exact byte slices, suffix/open/multiple/invalid ranges, 304 validators |
 | S21 | Missing multipart/file, extension, traversal, missing/forbidden set, 413, empty name, dedupe |
 | S22 | Forced DB expiry on all public routes, unique tokens, invalid settings, max uses |
-| S23 | Populated user-owned tables including podcast/accumulator, cascade, invalid session/token/login/share |
+| S23 | Populated user-owned tables including accumulator, cascade, invalid session/token/login/share |
 | S24 | Soft-delete across rescan, unique DB row, disk-orphan reconciliation |
 | S25 | SQL/wildcard probes, literal XSS note/tag round-trip, traversal, intact user/media tables |
 

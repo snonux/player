@@ -18,10 +18,9 @@ export function globalSyncPresentation(state, now = Date.now()) {
   else if (stale) parts.push(`Last synced ${Math.floor((now - state.lastFullSuccessMs) / 86400000)} days ago`);
   else if (!state.active && !state.errorKind) parts.push('Synced');
   if (state.pending) parts.push(`${state.pending} pending`);
-  if (state.podcastPending) parts.push('Podcast changes stay in this tab until synced; keep it open');
   // A fresh, complete sync needs no attention; the menu still offers Sync now.
   const healthy = !state.active && !state.errorKind && !stale && state.lastFullSuccessMs != null
-    && !state.pending && !state.podcastPending;
+    && !state.pending;
   return { hidden: healthy, text: parts.join(' · '),
     action: state.active ? 'Syncing…' : state.errorKind === 'auth' ? 'Sign in'
       : state.errorKind || stale ? 'Retry' : 'Sync now' };
@@ -38,7 +37,7 @@ export class GlobalSyncCoordinator {
     this.key = account ? `player-global-sync-v1:${account}` : null;
     let stored = {};
     try { stored = JSON.parse(this.storage.getItem(this.key) || '{}'); } catch {}
-    this.state = { account, active: false, cursor: stored.cursor || 0, epoch: stored.epoch || '',
+    this.state = { account, active: false,
       lastFullSuccessMs: Number.isFinite(stored.lastFullSuccessMs) ? stored.lastFullSuccessMs : null,
       errorKind: stored.errorKind || null };
     this.refresh();
@@ -46,7 +45,7 @@ export class GlobalSyncCoordinator {
   refresh(error) {
     if (!this.state.account) { this.changed(this.state); return; }
     const pending = this.domains.pending();
-    this.state.pending = pending.ids.length; this.state.podcastPending = pending.podcasts;
+    this.state.pending = pending.ids.length;
     if (error && !this.state.active) {
       this.state.errorKind = syncErrorKind(error);
       try { this.persist(); } catch {}
@@ -54,8 +53,8 @@ export class GlobalSyncCoordinator {
     this.changed(this.state);
   }
   persist() {
-    const { cursor, epoch, lastFullSuccessMs, errorKind } = this.state;
-    this.storage.setItem(this.key, JSON.stringify({ cursor, epoch, lastFullSuccessMs, errorKind }));
+    const { lastFullSuccessMs, errorKind } = this.state;
+    this.storage.setItem(this.key, JSON.stringify({ lastFullSuccessMs, errorKind }));
   }
   syncNow({explicit=true}={}) {
     if (!this.state.account) return Promise.resolve();
@@ -73,11 +72,6 @@ export class GlobalSyncCoordinator {
     let failure = null;
     const failed = error => { const kind = syncErrorKind(error); if (!failure || kind === 'auth') failure = kind; };
     for (const step of [
-      () => this.domains.podcasts(current, async page => {
-        if (!current()) return;
-        this.state.cursor = page.next_since; this.state.epoch = page.epoch;
-        this.persist();
-      }, { epoch: this.state.epoch, since: this.state.cursor }),
       () => this.domains.progress(),
       () => this.domains.queue(),
       ...(this.domains.music ? [() => this.domains.music(explicit)] : []),

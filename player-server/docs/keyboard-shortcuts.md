@@ -61,7 +61,7 @@ fields and dialogs, then resumes folder/set navigation once the grid is shown.
 | `r` | Enable shuffle, or reshuffle the current filtered result set |
 | `s` | Generate a share link for the selected media |
 | `/` | Focus library quick search, or filter shortcuts while help is open (the header Search button does the same) |
-| `b` | Open / close the Browse sidebar (Music, Podcasts, Radio, Sets) with focus on the current destination; `j`/`k` move, `Enter` opens, underlined letters jump, `Esc` or `b` closes and returns focus to the content |
+| `b` | Open / close the Browse sidebar (Music, Radio, Sets) with focus on the current destination; `j`/`k` move, `Enter` opens, underlined letters jump, `Esc` or `b` closes and returns focus to the content |
 | `g` | Toggle picture layout (also available in help) |
 | `+` / `=` / `-` | Larger / smaller library previews (saved); zoom the image when image view is open |
 | `0` | Reset library preview size; reset image zoom when image view is open |

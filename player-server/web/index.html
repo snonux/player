@@ -16,7 +16,7 @@
 <body>
 <header class="site-header" role="banner">
   <div class="header-main">
-    <button id="sidebar-toggle" class="icon-btn" title="Browse: music, podcasts, radio and sets (b)" aria-label="Toggle sets sidebar" aria-controls="sidebar" aria-keyshortcuts="b">☰</button>
+    <button id="sidebar-toggle" class="icon-btn" title="Browse: music, radio and sets (b)" aria-label="Toggle sets sidebar" aria-controls="sidebar" aria-keyshortcuts="b">☰</button>
     <a href="/" class="logo"><img src="/favicon.svg" alt="" class="logo-img">Player</a>
     <div class="spacer"></div>
     <button id="header-search" class="btn btn-ghost btn-sm header-search" type="button" title="Search (/)" aria-label="Search library" aria-keyshortcuts="/"><span aria-hidden="true">🔎︎</span><span class="header-search-label">Search</span><kbd class="header-kbd" aria-hidden="true">/</kbd></button>
@@ -94,7 +94,6 @@
       <button type="button" class="btn btn-ghost nav-item" data-music-open="playlists" data-i18n="Open Playlists">Open Playlists</button>
     </details>
   </div>
-  <div id="podcast-nav-slot"></div>
   <div class="sidebar-section" id="sidebar-radio">
     <div class="sidebar-header"><h2>Radio</h2></div>
     <button id="sidebar-web-radio" type="button" class="btn btn-ghost nav-item" title="Web radio directory (w)" aria-keyshortcuts="w">Web radio</button>
@@ -230,7 +229,6 @@
       <button id="btn-bookmarks" class="btn btn-sm hidden" type="button" aria-controls="bookmarks-modal">Bookmarks</button>
       <button id="btn-player-notes" class="btn btn-sm" type="button" aria-controls="notes-modal">Notes</button>
       <button id="btn-player-favorite" class="btn btn-sm" type="button" aria-label="Favorite" aria-pressed="false"><span data-favorite-heart aria-hidden="true">♡</span> <span data-i18n="Favorite">Favorite</span></button>
-      <button id="btn-delete-episode" class="btn btn-sm btn-danger hidden" type="button">Delete episode</button>
       <button id="btn-zoom-out" class="icon-btn image-only" aria-label="Zoom out">−</button>
       <button id="btn-zoom-in" class="icon-btn image-only" aria-label="Zoom in">+</button>
       <button id="btn-slideshow" class="icon-btn image-only" aria-label="Start slideshow">⏵</button>
@@ -421,14 +419,12 @@
           <div class="help-row"><span><kbd>D</kbd></span><span>Download selected media</span></div>
           <div class="help-row"><span><kbd>T</kbd></span><span>Regenerate thumbnail</span></div>
           <div class="help-row"><span><kbd>s</kbd></span><span>Share selected media</span></div>
-          <div class="help-row"><span><kbd>Enter</kbd> <kbd>v</kbd> <kbd>Delete</kbd></span><span>Selected podcast episode: play, toggle listened, delete (with confirmation)</span></div>
         </section>
         <section class="help-section" aria-label="Open views &amp; panels"><h4 class="help-group">Open views &amp; panels</h4>
-          <div class="help-row"><span><kbd>b</kbd></span><span>Browse sidebar: Music, Podcasts, Radio, Sets (j / k move, Enter opens, Esc closes)</span></div>
+          <div class="help-row"><span><kbd>b</kbd></span><span>Browse sidebar: Music, Radio, Sets (j / k move, Enter opens, Esc closes)</span></div>
           <div class="help-row"><span><kbd>M</kbd></span><span>Rescan media library</span></div>
           <div class="help-row"><span><kbd>m</kbd></span><span>More options menu (j / k move, Enter selects, Esc closes)</span></div>
           <div class="help-row"><span><kbd>r</kbd></span><span>Shuffle / reshuffle library listing (queue shuffle is in Now Playing)</span></div>
-          <div class="help-row"><span><kbd>o</kbd></span><span>All podcast episodes, newest first</span></div>
           <div class="help-row"><span><kbd>w</kbd></span><span>Web radio: explore stations, auto explore, bookmarks</span></div>
           <div class="help-row"><span><kbd>j</kbd> <kbd>k</kbd> <kbd>↑</kbd> <kbd>↓</kbd></span><span>Web radio: move between stations; Enter plays</span></div>
           <div class="help-row"><span><kbd>L</kbd></span><span>My Shares (outside expanded images)</span></div>
@@ -556,7 +552,6 @@
       </div>
       <button id="admin-more-toggle" class="icon-btn" type="button" popovertarget="admin-more-menu" title="More admin actions" aria-label="More admin actions" aria-haspopup="true" aria-expanded="false">☰</button>
       <div id="admin-more-menu" class="admin-more-menu" popover aria-label="More admin actions">
-        <button id="admin-podcasts" class="menu-item" type="button">Podcasts</button>
         <button type="button" class="menu-item" data-admin-goto="libraries">Libraries</button>
         <button type="button" class="menu-item" data-admin-goto="identity">Music identity</button>
         <button type="button" class="menu-item" data-admin-goto="plugins">Plugins</button>
@@ -629,30 +624,6 @@
       <section id="admin-auth-section" class="admin-panel hidden" data-admin-panel="signin" aria-labelledby="admin-auth-title">
         <h4 id="admin-auth-title" class="my-1 text-90">Sign-in</h4>
         <p id="admin-auth-help" class="text-muted text-xs">Loading authentication settings…</p>
-      </section>
-    </div>
-  </div>
-</div>
-
-<!-- Podcast Manager Modal -->
-<div id="podcast-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="podcast-title">
-  <div class="modal modal-wide">
-    <div class="modal-header">
-      <h3 id="podcast-title">Podcast Feeds</h3>
-      <div class="spacer"></div>
-      <button id="podcast-close" class="icon-btn" aria-label="Close">✕</button>
-    </div>
-    <div class="flex gap-4 flex-wrap">
-      <section class="flex-1-18">
-        <h4 class="my-1 text-90">Subscribe</h4>
-        <form id="podcast-form" class="mt-2">
-          <input id="podcast-url" type="url" placeholder="https://example.com/feed.xml" required autocomplete="off">
-          <button type="submit" class="btn btn-primary btn-sm mt-1">Subscribe</button>
-        </form>
-      </section>
-      <section class="flex-1-18">
-        <h4 class="my-1 text-90">Feeds</h4>
-        <div id="podcast-list"></div>
       </section>
     </div>
   </div>

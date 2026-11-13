@@ -60,15 +60,13 @@ data for all five modes, Off, pause/resume and replacing the track.
 
 ## Notes in TurboNotes
 
-While an audiobook or a podcast episode plays, the player's app bar has a
-notes button (**Book note in TurboNotes** or **Episode note in TurboNotes**).
+While an audiobook plays, the player's app bar has a
+notes button (**Book note in TurboNotes**).
 It opens [TurboNotes](https://github.com/snonux/turbonotes) on
 `Book-And-Podcast-Notes/TITLE.md` in its notes folder, and TurboNotes creates
 that note on first use with the title as heading. Playback keeps going in the
 background; switch back to Player from the notification or recent apps.
 
-- Podcast episodes (server media in a podcast set) use the episode title.
-  Opened from the library, the file name `2024-01-01 - Title.mp3` gives `Title`.
 - Audiobooks are recognized like the visuals do: `.m4b` files and set,
   folder or file names containing "audiobook" or "audio book". The title is
   the `.m4b` file's name, or for chapter files the folder holding them
@@ -117,143 +115,17 @@ history across devices are outside this feature.
 ## Continue listening offline
 
 The server chooser and sign-in page show **Continue listening** below the
-connection controls, so started podcasts are one tap away without signing in.
-Tap a started device file or podcast episode to reopen its player at the saved
-position. Podcast episodes come from device-only podcasts and from the podcast
-library this device used last with your server account (the one **Use files on
-this device** opens); a downloaded copy plays offline, and an episode without
-one is marked **Streams** and plays from the publisher, never from the server.
-Progress saved while signed out synchronizes with the account after the next
-sign-in. The device library offers the same shortcuts; **Show more** expands
-the list. Finished items are omitted, and offline only downloaded episodes are
-offered.
+connection controls, so started device files are one tap away without signing
+in. Tap one to reopen its player at the saved position. The device library offers the same shortcuts; **Show more** expands
+the list. Finished items are omitted.
 
 Saved server files (offline copies of server media) appear in **Offline
 downloads** after unlocking that account and stay hidden in the shortcut panel
 while the account is locked.
 
-## Podcasts on this device
-
-| Episodes | Grid | Episode sheet | Navigation |
-| --- | --- | --- | --- |
-| <img src="../docs/screenshots/android-podcast-episodes.png" alt="Compact podcast episode list" width="180"> | <img src="../docs/screenshots/android-podcast-grid.png" alt="Podcast episode grid with three per row" width="180"> | <img src="../docs/screenshots/android-podcast-sheet.png" alt="Episode sheet with play, download and more actions" width="180"> | <img src="../docs/screenshots/android-home-drawer.png" alt="Navigation drawer with Library and Music sections" width="180"> |
-
-The podcast overview shows cached publisher covers, including subscriptions synced
-under an alternate feed URL. New subscriptions fetch missing metadata in the
-background. A feed without its own cover uses available episode artwork.
-
-Episode rows are compact: publisher artwork (episode cover first, podcast cover
-as fallback), the title, podcast and publication date, the time left, and a
-progress bar. Each row keeps only **Download** (or **Cancel download** /
-**Retry download**, or a downloaded mark), **Play / Resume** and the episode
-menu. Tap a row or its menu to open the episode sheet with the full title,
-publication date, download status, **Play / Resume**, download actions,
-**Play from beginning**, **Mark completed**, **Delete downloaded file**,
-**Delete episode** and expandable **Show notes**. The screen menu switches
-between list and grid; the grid shows at least three covers per row on a phone
-in portrait, for episodes and for the podcast overview. Artwork uses a
-public disk cache without Player credentials; downloaded server copies retain
-existing embedded/server thumbnails if publisher images are missing or fail.
-Artwork never blocks browsing or playback. Notes are selectable text with readable paragraphs and
-underlined HTTP(S) publisher links that open the browser, rather than executable
-publisher HTML. Links have comfortable touch targets and keyboard focus. Dates absent
-from the publisher are labeled unavailable. **Refresh feeds** repairs older
-cached summaries and fetches newly supported episode covers; existing episode
-identities, progress and downloads are retained.
-
-Open **Podcasts** from the left navigation menu in connected, device, or
-unlocked offline-account mode. **Podcasts** and **Downloads** keep the same
-labels and positions in each menu. Subscribe using a publisher feed URL and use **Refresh feeds**
-or a podcast's **Refresh feed** menu to fetch metadata directly. Subscription
-folders and **All podcast episodes** work without login or a reachable server.
-Episode lists show newest publication first, with Previous/Next page controls.
-Opening a list reads the device cache first. Already cached feeds, including
-feeds without publication dates, previously failed feeds, and checked empty
-feeds are not fetched again just because the screen opens. New subscriptions
-can hydrate missing metadata in the background; signed-in subscription sync
-also runs separately. **Reload episodes** or **Refresh feeds** explicitly
-updates publisher data without waiting for server sync. Cached rows remain
-visible throughout. Podcast feed pages and playback share the app navigation
-stack: Back returns to the episode list, retaining its filter, page, and scroll.
-
-Episode lists default to **Uncompleted** (including started episodes).
-**Completed** and **All** keep listened episodes reachable, with muted
-titles/artwork and a **Listened** label. **All podcast episodes** names
-each podcast and fills missing feed caches in the background when opened;
-cached episodes stay available during refresh, with progress and retry after
-a failed feed fetch. While signed in, an unavailable or oversized publisher
-feed can use the selected server’s saved episode details. This imports metadata
-only; listening state, deletions and device downloads remain separate.
-Standalone browsing keeps using the publisher and the device cache.
-
-Choose **Select episodes** in the episode screen's menu, or hold an episode, to
-select several episodes in any list or grid. The selected-actions menu can mark
-them completed/uncompleted, delete episodes, or delete downloaded files from this
-device. Failed items stay selected so you can retry the action. Changing library,
-feed, filter or page clears selection; switching list/grid keeps it. Cancel or
-Back returns to browsing. Deleting episodes removes them from your podcast lists
-and removes their device downloads, retaining listening history; deleting only
-downloaded files keeps the episodes in your lists and never deletes server files.
-
-**Continue listening:** whenever nothing is playing (for example right after
-the app starts), the mini-player slot at the bottom of the library screens shows
-the podcast episode you listened to most recently and have not finished. Tap it,
-or its play button, to resume where you stopped; it streams when there is no
-device copy. Its list button opens **Podcasts in progress**, every started
-and unfinished episode of the library, most recently listened first; tap one to
-resume it. The **In progress** filter shows the same episodes in the episode list.
-
-**Mark completed / Mark uncompleted** saves locally and queues synchronization
-for the selected account, retaining the saved position. Playing to the natural
-end marks an episode completed automatically; completed episodes leave the
-default list and remain available through **Completed** or **All**. **Play / Resume**
-streams audio from its publisher immediately when there is no complete device
-copy. **Download** saves a separate copy for offline listening; Play stays
-available while it downloads. **Cancel download** removes the unfinished copy
-without stopping streaming or changing listening history. You can return from
-the player to the episode list to cancel a transfer while audio keeps playing.
-Completed copies are preferred on the next Play. **Play from beginning** is in
-the episode sheet for started episodes and saved copies. While an episode plays
-in the background, a mini player on library and podcast screens pauses it or
-reopens the player. The podcast player shows the playback speed next to the
-skip buttons.
-**Delete downloaded file** removes only this device's audio; subscription,
-completion, position and pending sync edits remain. **Delete episode** in the
-episode menu asks for confirmation, removes the episode from your lists and
-deletes its download on this device while retaining listening history. In the
-list layout, swiping an episode row from right to left asks the same question.
-The podcast player's menu also has **Delete episode**: after confirmation it
-moves on to the feed's next episode, or stops and closes when none is left. The
-account deletion is durable across metadata refresh and sync. Older servers
-without deletion support keep the edit locally until support becomes available.
-**Unsubscribe (keep
-history)** is separate. Existing server episode copies remain ordinary server
-media and previously kept offline copies remain in Downloads.
-
-Signing in does not silently move a standalone podcast library into an
-account. If the selected server supports podcast sync, the app asks once per
-account whether to **Sync** this device's podcasts and history or **Keep
-separate**. A declined or dismissed choice can be repeated with **Settings →
-Sync this device's podcasts**. Device audio stays on the device in either
-case; only subscriptions and listening history are associated with the
-account. An older server or a locked account leaves standalone use available.
-
-Local storage and widget checks are supplemented by the installed two-Android,
-Chrome and Firefox main listening journey. The remaining platform boundary
-checks are listed in the
-[verification plan](../docs/podcast-management-plan.md#integrated-verification-snapshot-2026-10-26);
-see also [podcast browsing implementation](../docs/podcast-browsing-implementation.md).
-
-Podcast playback attempts synchronization for at most three seconds before
-starting, then uses saved device state when unavailable. Background playback
-saves progress; natural episode end saves completion before a quiet sync.
-Seek, pause, stop and errors retain position without completing the episode.
-See [podcast lifecycle implementation](../docs/podcast-playback-lifecycle-implementation.md)
-for focused checks and the remaining installed-client verification gaps.
-
 ## Synchronize this account
 
-Open the library menu and choose **Sync now** to synchronize podcasts, supported
+Open the library menu and choose **Sync now** to synchronize supported
 offline progress/bookmarks, queued listening progress and the saved music
 session for the unlocked account. The bottom status bar appears only for a
 manual sync, with its result shown briefly afterward. Automatic syncing keeps
@@ -348,40 +220,18 @@ in Android's secure storage; account passwords are never saved. Switching server
 login and preserves each server's saved credential. Logout removes the selected
 server's credential. Expired/revoked tokens require password sign-in.
 
-For podcasts, **Use files on this device → left navigation menu → Podcasts**
-reopens the last cached podcast library without signing in or unlocking an
-account. The **Library** selector switches between cached accounts and
-**Device-only podcasts** without combining their subscriptions or listening
-history. Existing installs recover their remembered server library automatically.
-The player displays the current episode’s show notes below the seek bar, expanded
-by default. Cached notes remain readable offline and can be collapsed.
-Subscriptions and episode details are cached by sync; audio is separate and
-must show **Available on this device** before it can play without internet.
-Offline listening changes stay with that cached account and sync when you later
-sign in to the same account.
-
 If the server is unreachable (including a gateway outage), fingerprint unlock
 offers **Use offline mode** for the named saved server/account. Accepting opens
 **Offline downloads**, labeled with that account and server; declining keeps the
 login locked. A password sign-in that cannot reach the server also offers the
 fingerprint option for matching saved credentials. Download rows show their
 server and account so copies from different libraries remain clear.
-Open the left navigation menu →
-**Podcasts** to resume downloaded episodes from the same account’s saved position.
-Podcast audio and progress remain on the device through app restarts; server
-sync resumes after reconnecting. Only complete matching
+Only complete matching
 downloads and cached music appear, and playback uses local files. The account
 menu offers reconnect, server selection and sign-out. Progress stays on the
 device through restarts and syncs after the same saved account is accepted by
 the server again; network availability alone does not unlock server requests.
 A server rejection never grants offline access through the fingerprint fallback.
-
-Run `python3 integration_test/support/run_offline_podcast_resume.py --device emulator-5554`
-on a disposable Google APIs emulator with Chrome to check offline menu navigation,
-reopened storage, native audio resume, browser launch for both HTTP and HTTPS
-notes links, and Back from the player and a feed. The host runner verifies browser
-intents and returns from Chrome, including its first-run screen. This uses test
-identities; it does not exercise biometric hardware.
 
 Credential gating and background audio integration are covered by automated
 client checks. Biometric hardware behavior has not been verified on a physical
@@ -653,7 +503,7 @@ a restart; Undo applies during the current session.
 Recovery rechecks access to the saved songs. Removed or forbidden songs are
 dropped with a quiet notice; connection failures keep the saved session and
 offer **Retry restore**. This is local music queue recovery, separate from
-per-file resume and podcast synchronization. Use **Continue session** for the
+per-file resume. Use **Continue session** for the
 separate server session below. Clearing app storage removes local sessions.
 
 ## Continue a saved session
@@ -685,7 +535,7 @@ shows the mode and its active state. Back closes the queue sheet.
 Repeat is saved with the server/account queue on this device, including an
 empty queue. After restart and unlock, recovery stays paused at the saved
 selection and position until you tap **Resume queue**. Clear and Undo keep the
-chosen mode. Sets, podcast, local-file and downloaded playback keep their
+chosen mode. Sets, local-file and downloaded playback keep their
 existing behavior.
 
 ## Shuffle a music queue
@@ -798,28 +648,3 @@ continues to use its existing controls.
 Implementation checks pass; launcher placement/resizing, light/dark rendering,
 TalkBack, actual background controls and account/restart boundaries await the
 integrated native acceptance run. See [M56 implementation notes](../docs/music-m56-implementation.md).
-
-## Podcast episode layouts
-
-Choose **List** or **Grid** above an episode list. Both layouts keep the existing titles,
-metadata, expandable show notes and playback and episode actions. The choice lasts while the app is open and follows navigation into
-subscriptions. Grid cards adapt to narrow screens and grow with enlarged text.
-Browser device podcasts have the same layout choice inside a subscription.
-
-Focused layout verification:
-
-```sh
-flutter test test/screens/podcast_episode_layout_test.dart
-flutter test integration_test/podcast_episode_layout_test.dart -d emulator-5554
-```
-The native check uses the real screen and controls with deterministic cached
-repository data, including narrow/landscape layouts and enlarged text.
-
-Podcast playback continues through the remaining uncompleted episodes of the
-same feed in newest-first order, then stops. Android prefers downloaded copies
-and can stream subsequent episodes directly from the publisher without Player
-credentials. Pausing, seeking to the end, or a playback error does not skip to
-another episode. Initial playback can stream immediately, including while a
-separate device download is in progress.
-Verify native continuation with
-`flutter test integration_test/podcast_continuation_test.dart -d emulator-5554`.

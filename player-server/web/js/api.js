@@ -182,44 +182,6 @@ export const API = {
     method: 'POST',
     body: { capability },
   }),
-  podcasts: ({ quietAuth = false } = {}) => api('/api/podcasts', { quietAuth }),
-  podcastEpisodes: (setId, pagination, legacyOffset) => {
-    let limit = 50;
-    let offset = 0;
-    if (typeof pagination === 'number') {
-      if (typeof legacyOffset === 'number') {
-        limit = pagination;
-        offset = legacyOffset;
-      } else {
-        offset = pagination;
-      }
-    } else if (pagination) {
-      limit = pagination.limit ?? limit;
-      offset = pagination.offset ?? offset;
-    }
-    const params = new URLSearchParams({ limit, offset });
-    return api(`/api/podcasts/${setId}/episodes?${params}`);
-  },
-  // Subscribed / all-episodes views (contract §6.3): feed_key identity,
-  // completion filter, server pagination.
-  subscribedEpisodes: ({ feedKey = '', filter = 'uncompleted', limit = 100, offset = 0 } = {}) => {
-    const params = new URLSearchParams({
-      filter: filter || 'uncompleted',
-      limit: String(limit),
-      offset: String(offset),
-    });
-    if (feedKey) params.set('feed_key', feedKey);
-    return api(`/api/podcasts/episodes?${params}`);
-  },
-  subscribePodcast: (feedUrl, setName) => api('/api/podcasts', { method: 'POST', body: { feed_url: feedUrl, set_name: setName } }),
-  // Admin only: deletes the feed's server copies for everyone, and the
-  // catalog feed once nobody is subscribed. Not an unsubscribe.
-  removePodcastFromServer: (feedId) => api(`/api/podcasts/${feedId}`, { method: 'DELETE' }),
-  syncPodcast: (body) => api('/api/podcasts/sync', { method: 'POST', quietAuth: true, body }),
-  refreshPodcastFeed: (feedKey) => api('/api/podcasts/refresh', { method: 'POST', quietAuth: true, body: { feed_key: feedKey } }),
-  syncPodcastSubscriptions: (subscriptions) => api('/api/podcasts/sync', { method: 'POST', quietAuth: true, body: { subscriptions } }),
-  downloadEpisode: (episodeId, { signal } = {}) => api(`/api/podcasts/episodes/${episodeId}/download`, { method: 'POST', signal }),
-  toggleEpisodeComplete: (episodeId) => api(`/api/podcasts/episodes/${episodeId}/complete`, { method: 'POST' }),
   radioStations: (filters) => api(`/api/radio/stations${radioSearchQuery(filters)}`),
   radioTags: (limit = 100) => api(`/api/radio/tags?limit=${limit}`),
   radioCountries: () => api('/api/radio/countries'),

@@ -261,24 +261,19 @@ testSupport();
 testLoadFields();
 await testSession();
 
-// A pending receiver replacement must not acquire the active copy's timer,
-// media id or end event before LOAD has successfully transferred ownership.
+// A pending receiver replacement must not acquire the active copy's timer
+// or media id before LOAD has successfully transferred ownership.
 {
   const { API } = await import('../api.js');
-  const { setPodcastAccount } = await import('../podcast-episode-state.js');
-  const oldDetail = API.mediaDetail, oldSync = API.syncPodcast, oldTicket = API.castTicket, oldStatus = API.progressStatus;
+  const oldProgress = API.progress, oldTicket = API.castTicket;
   const oldInterval = globalThis.setInterval;
   let progressTick;
   globalThis.setInterval = callback => { progressTick = callback; return 0; };
-  const writes = [], finishes = [];
-  const a = { id: 81, type: 'audio' }, b = { id: 82, type: 'audio' }, ordinary = { id: 83, type: 'audio' };
-  const identity = id => ({ feed_key: 'feed:cast.example/rss', episode_key: `guid:${id}` });
+  const writes = [];
+  const a = { id: 81, type: 'audio' }, b = { id: 82, type: 'audio' }, other = { id: 83, type: 'audio' };
   try {
-    setPodcastAccount(41);
-    API.mediaDetail = async id => ({ podcast_episode: id === 83 ? null : identity(id) });
-    API.syncPodcast = async body => { writes.push(body); return { acked: (body.episodes || []).flatMap(ep => [ep.position?.edit_id, ep.completion?.edit_id].filter(Boolean)), rejected: [], episodes: [] }; };
+    API.progress = async (id, seconds) => { writes.push({ id, seconds }); };
     API.castTicket = async () => ({ ticket: 'scope', stream_content_type: 'audio/mpeg' });
-    API.progressStatus = async (...args) => finishes.push(args);
     cast.initCast({ button: fakeButton(), getCurrentMedia: () => a, localPosition: () => 10 }, window, doc);
     window.__onGCastApiAvailable(true);
     sdk.remotePlayer.isMediaLoaded = true; sdk.remotePlayer.isPaused = false; sdk.remotePlayer.playerState = 'PLAYING';
@@ -289,31 +284,28 @@ await testSession();
     await tick(); await tick();
     sdk.remotePlayer.currentTime = 71; sdk.emit('CURRENT_TIME_CHANGED');
     progressTick(); await tick();
-    assert(writes.some(body => body.episodes?.[0]?.episode_key === 'guid:81' && body.episodes[0].position?.seconds === 71), 'delayed B ticket leaves old A progress under A');
-    assert(!writes.some(body => body.episodes?.[0]?.episode_key === 'guid:82'), 'candidate B never receives old A samples');
+    assert(writes.some(w => w.id === 81 && w.seconds === 71), 'delayed B ticket leaves old A progress under A');
+    assert(!writes.some(w => w.id === 82), 'candidate B never receives old A samples');
     rejectTicket(new Error('injected replacement ticket failure'));
     assertEqual(await replacement, false, 'failed ticket does not replace A');
     API.castTicket = async () => ({ ticket: 'scope', stream_content_type: 'audio/mpeg' });
     let rejectLoad;
     sdk.deferredLoad = new Promise((_resolve, reject) => { rejectLoad = reject; });
-    const ordinaryReplacement = cast.castItem(ordinary, 0);
+    const otherReplacement = cast.castItem(other, 0);
     await tick(); await tick();
-    sdk.remotePlayer.currentTime = 72; sdk.emit('CURRENT_TIME_CHANGED');
-    sdk.remotePlayer.isMediaLoaded = false; sdk.remotePlayer.playerState = 'IDLE'; sdk.emit('PLAYER_STATE_CHANGED');
-    assertEqual(finishes.length, 0, 'pending ordinary candidate cannot clear A identity and synthesize legacy completion');
     rejectLoad(new Error('injected replacement LOAD failure'));
-    assertEqual(await ordinaryReplacement, false, 'failed LOAD retains prior owner');
+    assertEqual(await otherReplacement, false, 'failed LOAD retains prior owner');
     sdk.deferredLoad = null;
-    sdk.remotePlayer.isMediaLoaded = true; sdk.remotePlayer.playerState = 'PLAYING';
     sdk.remotePlayer.currentTime = 73; sdk.emit('CURRENT_TIME_CHANGED'); progressTick(); await tick();
-    assert(writes.some(body => body.episodes?.[0]?.episode_key === 'guid:81' && body.episodes[0].position?.seconds === 73), 'failed LOAD retains A timer identity');
+    assert(writes.some(w => w.id === 81 && w.seconds === 73), 'failed LOAD retains A timer identity');
+    assert(!writes.some(w => w.id === 83), 'failed candidate never receives samples');
     assertEqual(await cast.castItem(b, 0), true, 'successful replacement adopts B');
     sdk.remotePlayer.currentTime = 90; sdk.emit('CURRENT_TIME_CHANGED'); progressTick(); await tick();
-    assert(writes.some(body => body.episodes?.[0]?.episode_key === 'guid:82' && body.episodes[0].position?.seconds === 90), 'successful B LOAD adopts B timer identity');
+    assert(writes.some(w => w.id === 82 && w.seconds === 90), 'successful B LOAD adopts B timer identity');
     cast.stopCasting();
   } finally {
-    sdk.deferredLoad = null; setPodcastAccount(null); globalThis.setInterval = oldInterval;
-    API.mediaDetail = oldDetail; API.syncPodcast = oldSync; API.castTicket = oldTicket; API.progressStatus = oldStatus;
+    sdk.deferredLoad = null; globalThis.setInterval = oldInterval;
+    API.progress = oldProgress; API.castTicket = oldTicket;
   }
 }
 
