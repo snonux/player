@@ -36,3 +36,4 @@ go.work
 /player-android/.dart_tool/
 /player-android/.flutter-plugins*
 /player-android/build/
+.serena/
